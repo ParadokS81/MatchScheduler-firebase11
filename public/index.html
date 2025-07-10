@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MatchScheduler - Gaming Community Match Scheduling</title>
+    
+    <!-- CSS -->
+    <link href="css/main.css" rel="stylesheet">
+    
+    <!-- Meta Tags -->
+    <meta name="description" content="Gaming community match scheduling platform for tournaments and clan matches">
+    <meta name="keywords" content="gaming, tournament, scheduling, match, clan, esports">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="img/favicon.ico">
+    
+    <!-- Firebase v11 SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+        import { getFirestore } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+        import { getAuth } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+        import { getStorage } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
+        
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAElazBT8eT13fT0wCO5K7z3-5D1z42ZBM",
+            authDomain: "matchscheduler-dev.firebaseapp.com",
+            projectId: "matchscheduler-dev",
+            storageBucket: "matchscheduler-dev.firebasestorage.app",
+            messagingSenderId: "340309534131",
+            appId: "1:340309534131:web:77155fb67f95ec2816d7c6"
+        };
+        
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const storage = getStorage(app);
+        
+        // Make globally available
+        window.firebase = { app, db, auth, storage };
+    </script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Centered Title -->
+        <h1 class="text-2xl font-bold text-primary text-center py-4">MatchScheduler</h1>
+        
+        <!-- Main Content Area with Sacred 3x3 Grid -->
+        <main class="main-grid">
+            <!-- Top Row -->
+            <div id="panel-top-left" class="panel">
+                <div class="panel-content">
+                    <h3 class="text-lg font-semibold mb-2">User Profile</h3>
+                    <p class="text-muted-foreground">User profile component will be here</p>
+                </div>
+            </div>
+            
+            <div id="panel-top-center" class="panel">
+                <div class="panel-content flex items-center justify-center">
+                    <h3 class="text-lg font-semibold">Week Navigation</h3>
+                </div>
+            </div>
+            
+            <div id="panel-top-right" class="panel">
+                <div class="panel-content">
+                    <h3 class="text-lg font-semibold mb-2">Match Filters</h3>
+                    <p class="text-muted-foreground">Filter controls will be here</p>
+                </div>
+            </div>
+
+            <!-- Middle Row -->
+            <div id="panel-middle-left" class="panel">
+                <div class="panel-content">
+                    <h3 class="text-lg font-semibold mb-2">Team Info</h3>
+                    <p class="text-muted-foreground">Team information component will be here</p>
+                </div>
+            </div>
+            
+            <div id="panel-middle-center" class="panel">
+                <div class="panel-content">
+                    <h3 class="text-lg font-semibold mb-2">Availability Grid Week 1</h3>
+                    <div id="availability-grid-week1" class="w-full h-full min-h-32 bg-muted rounded">
+                        <p class="text-muted-foreground p-4">Availability grid will be here</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="panel-middle-right" class="panel">
+                <div class="panel-content">
+                    <h3 class="text-lg font-semibold mb-2">Favorites List</h3>
+                    <p class="text-muted-foreground">Favorite teams will be here</p>
+                </div>
+            </div>
+
+            <!-- Bottom Row -->
+            <div id="panel-bottom-left" class="panel">
+                <div class="panel-content">
+                    <h3 class="text-lg font-semibold mb-2">Grid Tools</h3>
+                    <p class="text-muted-foreground">Grid tools will be here</p>
+                </div>
+            </div>
+            
+            <div id="panel-bottom-center" class="panel">
+                <div class="panel-content">
+                    <h3 class="text-lg font-semibold mb-2">Availability Grid Week 2</h3>
+                    <div id="availability-grid-week2" class="w-full h-full min-h-32 bg-muted rounded">
+                        <p class="text-muted-foreground p-4">Availability grid will be here</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="panel-bottom-right" class="panel">
+                <div class="panel-content">
+                    <h3 class="text-lg font-semibold mb-2">Browse Teams</h3>
+                    <p class="text-muted-foreground">Browse teams component will be here</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modal-container" class="fixed inset-0 z-50 hidden">
+        <!-- Modals will be dynamically inserted here -->
+    </div>
+
+    <!-- Team Operation Status -->
+    <div id="team-operation-container" class="fixed bottom-0 left-0 right-0 z-40">
+        <!-- Loading Status -->
+        <div id="team-operation-status" class="bg-primary text-primary-foreground py-2 px-4 text-center hidden">
+            <!-- Status text will be dynamically inserted here -->
+        </div>
+        
+        <!-- Error Display -->
+        <div id="team-operation-error" class="bg-red-600 text-white py-2 px-4 text-center hidden">
+            <!-- Error text will be dynamically inserted here -->
+        </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-40 space-y-2">
+        <!-- Toast notifications will be dynamically inserted here -->
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-background/80 backdrop-blur-sm z-30 hidden">
+        <div class="flex items-center justify-center h-full">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                <div class="text-foreground text-lg">Loading...</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- JavaScript Modules -->
+    <script src="js/app.js" type="module"></script>
+</body>
+</html>

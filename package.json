@@ -1,0 +1,43 @@
+{
+  "name": "matchscheduler",
+  "version": "3.0.0",
+  "description": "Gaming community match scheduling platform",
+  "main": "index.js",
+  "scripts": {
+    "start": "concurrently \"npm run firebase\" \"npm run css:watch\"",
+    "dev": "npm run start",
+    "firebase": "firebase emulators:start --only functions,hosting",
+    "css:watch": "tailwindcss -i ./src/css/input.css -o ./public/css/main.css --watch",
+    "css:build": "tailwindcss -i ./src/css/input.css -o ./public/css/main.css --minify",
+    "build": "npm run css:build && npm run build:js",
+    "build:js": "echo 'JS build step - to be implemented'",
+    "deploy": "npm run css:build && firebase deploy",
+    "deploy:hosting": "npm run css:build && firebase deploy --only hosting",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:rules": "firebase deploy --only firestore:rules",
+    "test": "npm run test:functions",
+    "test:functions": "cd functions && npm test",
+    "logs": "firebase functions:log"
+  },
+  "keywords": [
+    "gaming",
+    "tournament",
+    "scheduling",
+    "firebase",
+    "matchmaking"
+  ],
+  "author": "MatchScheduler Team",
+  "license": "MIT",
+  "dependencies": {
+    "firebase": "^11.0.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.0",
+    "concurrently": "^9.2.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
