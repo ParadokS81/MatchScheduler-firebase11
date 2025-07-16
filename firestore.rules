@@ -46,7 +46,8 @@ service cloud.firestore {
             (!('teams' in request.resource.data) || (request.resource.data.teams is map && request.resource.data.teams.size() <= 2)) &&
             (!('savedTemplates' in request.resource.data) || request.resource.data.savedTemplates is map) &&
             (!('photoURL' in request.resource.data) || (request.resource.data.photoURL is string && request.resource.data.photoURL.size() > 0)) &&
-            (!('discordUsername' in request.resource.data) || (request.resource.data.discordUsername is string && request.resource.data.discordUsername.size() > 0))
+            (!('discordUsername' in request.resource.data) || (request.resource.data.discordUsername is string && request.resource.data.discordUsername.size() > 0 && request.resource.data.discordUsername.size() <= 50)) &&
+            (!('discordUserId' in request.resource.data) || (request.resource.data.discordUserId is string && request.resource.data.discordUserId.size() >= 17 && request.resource.data.discordUserId.size() <= 19 && request.resource.data.discordUserId.matches('^[0-9]+$')))
           )
           : false; // Required keys missing, fail immediately
       }
@@ -63,6 +64,8 @@ service cloud.firestore {
           !('teams' in data) || isValidTeamsUpdate()
         ) && (
           !('discordUsername' in data) || isValidDiscordUsername()
+        ) && (
+          !('discordUserId' in data) || isValidDiscordUserId()
         ) && (
           !('photoURL' in data) || isValidPhotoURL()
         ) && (
@@ -110,7 +113,16 @@ service cloud.firestore {
       function isValidDiscordUsername() {
         return request.resource.data.discordUsername == null
           || (request.resource.data.discordUsername is string
-              && request.resource.data.discordUsername.size() > 0);
+              && request.resource.data.discordUsername.size() > 0
+              && request.resource.data.discordUsername.size() <= 50);
+      }
+      
+      function isValidDiscordUserId() {
+        return request.resource.data.discordUserId == null
+          || (request.resource.data.discordUserId is string
+              && request.resource.data.discordUserId.size() >= 17
+              && request.resource.data.discordUserId.size() <= 19
+              && request.resource.data.discordUserId.matches('^[0-9]+$'));
       }
       
       function isValidPhotoURL() {

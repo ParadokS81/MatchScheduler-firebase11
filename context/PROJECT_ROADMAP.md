@@ -7,9 +7,10 @@ This document serves as the **single source of truth** for project progress, imp
 
 ## 📋 Project Status Dashboard
 
-### Current Phase: **Phase 0 - Foundation ✅ COMPLETE**
-### Next Phase: **Phase 1 - Core Onboarding Journey**
-### Overall Progress: **[▓▓░░░░░░░░] 20%**
+### Current Phase: **Phase 1 - Core Onboarding Journey ✅ IN PROGRESS**
+### Current Slice: **Phase 1.1 - Guest Mode & Authentication ✅ COMPLETE**
+### Next Phase: **Phase 1.2 - Team Creation**
+### Overall Progress: **[▓▓▓░░░░░░░] 30%**
 
 ### Environment Status:
 - ✅ Firebase Project: `matchscheduler-dev`
@@ -44,31 +45,45 @@ This document serves as the **single source of truth** for project progress, imp
 
 ---
 
-### Phase 1: Core Onboarding Journey 🚧 IN PLANNING
+### Phase 1: Core Onboarding Journey ✅ IN PROGRESS
 **Goal:** Allow a brand new user to become a team leader
 
 #### Slice 1.1: Guest Mode & Authentication
-**Status:** Not Started
+**Status:** ✅ COMPLETE
 **Dependencies:** None
 **Key Features:**
-- [ ] Guest mode exploration
-- [ ] Google OAuth integration
-- [ ] Authentication state management
-- [ ] User profile creation flow
+- [x] Guest mode exploration
+- [x] Google OAuth integration  
+- [x] Authentication state management
+- [x] User profile creation flow
+- [x] Edit profile modal with Discord linking
 
 **Implementation Checklist:**
-- [ ] Create `AuthService` module
-- [ ] Implement Google Sign-In UI
-- [ ] Handle auth state changes
-- [ ] Create profile creation modal
-- [ ] Write `createProfile` Cloud Function
-- [ ] Add profile data to Firestore
+- [x] Create `AuthService` module
+- [x] Implement Google Sign-In UI
+- [x] Handle auth state changes
+- [x] Create profile creation modal
+- [x] Write `createProfile` Cloud Function
+- [x] Add profile data to Firestore
+- [x] Add edit profile modal functionality
+- [x] Add Discord username/ID manual linking
+- [x] Update Cloud Functions for Discord data
 
 **Test Criteria:**
-- [ ] User can browse as guest
-- [ ] User can sign in with Google
-- [ ] Profile is created on first sign-in
-- [ ] User sees their name in UI
+- [x] User can browse as guest
+- [x] User can sign in with Google
+- [x] Profile is created on first sign-in
+- [x] User sees their name in UI
+- [x] User can edit their profile
+- [x] User can link Discord account manually
+
+**Completed Components:**
+- `/public/js/services/AuthService.js` - Firebase v11 Google OAuth with proper emulator connection + updateProfile method
+- `/public/js/components/UserProfile.js` - Guest/authenticated state management with database profile loading + edit button
+- `/public/js/components/ProfileModal.js` - Profile creation/edit modal with Player Nick field + Discord linking
+- `/public/js/components/ToastService.js` - Notification system for user feedback
+- `/functions/user-profile.js` - Server-side profile validation and creation + Discord data handling
+- Database collections: `users` (with Discord fields), `eventLog` with proper event tracking
 
 #### Slice 1.2: Team Creation
 **Status:** Not Started
@@ -270,5 +285,35 @@ Blockers: [Any blockers]
 
 ---
 
-Last Updated: 2024-01-10
-Next Review: After Phase 1.1 completion
+Last Updated: 2025-01-16
+Next Review: After Phase 1.2 completion
+
+## 📝 Session Notes (2025-01-16)
+
+### Phase 1.1 Completion Summary:
+- **Authentication Flow:** Complete end-to-end Google OAuth with profile creation
+- **Database Integration:** Users and event logging properly implemented
+- **UI Polish:** Clean guest/authenticated states with proper database profile loading
+- **Functions Emulator:** Properly connected to local development environment
+- **Error Handling:** Toast notifications and proper validation in place
+- **Edit Profile Modal:** Dual-mode modal for profile creation and editing
+- **Discord Integration:** Simple manual linking (username + user ID) without OAuth complexity
+
+### Key Architectural Decisions:
+- **Firebase v11 Modular Imports:** All components use proper async imports
+- **Direct Database Profile Loading:** Auth state triggers profile fetch from Firestore
+- **Dual DisplayName Pattern:** Google Auth name vs database profile name distinction
+- **Revealing Module Pattern:** All components follow consistent architectural pattern
+- **Simple Discord Approach:** Manual entry over OAuth for reduced complexity
+
+### Discord Integration Enhancement:
+- **PRD Compliance:** Implements PRD 4.4.1 Discord linking requirements
+- **Simple Approach:** User manually enters Discord username and ID
+- **Future-Ready:** Foundation for team leader contact features
+- **Data Storage:** `users.discordUsername` and `users.discordUserId` fields
+- **Validation:** Both fields required together, proper format validation
+
+### Next Session Focus:
+- **Phase 1.2 - Team Creation:** Implement team creation flow per PRD requirements
+- **Team Management:** Basic team info display and join code generation
+- **Onboarding Modal:** Unified create/join team interface

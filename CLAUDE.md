@@ -212,48 +212,146 @@ Understanding these workflows helps write better code:
 
 ## Remember Shortcuts
 
-### QNEW
+### QNEW - Session Initialization
 When I type "qnew", this means:
 ```
-Understand all BEST PRACTICES for MatchScheduler gaming community project.
-Your code SHOULD ALWAYS follow these gaming-specific best practices.
-Reference PRD v2 sections and architecture docs as needed.
+ONBOARDING CHECKLIST:
+1. Read all 4 Pillar documents in order:
+   - Pillar 1 - PRD.md (understand the product vision)
+   - Pillar 2 - performance and ux.md (understand "hot vs cold" paths)
+   - Pillar 3 - technical architecture.md (understand patterns)
+   - Pillar 4 - technology stack.md (understand constraints)
+
+2. Check PROJECT_ROADMAP.md for:
+   - Current Phase and Slice
+   - Completed tasks (marked with [x])
+   - Next uncompleted task in checklist
+   - Any blockers noted from last session
+
+3. Scan codebase structure:
+   - /public/index.html for sacred grid
+   - /public/js/ for existing components
+   - /functions/ for backend logic
+   - Recent git commits for context
+
+4. Load context into working memory:
+   - Gaming community: 300 players, 40 teams
+   - Firebase v11 modular imports ONLY
+   - Revealing module pattern for all components
+   - Direct subscriptions (no state warehouse)
+   - Sacred 3x3 grid is immutable
+   - Performance: Hot paths < 50ms, Cold paths < 2s
+
+5. Confirm understanding:
+   "I'm ready to work on MatchScheduler. I see we're on [Phase X.Y]. 
+   The next task is [specific task]. Should we continue from there?"
 ```
 
-### QPLAN
-When I type "qplan", this means:
+### QPLAN - Architecture Planning
+When I type "qplan [feature]", this means:
 ```
-Analyze MatchScheduler codebase and determine whether your plan:
-- is consistent with gaming community workflows
-- follows Firebase v11 direct subscription patterns
-- maintains hot path performance requirements
-- preserves sacred 3x3 grid layout
-- introduces minimal changes to proven patterns
+PLANNING CHECKLIST:
+1. Verify roadmap context:
+   - What phase/slice does this belong to?
+   - Are all dependencies from previous slices complete?
+   - What are the test criteria for this feature?
+
+2. Architecture alignment check:
+   - Does this follow revealing module pattern?
+   - Are we using Firebase v11 direct subscriptions?
+   - Does this maintain hot path performance (<50ms)?
+   - Does this preserve the sacred 3x3 grid?
+   - Are we avoiding complex state management?
+
+3. Gaming workflow analysis:
+   - How does this fit team leader workflows?
+   - Does this support Discord communication patterns?
+   - Will this work under tournament deadline pressure?
+
+4. Technical approach:
+   - List 2-3 implementation approaches if applicable
+   - Identify hot paths vs cold paths
+   - Note which panels/components are affected
+   - Specify Firebase collections/documents needed
+
+5. Output a clear plan:
+   "Here's how we should implement [feature]:
+   - Architecture: [pattern to use]
+   - Components affected: [list]
+   - Firebase operations: [list]
+   - Performance considerations: [hot/cold paths]
+   - Key decisions: [any tradeoffs]"
 ```
 
-### QCODE
-When I type "qcode", this means:
+### QCODE - Implementation
+When I type "qcode [task]", this means:
 ```
-Implement your plan following MatchScheduler patterns:
-- Use revealing module pattern for components
-- Implement Firebase v11 direct subscriptions
-- Ensure hot paths complete in < 50ms
-- Use rem units for all sizing
-- Test with Firebase Emulator Suite
-- Run tests to ensure gaming workflows still work
+IMPLEMENTATION RULES:
+1. Code patterns to follow:
+   - Revealing module pattern for ALL components
+   - Firebase v11 modular imports (import { doc } from 'firebase/firestore')
+   - Direct component subscriptions to Firebase
+   - Event bus ONLY for coordination, not data
+   - rem units for ALL sizing (never pixels except borders)
+
+2. Performance requirements:
+   - Hot paths: Optimistic updates with rollback
+   - Cold paths: Clear loading states
+   - Pre-cache data where possible
+   - Clean up listeners properly
+
+3. Gaming domain language:
+   - Use: team, roster, availability, comparison, tournament
+   - Time slots: 'ddd_hhmm' format (e.g., 'mon_1900')
+   - Player limits: 2 teams max, roster size constraints
+
+4. Quality standards:
+   - Self-documenting code (minimal comments)
+   - Test data uses realistic gaming scenarios
+   - Error messages in gaming context
+   - Preserve sacred 3x3 grid structure
+
+5. Before writing code:
+   - Confirm this matches the plan
+   - Verify it's the next roadmap task
+   - Check no simpler solution exists
 ```
 
-### QCHECK
+### QCHECK - Code Review
 When I type "qcheck", this means:
 ```
-You are a SKEPTICAL senior developer familiar with gaming community needs.
-Perform this analysis for every MAJOR code change (skip minor changes):
+SKEPTICAL REVIEW MODE:
+1. Architecture review:
+   ✓ Uses revealing module pattern?
+   ✓ Direct Firebase subscriptions (no middleware)?
+   ✓ Event bus only for coordination?
+   ✓ No complex state management?
+   ✓ Sacred grid preserved?
 
-1. MatchScheduler Writing Functions Best Practices checklist.
-2. MatchScheduler Writing Tests Best Practices checklist.
-3. Gaming community workflow impact analysis.
-4. Performance requirements validation (hot vs cold paths).
-5. Sacred 3x3 grid layout preservation check.
+2. Performance validation:
+   ✓ Hot paths < 50ms with optimistic updates?
+   ✓ Cold paths have loading states?
+   ✓ Listeners cleaned up properly?
+   ✓ Data cached appropriately?
+
+3. Gaming workflow check:
+   ✓ Makes sense for team leaders?
+   ✓ Handles tournament deadlines?
+   ✓ Works with Discord flow?
+   ✓ Scales to 300 players?
+
+4. Code quality check:
+   ✓ Firebase v11 imports only?
+   ✓ rem units for all sizing?
+   ✓ Gaming vocabulary used?
+   ✓ Error messages helpful?
+
+5. Testing check:
+   ✓ Has test criteria from roadmap?
+   ✓ Tests use realistic data?
+   ✓ Hot paths tested for performance?
+
+Output specific issues found and fixes applied.
 ```
 
 ### QCHECKF
@@ -276,6 +374,47 @@ Perform this analysis for every MAJOR test you added or edited:
 1. MatchScheduler Writing Tests Best Practices checklist.
 2. Gaming community realistic data usage check.
 3. Firebase Emulator Suite integration validation.
+```
+
+### QSTATUS - Progress Check
+When I type "qstatus", this means:
+```
+Provide current project status:
+1. Current Phase: [X] - [Name] ([% complete])
+2. Current Slice: [X.Y] - [Name] 
+3. Tasks completed today: [list]
+4. Next task: [specific item from roadmap]
+5. Blockers: [any issues]
+6. Hot paths working: [yes/no]
+7. Tests passing: [yes/no]
+```
+
+### QDEBUG - Troubleshooting
+When I type "qdebug [issue]", this means:
+```
+DEBUG PROCESS:
+1. Identify the component/module affected
+2. Check Firebase console for errors
+3. Verify listeners are attached
+4. Check network tab for failed requests
+5. Validate data structure matches schema
+6. Test in isolation
+7. Provide:
+   - Root cause
+   - Fix recommendation
+   - Prevention strategy
+```
+
+### QROADMAP - Update Progress
+When I type "qroadmap", this means:
+```
+Update PROJECT_ROADMAP.md:
+1. Mark completed tasks with [x]
+2. Update phase progress percentage
+3. Add any new decisions to decision log
+4. Note any blockers discovered
+5. Update "Last Updated" date
+6. Commit with message: "docs(roadmap): update Phase X.Y progress"
 ```
 
 ### QUX

@@ -21,6 +21,7 @@
         import { getFirestore } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
         import { getAuth } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
         import { getStorage } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
+        import { getFunctions, connectFunctionsEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
         
         // Firebase configuration
         const firebaseConfig = {
@@ -37,9 +38,23 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
         const storage = getStorage(app);
+        const functions = getFunctions(app);
+        
+        // Connect to emulators in development
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            try {
+                connectFunctionsEmulator(functions, 'localhost', 5001);
+                console.log('🔗 Connected to Functions emulator on localhost:5001');
+            } catch (error) {
+                console.warn('⚠️ Failed to connect to Functions emulator:', error);
+                console.warn('Error details:', error);
+            }
+        } else {
+            console.log('ℹ️ Not localhost - using production Functions');
+        }
         
         // Make globally available
-        window.firebase = { app, db, auth, storage };
+        window.firebase = { app, db, auth, storage, functions };
     </script>
 </head>
 <body>
@@ -154,6 +169,10 @@
     </div>
     
     <!-- JavaScript Modules -->
+    <script src="js/services/AuthService.js"></script>
+    <script src="js/components/ToastService.js"></script>
+    <script src="js/components/UserProfile.js"></script>
+    <script src="js/components/ProfileModal.js"></script>
     <script src="js/app.js" type="module"></script>
 </body>
 </html>

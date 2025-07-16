@@ -6,9 +6,13 @@ initializeApp();
 
 // Import Cloud Functions
 const { processLogoUpload } = require('./logo-processing');
+const { createProfile, updateProfile, getProfile } = require('./user-profile');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
+exports.createProfile = createProfile;
+exports.updateProfile = updateProfile;
+exports.getProfile = getProfile;
 
 // Simple test function
 exports.helloWorld = onRequest((request, response) => {

@@ -21,11 +21,22 @@ const MatchSchedulerApp = (function() {
             return;
         }
         
+        _initializeComponents();
         _setupEventListeners();
-        _checkAuthState();
         _initialized = true;
         
         console.log('✅ MatchScheduler initialized successfully');
+    }
+    
+    // Initialize components
+    function _initializeComponents() {
+        // Initialize UserProfile component in top-left panel
+        UserProfile.init('panel-top-left');
+        
+        // Initialize ToastService for notifications
+        ToastService.init();
+        
+        console.log('🧩 Components initialized');
     }
     
     // Setup event listeners
@@ -43,34 +54,6 @@ const MatchSchedulerApp = (function() {
         }
     }
     
-    // Check authentication state
-    function _checkAuthState() {
-        const { auth } = window.firebase;
-        
-        auth.onAuthStateChanged((user) => {
-            if (user) {
-                _currentUser = user;
-                _loadUserData();
-                console.log('👤 User authenticated:', user.email);
-            } else {
-                _currentUser = null;
-                _showAuthUI();
-                console.log('🔒 User not authenticated');
-            }
-        });
-    }
-    
-    // Load user data
-    function _loadUserData() {
-        // TODO: Implement user data loading
-        console.log('📊 Loading user data...');
-    }
-    
-    // Show authentication UI
-    function _showAuthUI() {
-        // TODO: Implement authentication UI
-        console.log('🔐 Showing authentication UI...');
-    }
     
     // Event handlers
     function _handleSettingsClick() {
@@ -83,9 +66,17 @@ const MatchSchedulerApp = (function() {
         // TODO: Implement save functionality
     }
     
+    // Cleanup function
+    function cleanup() {
+        if (typeof UserProfile !== 'undefined') {
+            UserProfile.cleanup();
+        }
+    }
+    
     // Public API
     return {
         init: init,
+        cleanup: cleanup,
         getCurrentUser: () => _currentUser,
         getSelectedTeam: () => _selectedTeam
     };
@@ -96,3 +87,6 @@ document.addEventListener('DOMContentLoaded', MatchSchedulerApp.init);
 
 // Initialize when Firebase is ready (fallback)
 window.addEventListener('load', MatchSchedulerApp.init);
+
+// Cleanup when page unloads
+window.addEventListener('beforeunload', MatchSchedulerApp.cleanup);
