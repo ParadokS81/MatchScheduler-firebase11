@@ -7,15 +7,19 @@ const ToastService = (function() {
     // Private variables
     let _container = null;
     let _toastCounter = 0;
+    let _initialized = false;
     
     // Initialize toast service
     function init() {
+        if (_initialized) return;
+        
         _container = document.getElementById('toast-container');
         if (!_container) {
             console.error('❌ ToastService: Container not found');
             return;
         }
         
+        _initialized = true;
         console.log('🍞 ToastService initialized');
     }
     

@@ -19,8 +19,14 @@ const UserProfile = (function() {
             return;
         }
         
-        // Initial render (will be overridden by auth state)
-        _renderGuestMode();
+        // Show loading state initially instead of guest mode
+        _panel.innerHTML = `
+            <div class="panel-content">
+                <div class="flex items-center justify-center h-full">
+                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                </div>
+            </div>
+        `;
         
         // Setup auth state listener
         _setupAuthListener();
@@ -48,6 +54,12 @@ const UserProfile = (function() {
         
         console.log('🔗 Setting up auth listener...');
         _authUnsubscribe = AuthService.onAuthStateChange(async (user) => {
+            // Skip if user state hasn't actually changed
+            if (_currentUser === user) {
+                console.log('🔄 Auth state unchanged, skipping render');
+                return;
+            }
+            
             console.log('🔄 Auth state changed:', user ? 'authenticated' : 'guest');
             _currentUser = user;
             
@@ -58,6 +70,7 @@ const UserProfile = (function() {
                 // Load user profile from database
                 await _loadUserProfile(user.uid);
                 
+                // Only render once after profile is loaded
                 console.log('🎨 Rendering authenticated mode...');
                 _renderAuthenticatedMode();
             } else {
@@ -120,22 +133,34 @@ const UserProfile = (function() {
     function _renderAuthenticatedMode() {
         if (!_currentUser) return;
         
-        console.log('🎨 Rendering authenticated mode...');
-        console.log('📊 _userProfile:', _userProfile);
-        console.log('👤 _currentUser.displayName:', _currentUser.displayName);
         const displayName = _userProfile?.displayName || _currentUser.displayName || 'User';
-        console.log('🎯 Will display:', displayName);
+        console.log('🎯 Displaying authenticated user:', displayName);
         
         _panel.innerHTML = `
             <div class="panel-content">
                 <div class="flex items-center justify-between h-full">
-                    <p class="font-medium text-foreground text-lg">
-                        ${displayName}
-                    </p>
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
+                            ${_currentUser.photoURL ? 
+                                `<img src="${_currentUser.photoURL}" alt="Profile" class="w-full h-full rounded-full object-cover">` :
+                                `<svg class="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                                </svg>`
+                            }
+                        </div>
+                        <div class="flex-1">
+                            <div class="text-sm font-medium text-foreground">
+                                ${displayName}
+                            </div>
+                            <div class="text-xs text-muted-foreground">
+                                ${_userProfile ? _userProfile.initials : 'Setting up...'}
+                            </div>
+                        </div>
+                    </div>
                     
                     <button 
                         id="edit-profile-btn"
-                        class="bg-secondary hover:bg-secondary/90 text-secondary-foreground p-2 rounded-md transition-colors duration-200 flex items-center justify-center"
+                        class="text-muted-foreground hover:text-foreground transition-colors"
                         type="button"
                         title="Edit Profile"
                     >
@@ -148,6 +173,11 @@ const UserProfile = (function() {
         `;
         
         _attachAuthenticatedEventListeners();
+        
+        // Update TeamInfo component with user data
+        if (typeof TeamInfo !== 'undefined' && _userProfile) {
+            TeamInfo.updateUser(_currentUser, _userProfile);
+        }
     }
     
     // Attach event listeners for guest mode

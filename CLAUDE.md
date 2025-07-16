@@ -149,6 +149,95 @@ These rules ensure maintainability, safety, and developer velocity for MatchSche
 
 ---
 
+## Cache + Listener Architecture Pattern
+
+**CRITICAL: This pattern must be followed for ALL components that display real-time data**
+
+### The Pattern
+1. **TeamService** (or similar services) manage the cache:
+   - Pre-loads all data on app startup (cold path, can show loading)
+   - Provides instant access via `getTeam()`, `getUserTeams()` etc.
+   - Has `updateCachedTeam()` method for components to update cache
+   - NO listeners, NO callbacks, NO subscriptions
+
+2. **Components** manage their own Firebase listeners:
+   - Get initial data from cache (instant/hot path)
+   - Set up direct `onSnapshot` listeners for their active data
+   - Update cache when receiving real-time changes
+   - Clean up listeners on component destruction
+
+### Example Implementation
+```javascript
+// CORRECT: Component with direct Firebase listener
+const TeamInfo = (function() {
+    let _teamListener = null;
+    
+    async function _selectTeam(team) {
+        // 1. Use cached data immediately (hot path)
+        _selectedTeam = team;
+        _render();
+        
+        // 2. Set up direct listener for updates
+        const { doc, onSnapshot } = await import('firebase/firestore');
+        _teamListener = onSnapshot(
+            doc(window.firebase.db, 'teams', team.id),
+            (doc) => {
+                const teamData = doc.data();
+                _updateUI(teamData);
+                TeamService.updateCachedTeam(team.id, teamData);
+            }
+        );
+    }
+});
+
+// WRONG: Service with callbacks/subscriptions
+const TeamService = {
+    subscribeToTeam(teamId, callback) { // ❌ NO!
+        // This creates the "warehouse" pattern we're avoiding
+    }
+};
+```
+
+### Benefits
+- **Performance**: Cache gives instant loads, listeners keep data fresh
+- **Simplicity**: Each component owns its data flow
+- **Debugging**: If data is wrong, check that component's listener
+- **No middleware**: Direct Firebase → Component → UI
+
+### Common Pitfalls to AVOID
+
+1. **Creating a "helpful" service layer**:
+   ```javascript
+   // ❌ WRONG - This leads to the warehouse pattern
+   TeamService.subscribeToTeam(teamId, callback);
+   TeamService.onTeamUpdate((team) => { ... });
+   ```
+
+2. **Mixing cache and listener responsibilities**:
+   ```javascript
+   // ❌ WRONG - Service shouldn't manage listeners
+   const TeamService = {
+       _listeners: new Map(),
+       subscribeToTeam() { ... }
+   };
+   ```
+
+3. **Component-to-component data passing**:
+   ```javascript
+   // ❌ WRONG - Components shouldn't pass data
+   UserProfile.updateTeamInfo(teamData);
+   TeamInfo.receiveUserData(userData);
+   ```
+
+4. **Forgetting to update cache from listeners**:
+   ```javascript
+   // ❌ INCOMPLETE - Cache becomes stale
+   onSnapshot(doc(db, 'teams', teamId), (doc) => {
+       this.updateUI(doc.data());
+       // Missing: TeamService.updateCachedTeam()
+   });
+   ```
+
 ## Writing Functions Best Practices
 
 When evaluating whether a function you implemented is good for gaming community workflows:
@@ -274,7 +363,35 @@ PLANNING CHECKLIST:
    - Note which panels/components are affected
    - Specify Firebase collections/documents needed
 
-5. Output a clear plan:
+5. CRITICAL: Data Flow Architecture (MUST SPECIFY):
+   - Cache Strategy:
+     * What data is pre-loaded into cache?
+     * When/how is cache updated?
+     * Which operations use cache-first pattern?
+   - Listener Strategy:
+     * Which components have direct Firebase listeners?
+     * What specific documents/collections do they listen to?
+     * How do listeners coordinate with cache?
+   - Example Pattern:
+     ```javascript
+     // Component gets initial data from cache (instant)
+     const team = TeamService.getTeam(teamId); // From cache
+     
+     // Component sets up its own listener for updates
+     const unsubscribe = onSnapshot(doc(db, 'teams', teamId), (doc) => {
+         // Update UI and notify cache
+         this.updateUI(doc.data());
+         TeamService.updateCachedTeam(teamId, doc.data());
+     });
+     ```
+
+6. Firebase Implementation Details:
+   - Where do Firebase imports live?
+   - How does component handle Firebase not ready?
+   - What's the initialization sequence?
+   - Error recovery strategy?
+
+7. Output a clear plan:
    "Here's how we should implement [feature]:
    - Architecture: [pattern to use]
    - Components affected: [list]
@@ -293,14 +410,21 @@ IMPLEMENTATION RULES:
    - Direct component subscriptions to Firebase
    - Event bus ONLY for coordination, not data
    - rem units for ALL sizing (never pixels except borders)
+   
+2. CRITICAL: Cache + Listener Pattern (see section above):
+   - Services manage cache ONLY (no listeners/callbacks)
+   - Components get data from cache first (instant)
+   - Components set up their own Firebase listeners
+   - Listeners update cache when data changes
+   - NEVER create service.subscribeToX() methods
 
-2. Performance requirements:
+3. Performance requirements:
    - Hot paths: Optimistic updates with rollback
    - Cold paths: Clear loading states
    - Pre-cache data where possible
    - Clean up listeners properly
 
-3. Gaming domain language:
+4. Gaming domain language:
    - Use: team, roster, availability, comparison, tournament
    - Time slots: 'ddd_hhmm' format (e.g., 'mon_1900')
    - Player limits: 2 teams max, roster size constraints

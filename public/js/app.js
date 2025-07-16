@@ -33,6 +33,9 @@ const MatchSchedulerApp = (function() {
         // Initialize UserProfile component in top-left panel
         UserProfile.init('panel-top-left');
         
+        // Initialize TeamInfo component in middle-left panel
+        TeamInfo.init('panel-middle-left');
+        
         // Initialize ToastService for notifications
         ToastService.init();
         
@@ -70,6 +73,12 @@ const MatchSchedulerApp = (function() {
     function cleanup() {
         if (typeof UserProfile !== 'undefined') {
             UserProfile.cleanup();
+        }
+        if (typeof TeamInfo !== 'undefined') {
+            TeamInfo.cleanup();
+        }
+        if (typeof TeamService !== 'undefined') {
+            TeamService.cleanup();
         }
     }
     
