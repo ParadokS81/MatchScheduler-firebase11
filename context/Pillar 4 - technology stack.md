@@ -97,3 +97,69 @@ To enforce architectural integrity and prevent repeating past mistakes, the foll
 - **Older Firebase Versions:** Any version below v11 is not to be used. All code must use the modular `import { function } from 'firebase/...'` syntax
 - **CSS-in-JS Libraries:** No Styled Components, Emotion, etc. All styling must be done with Tailwind CSS
 - **jQuery:** This library is not needed and should not be included. Modern Vanilla JS provides all the necessary DOM manipulation capabilities
+
+### Icon Libraries
+
+**Decision:** Use open-source SVG icon libraries compatible with our vanilla JS approach.
+
+**Available Options:**
+
+- **Lucide Icons** (https://lucide.dev/)
+  - Default icon set for shadcn/ui
+  - 1450+ icons in consistent style
+  - Clean, minimalist design
+  - Each icon available as copyable SVG
+
+- **Heroicons** (https://heroicons.com/)
+  - Created by Tailwind CSS team
+  - Available in two sizes: 20px (small) and 24px (medium)
+  - Both outline and solid variants
+  - Optimized for use with Tailwind utilities
+
+**Implementation Pattern:**
+
+Since we're using vanilla JavaScript (not React), use the direct SVG copy/paste approach:
+
+```html
+<!-- Example: Lucide "Users" icon for team -->
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"></path>
+</svg>
+
+<!-- Example: Heroicons "Calendar" icon for availability -->
+<svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+</svg>
+```
+
+**Styling Icons:**
+
+Icons inherit color from CSS `color` property, making them easy to style with Tailwind:
+
+```html
+<!-- Tailwind color utilities -->
+<svg class="w-5 h-5 text-sky-500">...</svg>
+<svg class="w-5 h-5 text-slate-400 hover:text-slate-600">...</svg>
+
+<!-- Size utilities (use Tailwind's width/height) -->
+<svg class="w-4 h-4">...</svg>  <!-- 16px -->
+<svg class="w-5 h-5">...</svg>  <!-- 20px -->
+<svg class="w-6 h-6">...</svg>  <!-- 24px -->
+```
+
+**Best Practices:**
+
+1. **Consistency:** Stick to one icon library per project for visual consistency
+2. **Accessibility:** Always include descriptive titles or aria-labels for important icons
+3. **Performance:** SVGs are inline, no additional HTTP requests
+4. **Customization:** Use `currentColor` for stroke/fill to inherit text color
+
+**Common Icons for MatchScheduler:**
+
+- **Teams:** Users, UserGroup, People icons
+- **Calendar:** Calendar, Clock, Schedule icons  
+- **Settings:** Cog, Settings, Gear icons
+- **Navigation:** ChevronLeft/Right, Menu, X icons
+- **Actions:** Plus, Trash, Edit, Check icons
+- **Status:** CheckCircle, XCircle, AlertCircle icons

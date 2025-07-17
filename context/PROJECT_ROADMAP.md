@@ -1,349 +1,212 @@
-# MatchScheduler Project Implementation Roadmap
+# MatchScheduler Implementation Roadmap v3
 
-## 🎯 Purpose
-This document serves as the **single source of truth** for project progress, implementation phases, and AI collaboration workflow. It ensures continuity across sessions and provides clear direction for both human project lead and AI assistants.
+## Overview
+Vertical slice implementation strategy. Each slice delivers complete working functionality.
+Detailed specifications in `/context/slices/[slice-name].md`
 
----
+## Sequencing Rationale
+- **Part 1:** Can't do anything without authenticated users and teams
+- **Part 2:** Core value prop - individual then team availability  
+- **Part 3:** Network effect features require Part 2 data
+- **Part 4:** Polish after core features proven
 
-## 📋 Project Status Dashboard
-
-### Current Phase: **Phase 1 - Core Onboarding Journey ✅ COMPLETE**
-### Current Slice: **Phase 1.2 - Team Creation ✅ COMPLETE**
-### Next Phase: **Complete Phase 1.2, then Phase 2.1 - Individual Availability**
-### Overall Progress: **[▓▓▓▓▓░░░░░] 50%**
-
-### Environment Status:
-- ✅ Firebase Project: `matchscheduler-dev`
-- ✅ Development Setup: WSL + Cursor + Claude Code
-- ✅ Emulator Strategy: Hybrid (Functions/Hosting local, Firestore live)
-- ✅ Sacred 3x3 Grid: Implemented
-- ✅ OKLCH Theme: Configured
+## Performance Requirements
+- **Part 1:** Authentication < 2s (cold path)
+- **Part 2:** Availability updates < 50ms (hot path)
+- **Part 3:** Comparison < 50ms setup, < 2s results
+- **Part 4:** Maintain all performance
 
 ---
 
-## 🏗️ Implementation Phases
+## Part 1: Foundation & Onboarding
 
-### Phase 0: Foundation ✅ COMPLETE
-**Goal:** Set up the non-negotiable project shell
+### ✅ Slice 1.1: Authentication & Profile
+**Status:** Complete  
+**User Value:** Users can sign in with Google and manage their profile  
+**PRD Sections:** 1.2, 2.1, 4.4.1  
+**Components:** AuthService, UserProfile, EditProfileModal  
 
-#### Completed Tasks:
-- [x] Firebase project initialization
-- [x] WSL development environment with Node.js 20
-- [x] Package.json with Firebase v11 dependencies
-- [x] Sacred 3x3 grid HTML structure
-- [x] OKLCH color system in CSS
-- [x] Development scripts (`./dev.sh`)
-- [x] Basic revealing module pattern in app.js
-- [x] Logo processing Cloud Function (v2 syntax)
+### ✅ Slice 1.2a: Create/Join Team Modal
+**Status:** Complete  
+**User Value:** Users can create a new team or join existing team  
+**PRD Sections:** 4.3.1, 2.2  
+**Components:** CreateJoinTeamModal  
+**Note:** Unified modal complete, team creation working
 
-#### Key Files Created:
-- `/public/index.html` - Sacred 3x3 grid layout
-- `/src/css/input.css` - OKLCH theme configuration
-- `/public/js/app.js` - Application entry point
-- `/functions/logo-processing.js` - Cloud Function for team logos
-- `./dev.sh` - One-command development startup
+### ✅ Slice 1.2b: Team Management Drawer
+**Status:** Complete  
+**User Value:** Team members can access management options via drawer  
+**PRD Sections:** 4.3.4, 6.4  
+**Components:** TeamManagementDrawer  
+**Scope:** Drawer UI only, role-based views, animations
 
----
-
-### Phase 1: Core Onboarding Journey ✅ IN PROGRESS
-**Goal:** Allow a brand new user to become a team leader
-
-#### Slice 1.1: Guest Mode & Authentication
-**Status:** ✅ COMPLETE
-**Dependencies:** None
-**Key Features:**
-- [x] Guest mode exploration
-- [x] Google OAuth integration  
-- [x] Authentication state management
-- [x] User profile creation flow
-- [x] Edit profile modal with Discord linking
-
-**Implementation Checklist:**
-- [x] Create `AuthService` module
-- [x] Implement Google Sign-In UI
-- [x] Handle auth state changes
-- [x] Create profile creation modal
-- [x] Write `createProfile` Cloud Function
-- [x] Add profile data to Firestore
-- [x] Add edit profile modal functionality
-- [x] Add Discord username/ID manual linking
-- [x] Update Cloud Functions for Discord data
-
-**Test Criteria:**
-- [x] User can browse as guest
-- [x] User can sign in with Google
-- [x] Profile is created on first sign-in
-- [x] User sees their name in UI
-- [x] User can edit their profile
-- [x] User can link Discord account manually
-
-**Completed Components:**
-- `/public/js/services/AuthService.js` - Firebase v11 Google OAuth with proper emulator connection + updateProfile method
-- `/public/js/components/UserProfile.js` - Guest/authenticated state management with database profile loading + edit button
-- `/public/js/components/ProfileModal.js` - Profile creation/edit modal with Player Nick field + Discord linking
-- `/public/js/components/ToastService.js` - Notification system for user feedback
-- `/functions/user-profile.js` - Server-side profile validation and creation + Discord data handling
-- Database collections: `users` (with Discord fields), `eventLog` with proper event tracking
-
-#### Slice 1.2: Team Creation
-**Status:** 🔄 IN PROGRESS (Visual cleanup complete, drawer implementation pending)
-**Dependencies:** Slice 1.1 (Authentication)
-**Key Features:**
-- [x] Unified onboarding modal
-- [x] Team creation form
-- [x] Join code generation
-- [x] Team leader permissions
-
-**Implementation Checklist:**
-- [x] Create `TeamService` module
-- [x] Build onboarding modal component
-- [x] Implement team creation form
-- [x] Write `createTeam` Cloud Function
-- [x] Update user's team membership
-- [x] Display team info in left panel
-
-**Test Criteria:**
-- [x] User can create a team
-- [x] Join code is generated
-- [x] User becomes team leader
-- [x] Team info displays correctly
-
-**Completed Components:**
-- `/public/js/services/TeamService.js` - Firebase team operations with caching strategy
-- `/public/js/components/OnboardingModal.js` - Unified create/join team modal
-- `/public/js/components/TeamInfo.js` - Real-time team display with switching
-- `/functions/team-operations.js` - Server-side team creation and join validation
-- Database collections: `teams` (with roster), `eventLog` with team lifecycle events
+### 📅 Slice 1.2c: Team Actions Implementation  
+**Status:** Not Started  
+**User Value:** Management buttons actually perform their actions  
+**PRD Sections:** 4.3.2, 4.3.3  
+**Components:** Copy function, Leave team, Regenerate code  
+**Scope:** Wire up drawer buttons (except modals)
 
 ---
 
-### Phase 2: Core Product Value 📅 PLANNED
-**Goal:** Enable team scheduling functionality
+## Part 2: Core Scheduling
 
-#### Slice 2.1: Individual Availability
-**Status:** Not Started
-**Dependencies:** Phase 1 Complete
-**Key Features:**
-- [ ] Availability grid interaction
-- [ ] Week navigation
-- [ ] Grid tools (Add Me, Clear)
-- [ ] Availability persistence
+### 📅 Slice 2.1: Basic Availability Grid
+**Status:** Not Started  
+**User Value:** Users can see and click individual time slots  
+**PRD Sections:** 4.1.1, 4.1.2 (structure only)  
+**Components:** AvailabilityGrid, WeekDisplay  
+**Scope:** Grid rendering, single-slot click selection, week navigation
 
-#### Slice 2.2: Team View & Joining
-**Status:** Not Started
-**Dependencies:** Slice 2.1
-**Key Features:**
-- [ ] Join team with code
-- [ ] Multi-user availability display
-- [ ] Real-time updates
-- [ ] Team roster display
+### 📅 Slice 2.2: Personal Availability Setting
+**Status:** Not Started  
+**User Value:** Users can add/remove themselves from time slots  
+**PRD Sections:** 4.1.3 (single click only), 4.1.5  
+**Components:** AvailabilityGrid (enhanced)  
+**Scope:** Add me/Remove me buttons, optimistic updates, Firebase sync
 
----
+### 📅 Slice 2.3: Advanced Selection
+**Status:** Not Started  
+**User Value:** Users can select multiple slots efficiently  
+**PRD Sections:** 4.1.3 (multi-select methods)  
+**Components:** SelectionManager  
+**Scope:** Drag selection, header clicks, shift+click, select all
 
-### Phase 3: Power Features 🔮 FUTURE
-**Goal:** Administrative and comparison features
+### 📅 Slice 2.4: Templates & Grid Tools
+**Status:** Not Started  
+**User Value:** Users can save and reuse availability patterns  
+**PRD Sections:** 4.1.4  
+**Components:** GridTools, TemplateManager  
+**Scope:** Save/load templates, grid tools panel
 
-#### Slice 3.1: Team Management
-- Team management drawer
-- Leader permissions
-- Member management
+### 📅 Slice 2.5: Team View Display
+**Status:** Not Started  
+**User Value:** Team members can see who's available when  
+**PRD Sections:** 4.1.2 (Team View Mode)  
+**Components:** PlayerDisplay, OverflowModal  
+**Scope:** Show initials/avatars, handle 4+ players, real-time updates
 
-#### Slice 3.2: Team Comparison
-- Browse teams
-- Favorites system
-- Comparison view
+### 📅 Slice 2.6: Team Joining Flow
+**Status:** Not Started  
+**User Value:** Users can join teams via invite code  
+**PRD Sections:** 2.2 (Path A), 4.3.1  
+**Components:** JoinTeamModal  
+**Scope:** Enter code, validate, join team, show success
 
----
-
-## 🛠️ AI Collaboration Workflow
-
-### Starting a New Session
-
-1. **Open CLAUDE.md** - Review shortcuts and guidelines
-2. **Open PROJECT_ROADMAP.md** - Check current phase and next tasks
-3. **Start with context**: 
-   ```
-   I'm working on MatchScheduler Phase X, Slice Y.
-   Current status: [describe what's complete]
-   Next task: [specific task from checklist]
-   ```
-
-### During Implementation
-
-1. **Use shortcuts**:
-   - `qnew` - Load best practices
-   - `qplan` - Plan implementation approach
-   - `qcode` - Execute implementation
-   - `qcheck` - Validate code quality
-
-2. **Test incrementally** - After each checklist item
-3. **Update this document** - Mark tasks complete
-4. **Commit meaningful chunks** - Use `qgit` for commits
-
-### Ending a Session
-
-1. **Update status** in this document
-2. **Document blockers** or decisions needed
-3. **Note the next task** for easy resumption
-4. **Commit all changes**
+### 📅 Slice 2.7: Multi-Team Support
+**Status:** Not Started  
+**User Value:** Users can switch between their teams  
+**PRD Sections:** 2.4  
+**Components:** TeamSwitcher  
+**Scope:** Team buttons, instant switching, cache management
 
 ---
 
-## 📊 Git Strategy
+## Part 3: Team Coordination
 
-### Branch Structure
-- `main` - Stable, tested features only
-- `dev` - Active development
-- `feature/phase-X-slice-Y` - Specific implementation branches
+### 📅 Slice 3.1: Team Browser
+**Status:** Not Started  
+**User Value:** Users can browse all active teams  
+**PRD Sections:** 4.2.1 (bottom panel only)  
+**Components:** TeamBrowser  
+**Scope:** List teams, search, show basic info
 
-### Commit Convention
-```
-feat(phase-1): implement Google OAuth integration
-fix(availability): correct timezone handling
-docs(roadmap): update Phase 1 progress
-```
+### 📅 Slice 3.2: Favorites System
+**Status:** Not Started  
+**User Value:** Users can star teams for quick access  
+**PRD Sections:** 4.2.1 (middle panel)  
+**Components:** FavoritesPanel  
+**Scope:** Star/unstar teams, favorites list, localStorage
 
-### Milestone Tags
-- `v0.1.0` - Phase 1 Complete (Basic Onboarding)
-- `v0.2.0` - Phase 2 Complete (Core Scheduling)
-- `v1.0.0` - Phase 3 Complete (Full Feature Set)
+### 📅 Slice 3.3: Comparison Filters
+**Status:** Not Started  
+**User Value:** Users can set minimum player requirements  
+**PRD Sections:** 4.2.1 (top panel)  
+**Components:** FilterPanel  
+**Scope:** Min player dropdowns for both teams
 
----
+### 📅 Slice 3.4: Basic Comparison
+**Status:** Not Started  
+**User Value:** Teams can see matching time slots  
+**PRD Sections:** 4.2.2, 4.2.3  
+**Components:** ComparisonEngine  
+**Scope:** Compare button, calculate matches, show results
 
-## 🎓 Learning Checkpoints
+### 📅 Slice 3.5: Comparison Details
+**Status:** Not Started  
+**User Value:** Users can see who's available in matching slots  
+**PRD Sections:** 4.2.4, 4.2.6  
+**Components:** ComparisonModal  
+**Scope:** Click match slot, show both rosters, contact info
 
-### After Each Slice:
-1. **Code Review** - Use Cursor to review implementation
-2. **Pattern Recognition** - What patterns worked well?
-3. **Performance Check** - Does it meet PRD requirements?
-4. **User Test** - Can you complete the user journey?
-5. **Document Learnings** - Add notes below
+### 📅 Slice 3.6: Leader Management
+**Status:** Not Started  
+**User Value:** Leaders can remove players  
+**PRD Sections:** 4.3.3  
+**Components:** KickPlayerModal  
+**Scope:** Select players, confirm removal
 
-### Learning Notes:
-<!-- Add your discoveries and insights here -->
-- 
-
----
-
-## 🚨 Common Pitfalls to Avoid
-
-1. **Don't skip test criteria** - Each slice must work end-to-end
-2. **Don't over-engineer** - Build only what's in the current slice
-3. **Don't forget real-time** - Test with multiple browser tabs
-4. **Don't ignore performance** - Check against PRD requirements
-5. **Don't skip commits** - Commit after each working feature
-
----
-
-## 📝 Decision Log
-
-### Major Decisions:
-1. **Hybrid Emulator Strategy** (2024-01-10)
-   - Reason: Better reflects production performance
-   - Impact: Faster development, real security rules testing
-
-2. **Vertical Slice Approach** (2024-01-10)
-   - Reason: Delivers working features incrementally
-   - Impact: Better progress visibility, easier testing
-
-<!-- Add more decisions as they're made -->
+### 📅 Slice 3.7: Leadership Transfer
+**Status:** Not Started  
+**User Value:** Leaders can pass leadership to others  
+**PRD Sections:** 4.3.3  
+**Components:** TransferLeadershipModal  
+**Scope:** Select new leader, confirm transfer
 
 ---
 
-## 🔄 Session Continuity Checklist
+## Part 4: Polish & Enhancement
 
-Before starting a new AI session, ensure:
-- [ ] This document is up to date
-- [ ] Last session's code is committed
-- [ ] Development environment is running (`./dev.sh`)
-- [ ] You know the exact next task
-- [ ] You have the relevant PRD section ready
+### 📅 Slice 4.1: Logo Upload
+**Status:** Not Started  
+**User Value:** Teams can upload custom logos  
+**PRD Sections:** 4.3.2 (Logo Management)  
+**Components:** LogoUploadModal  
+**Scope:** File selection, cropping UI, upload progress
 
-## 📞 Quick Status Check
+### 📅 Slice 4.2: Logo Display
+**Status:** Not Started  
+**User Value:** Team logos appear throughout the app  
+**PRD Sections:** 4.3.2  
+**Components:** TeamLogo component  
+**Scope:** Display in drawer, comparison view, team cards
 
-For any AI assistant, you can share:
-```
-Project: MatchScheduler (Gaming Community Scheduling)
-Current Phase: [X] - [Phase Name]
-Current Slice: [X.Y] - [Slice Name]
-Status: [% complete]
-Next Task: [Specific task from checklist]
-Blockers: [Any blockers]
-```
+### 📅 Slice 4.3: Discord OAuth
+**Status:** Not Started  
+**User Value:** Users can link Discord accounts  
+**PRD Sections:** 1.4, 4.4.1  
+**Components:** DiscordAuth  
+**Scope:** OAuth flow, store Discord data
+
+### 📅 Slice 4.4: Discord Contact
+**Status:** Not Started  
+**User Value:** Leaders can contact each other  
+**PRD Sections:** 4.2.4, 4.3.5  
+**Components:** ContactButton  
+**Scope:** Show Discord username, generate DM links
+
+### 📅 Slice 4.5: Error States
+**Status:** Not Started  
+**User Value:** Clear feedback when things go wrong  
+**PRD Sections:** 7.1-7.11  
+**Components:** ErrorBoundary, ToastSystem  
+**Scope:** Error handling, toast notifications, empty states
+
+### 📅 Slice 4.6: Performance Audit
+**Status:** Not Started  
+**User Value:** Everything feels instant  
+**PRD Sections:** 5.1-5.6  
+**Components:** All  
+**Scope:** Measure hot paths, optimize where needed
 
 ---
 
-## 🎯 Success Metrics
+## Progress Summary
+**Slices Complete:** 2.5 / 24
 
-### Phase 1 Success:
-- [ ] New user can sign up in < 30 seconds
-- [ ] Team creation takes < 1 minute
-- [ ] All PRD "First-Time User" requirements met
-
-### Phase 2 Success:
-- [ ] Availability updates in < 50ms (hot path)
-- [ ] Multi-user grid updates in real-time
-- [ ] Weekly scheduling workflow is intuitive
-
-### Phase 3 Success:
-- [ ] Team comparison loads in < 2 seconds
-- [ ] All leader tools accessible in drawer
-- [ ] 40 teams browsable without performance issues
+## Current Focus
+Ready for Slice 1.2c - Team actions implementation
 
 ---
 
-Last Updated: 2025-01-16
-Next Review: After Phase 2.1 completion
-
-## 📝 Session Notes (2025-01-16)
-
-### Phase 1.1 Completion Summary:
-- **Authentication Flow:** Complete end-to-end Google OAuth with profile creation
-- **Database Integration:** Users and event logging properly implemented
-- **UI Polish:** Clean guest/authenticated states with proper database profile loading
-- **Functions Emulator:** Properly connected to local development environment
-- **Error Handling:** Toast notifications and proper validation in place
-- **Edit Profile Modal:** Dual-mode modal for profile creation and editing
-- **Discord Integration:** Simple manual linking (username + user ID) without OAuth complexity
-
-### Phase 1.2 Implementation Summary:
-- **Team Creation Flow:** Complete unified onboarding modal with create/join paths
-- **Team Management:** Team info display with real-time updates and team switching
-- **Caching Strategy:** Pre-load all team data on app initialization per PRD 5.3
-- **Performance Optimization:** Hot path team switching using cached data
-- **Event-Driven Architecture:** Real-time listeners for user profile changes
-- **Cloud Functions:** Server-side team creation and join validation with proper error handling
-
-### Key Architectural Decisions:
-- **Firebase v11 Modular Imports:** All components use proper async imports
-- **Direct Database Profile Loading:** Auth state triggers profile fetch from Firestore
-- **Revealing Module Pattern:** All components follow consistent architectural pattern
-- **Event-Driven Updates:** User profile listener triggers automatic team refresh
-- **Caching Strategy:** All team data pre-loaded and cached for instant access
-- **Real-time Architecture:** Direct component subscriptions to Firebase changes
-
-### Performance Fixes Applied:
-- **Team Data Caching:** Implemented comprehensive caching with cache-first lookups
-- **Hot Path Optimization:** Team switching now uses cached data (< 50ms)
-- **Real-time Updates:** User profile changes trigger automatic UI refresh
-- **Firestore Timestamp Fix:** Resolved serverTimestamp() in arrays issue
-
-### Architecture Refactoring (2025-01-16 Session):
-- **Problem Identified:** Components were using callback-based TeamService subscriptions instead of direct Firebase listeners
-- **Root Cause:** QPLAN directive wasn't explicit enough about cache/listener architecture
-- **Solution Applied:** Refactored to proper architecture pattern:
-  - TeamService manages cache only (no listeners/callbacks)
-  - Components set up direct Firebase listeners
-  - Listeners update cache when receiving changes
-- **Performance Optimizations:** 
-  - Eliminated duplicate team cache loads
-  - Removed redundant auth state renders
-  - Fixed Firebase listener metadata changes causing double-firing
-  - Added guards to prevent component re-initialization
-- **CLAUDE.md Updates:** Added comprehensive Cache + Listener Architecture Pattern section
-- **Visual Improvements:** Updated TeamInfo panel to match UI mockup design
-
-### Next Session Focus:
-- **Complete Phase 1.2:** Implement team management drawer with leader controls
-- **Logo System:** Frontend implementation of logo upload modal
-- **Phase 2.1 Planning:** Begin availability grid architecture planning
+*Last Updated: 2025-01-17*

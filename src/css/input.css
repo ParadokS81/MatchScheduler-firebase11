@@ -322,3 +322,34 @@ body {
   color: oklch(0.95 0.01 220);
   backdrop-filter: blur(4px);
 }
+
+/* Team Management Drawer - Critical Animation CSS */
+.team-management-drawer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 32.5rem; /* Fixed height for proper drawer behavior */
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem 0.5rem 0 0;
+  transition: transform 300ms ease-out;
+  z-index: 30;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer-closed {
+  transform: translateY(calc(100% - 2.5rem)); /* Only header visible */
+}
+
+.drawer-open {
+  transform: translateY(0); /* Fully visible */
+}
+
+.drawer-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}

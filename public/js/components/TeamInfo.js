@@ -14,6 +14,7 @@ const TeamInfo = (function() {
     let _teamListener = null; // Direct Firebase listener for selected team
     let _userProfileListener = null;
     let _initialized = false;
+    let _drawerInstance = null;
     
     // Initialize component
     function init(panelId) {
@@ -361,7 +362,7 @@ const TeamInfo = (function() {
             `).join('');
             
             teamCard = `
-                <div class="mb-4">
+                <div class="mb-4" id="team-card-container">
                     <!-- Logo with its own frame -->
                     <div class="bg-card border border-border rounded-lg p-4 w-32 h-32 flex items-center justify-center mb-4 mx-auto">
                         <span class="text-2xl font-bold text-muted-foreground">${_selectedTeam.teamTag}</span>
@@ -426,6 +427,49 @@ const TeamInfo = (function() {
         if (copyJoinCodeBtn) {
             copyJoinCodeBtn.addEventListener('click', _handleCopyJoinCode);
         }
+        
+        // Initialize team management drawer if we have a team
+        if (_selectedTeam && _currentUser && _userProfile) {
+            _initializeDrawer();
+        }
+    }
+    
+    // Initialize team management drawer
+    function _initializeDrawer() {
+        if (!_selectedTeam || !_currentUser || !_userProfile) return;
+        
+        // Check if TeamManagementDrawer is available
+        if (typeof TeamManagementDrawer === 'undefined') {
+            console.warn('⚠️ TeamManagementDrawer not available');
+            return;
+        }
+        
+        // Find the panel content container for full width
+        const panelContent = _panel.querySelector('.panel-content');
+        if (!panelContent) {
+            console.warn('⚠️ Panel content not found');
+            return;
+        }
+        
+        // Clean up existing drawer instance
+        if (_drawerInstance) {
+            _drawerInstance.cleanup();
+            _drawerInstance = null;
+        }
+        
+        // Create new drawer instance
+        _drawerInstance = Object.create(TeamManagementDrawer);
+        _drawerInstance.init(panelContent);
+        
+        // Determine if current user is leader
+        const isLeader = _selectedTeam.playerRoster.some(
+            player => player.userId === _currentUser.uid && player.role === 'leader'
+        );
+        
+        // Update drawer with team data
+        _drawerInstance.updateTeamData(_selectedTeam, isLeader);
+        
+        console.log('🔧 Team management drawer initialized for team:', _selectedTeam.teamName);
     }
     
     // Handle join/create team
@@ -490,6 +534,13 @@ const TeamInfo = (function() {
             _userProfileListener();
             _userProfileListener = null;
             console.log('🧹 Cleaned up user profile listener');
+        }
+        
+        // Clean up drawer instance
+        if (_drawerInstance) {
+            _drawerInstance.cleanup();
+            _drawerInstance = null;
+            console.log('🧹 Cleaned up drawer instance');
         }
     }
     
