@@ -320,6 +320,14 @@ const ProfileModal = (function() {
             
             hide();
             
+            // Emit profile creation event for coordination
+            if (_mode === 'create') {
+                // Use simple event coordination as per architecture
+                window.dispatchEvent(new CustomEvent('profile-created', {
+                    detail: { user: _currentUser, profileData }
+                }));
+            }
+            
         } catch (error) {
             console.error(`❌ Profile ${_mode === 'create' ? 'creation' : 'update'} failed:`, error);
             _showError(error.message);
@@ -329,12 +337,9 @@ const ProfileModal = (function() {
     
     // Handle cancel
     function _handleCancel() {
-        // Only sign out user if they cancelled profile creation, not editing
-        if (_mode === 'create' && typeof AuthService !== 'undefined') {
-            AuthService.signOutUser().catch(error => {
-                console.error('❌ Error signing out user:', error);
-            });
-        }
+        // Don't sign out user when canceling profile creation - let them stay signed in
+        // They can create their profile later when they want to join/create a team
+        console.log('📋 Profile creation cancelled - user remains signed in');
         hide();
     }
     

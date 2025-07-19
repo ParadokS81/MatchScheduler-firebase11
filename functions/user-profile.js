@@ -163,10 +163,65 @@ exports.updateProfile = onCall(async (request) => {
     }
     
     try {
-        // Update profile
-        await db.collection('users').doc(uid).update({
-            ...updates,
-            lastLogin: FieldValue.serverTimestamp()
+        // Update profile and propagate changes to team rosters if needed
+        await db.runTransaction(async (transaction) => {
+            // STEP 1: ALL READS FIRST
+            // Get user's current profile to find their teams
+            const userRef = db.collection('users').doc(uid);
+            const userDoc = await transaction.get(userRef);
+            
+            if (!userDoc.exists) {
+                throw new Error('User profile not found');
+            }
+            
+            const userData = userDoc.data();
+            const userTeams = userData.teams || {};
+            
+            // Read all team documents if we need to update rosters
+            const teamDocs = {};
+            if (updates.initials || updates.displayName) {
+                for (const teamId of Object.keys(userTeams)) {
+                    const teamRef = db.collection('teams').doc(teamId);
+                    const teamDoc = await transaction.get(teamRef);
+                    if (teamDoc.exists) {
+                        teamDocs[teamId] = { ref: teamRef, data: teamDoc.data() };
+                    }
+                }
+            }
+            
+            // STEP 2: ALL WRITES SECOND
+            // Update user profile
+            transaction.update(userRef, {
+                ...updates,
+                lastLogin: FieldValue.serverTimestamp()
+            });
+            
+            // Update team rosters if needed
+            if (updates.initials || updates.displayName) {
+                for (const [teamId, teamInfo] of Object.entries(teamDocs)) {
+                    const playerRoster = teamInfo.data.playerRoster || [];
+                    
+                    // Find and update this user's entry in the roster
+                    const updatedRoster = playerRoster.map(player => {
+                        if (player.userId === uid) {
+                            return {
+                                ...player,
+                                ...(updates.displayName && { displayName: updates.displayName }),
+                                ...(updates.initials && { initials: updates.initials })
+                            };
+                        }
+                        return player;
+                    });
+                    
+                    // Update team document with new roster
+                    transaction.update(teamInfo.ref, {
+                        playerRoster: updatedRoster,
+                        lastActivityAt: FieldValue.serverTimestamp()
+                    });
+                }
+                
+                console.log(`✅ Updated profile and ${Object.keys(teamDocs).length} team rosters for user: ${uid}`);
+            }
         });
         
         console.log(`✅ Profile updated for user: ${uid}`);
@@ -178,12 +233,14 @@ exports.updateProfile = onCall(async (request) => {
         
     } catch (error) {
         console.error('❌ Error updating profile:', error);
+        console.error('Error details:', error.message);
+        console.error('Error code:', error.code);
         
         if (error.code === 'not-found') {
             throw new HttpsError('not-found', 'User profile not found');
         }
         
-        throw new HttpsError('internal', 'Failed to update profile');
+        throw new HttpsError('internal', `Failed to update profile: ${error.message}`);
     }
 });
 
@@ -238,9 +295,12 @@ exports.getProfile = onCall(async (request) => {
  */
 async function _logProfileCreationEvent(userId, displayName, initials) {
     try {
-        const eventId = `${new Date().toISOString().split('T')[0].replace(/-/g, '')}-${
-            new Date().toTimeString().split(' ')[0].replace(/:/g, '')
-        }-profile-created-${Math.random().toString(36).substr(2, 4)}`;
+        // PRD format: YYYYMMDD-HHMM-eventtype_XXXX (no team name for user events)
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+        const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
+        const eventId = `${dateStr}-${timeStr}-profile-created_${randomSuffix}`;
         
         const eventData = {
             eventId,

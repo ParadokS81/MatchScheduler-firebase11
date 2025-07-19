@@ -12,10 +12,10 @@ Load the core project documents to understand current state and architecture.
 
 Use the Read tool to load EXACTLY these 4 documents in order:
 
-1. `PROJECT_ROADMAP.md` - Current progress and next tasks
-2. `Pillar 2 - performance and ux.md` - Performance requirements (hot vs cold paths)
-3. `Pillar 3 - technical architecture.md` - Architecture patterns and data flow
-4. `Pillar 4 - technology stack.md` - Technical constraints and tools
+1. `context/PROJECT_ROADMAP.md` - Current progress and next tasks
+2. `context/Pillar 2 - performance and ux.md` - Performance requirements (hot vs cold paths)
+3. `context/Pillar 3 - technical architecture.md` - Architecture patterns and data flow
+4. `context/Pillar 4 - technology stack.md` - Technical constraints and tools
 
 ## Important
 

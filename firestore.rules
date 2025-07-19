@@ -5,10 +5,9 @@ service cloud.firestore {
     
     // Users collection security rules
     match /users/{userId} {
-      // READ: Any authenticated user can read user profiles (needed for team rosters)
-      // Note: For MVP, this broad access is acceptable. Future consideration: 
-      // implement privacy settings or restrict to team members only
-      allow read: if request.auth != null;
+      // READ: Anyone can read user profiles (needed for team rosters, guest browsing)
+      // Note: For MVP, this broad access is acceptable for guest browsing experience
+      allow read: if true;
       
       // CREATE: User can only create their own profile document with strict validation
       allow create: if request.auth != null
@@ -142,19 +141,20 @@ service cloud.firestore {
     
     // Teams collection security rules
     match /teams/{teamId} {
-      // READ: Authenticated users can read active non-archived teams, OR teams they're members of
-      allow read: if request.auth != null
-        && resource.data.archived == false
-        && (resource.data.active == true || isPlayerInRoster());
+      // READ: Anyone can read teams (guest browsing + authenticated users)
+      // Handles cases where archived/active fields might not exist
+      allow read: if (!('archived' in resource.data) || resource.data.archived == false);
       
       // CREATE: Allow Cloud Functions to create teams (admin SDK bypasses rules anyway)
       // Direct client creation is still blocked by validation requirements
       allow create: if request.auth != null;
       
-      // UPDATE: Only team leader can update, with field restrictions and data validation
+      // UPDATE: Team leader can update settings, or any team member for roster changes (Cloud Functions handle validation)
       allow update: if request.auth != null
         && resource != null
-        && resource.data.leaderId == request.auth.uid      // Only team leader
+        && (resource.data.leaderId == request.auth.uid     // Team leader can update settings
+            || isPlayerInRoster()                          // Team members can update for leave operations
+            || isCloudFunctionUpdate())                    // Cloud Functions can update
         && unchangedTeamCriticalFields()                   // Block critical field changes (teamId, createdAt, etc.)
         && hasValidTeamUpdateData();                       // Validate all updateable fields (teamName, divisions, etc.)
       
@@ -183,6 +183,12 @@ service cloud.firestore {
       
       function isTeamLeader() {
         return resource.data.leaderId == request.auth.uid;
+      }
+      
+      function isCloudFunctionUpdate() {
+        // Cloud Functions use admin SDK which bypasses security rules
+        // This is a placeholder for explicit Cloud Function updates
+        return false;
       }
       
       function unchangedTeamCriticalFields() {
@@ -236,6 +242,14 @@ service cloud.firestore {
           !('active' in data) || isValidActive()
         ) && (
           !('archived' in data) || isValidArchived()
+        ) && (
+          !('joinCode' in data) || isValidJoinCode()
+        ) && (
+          !('playerRoster' in data) || isValidPlayerRoster()
+        ) && (
+          !('status' in data) || isValidStatus()
+        ) && (
+          !('lastActivityAt' in data) || isValidLastActivityAt()
         );
       }
       
@@ -278,6 +292,31 @@ service cloud.firestore {
         return request.resource.data.archived is bool;
       }
       
+      function isValidJoinCode() {
+        return request.resource.data.joinCode is string
+          && request.resource.data.joinCode.size() == 6
+          && request.resource.data.joinCode.matches('^[A-Z0-9]{6}$');
+      }
+      
+      function isValidPlayerRoster() {
+        return request.resource.data.playerRoster is list
+          && request.resource.data.playerRoster.size() >= 0
+          && request.resource.data.playerRoster.size() <= (
+            ('maxPlayers' in request.resource.data) 
+              ? request.resource.data.maxPlayers 
+              : resource.data.maxPlayers
+          );
+      }
+      
+      function isValidStatus() {
+        return request.resource.data.status is string
+          && request.resource.data.status in ['active', 'archived'];
+      }
+      
+      function isValidLastActivityAt() {
+        return request.resource.data.lastActivityAt is timestamp;
+      }
+      
       function onlyAllowedTeamUpdateFields() {
         // Blacklist immutable fields - this is the production-safe pattern.
         return !('teamId' in request.resource.data)
@@ -287,8 +326,8 @@ service cloud.firestore {
     
     // Availability collection security rules
     match /availability/{documentId} {
-      // READ: Any authenticated user can read availability data (needed for team comparison feature)
-      allow read: if request.auth != null;
+      // READ: Anyone can read availability data (needed for team comparison + guest browsing)
+      allow read: if true;
       
       // WRITE: Only team members can write to their team's availability data with strict validation
       allow write: if request.auth != null
@@ -376,8 +415,8 @@ service cloud.firestore {
     
     // Event Log collection - Read-only for users (replaces rosterEvents)
     match /eventLog/{documentId} {
-      // Anyone authenticated can read (public event history for community feed)
-      allow read: if request.auth != null;
+      // Anyone can read (public event history for community feed + guest browsing)
+      allow read: if true;
       
       // Only Cloud Functions can write (no direct writes from clients)
       allow write: if false;
@@ -385,8 +424,8 @@ service cloud.firestore {
     
     // Legacy rosterEvents collection - Read-only for backward compatibility
     match /rosterEvents/{documentId} {
-      // Anyone authenticated can read (public roster history for community feed)
-      allow read: if request.auth != null;
+      // Anyone can read (public roster history for community feed + guest browsing)
+      allow read: if true;
       
       // Only Cloud Functions can write (no direct writes from clients)
       allow write: if false;

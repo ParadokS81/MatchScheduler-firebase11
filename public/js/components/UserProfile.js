@@ -10,6 +10,7 @@ const UserProfile = (function() {
     let _userProfile = null;
     let _authUnsubscribe = null;
     let _authServiceRetryCount = 0;
+    let _hasInitialRender = false;
     
     // Initialize component
     function init(panelId) {
@@ -54,14 +55,15 @@ const UserProfile = (function() {
         
         console.log('🔗 Setting up auth listener...');
         _authUnsubscribe = AuthService.onAuthStateChange(async (user) => {
-            // Skip if user state hasn't actually changed
-            if (_currentUser === user) {
+            // Skip if user state hasn't actually changed AND we've already done initial render
+            if (_currentUser === user && _hasInitialRender) {
                 console.log('🔄 Auth state unchanged, skipping render');
                 return;
             }
             
             console.log('🔄 Auth state changed:', user ? 'authenticated' : 'guest');
             _currentUser = user;
+            _hasInitialRender = true;
             
             if (user) {
                 console.log('📧 User email:', user.email);
@@ -92,8 +94,9 @@ const UserProfile = (function() {
                 _userProfile = userDoc.data();
                 console.log('📊 User profile loaded:', _userProfile.displayName);
             } else {
-                console.log('⚠️ User profile not found in database');
+                console.log('⚠️ User profile not found in database - user needs to create profile when joining team');
                 _userProfile = null;
+                // Don't auto-show profile creation - let user initiate when they want to join/create team
             }
         } catch (error) {
             console.error('❌ Error loading user profile:', error);
@@ -175,7 +178,7 @@ const UserProfile = (function() {
         _attachAuthenticatedEventListeners();
         
         // Update TeamInfo component with user data
-        if (typeof TeamInfo !== 'undefined' && _userProfile) {
+        if (typeof TeamInfo !== 'undefined') {
             TeamInfo.updateUser(_currentUser, _userProfile);
         }
     }
@@ -216,8 +219,8 @@ const UserProfile = (function() {
             const result = await AuthService.signInWithGoogle();
             
             if (result.isNewUser) {
-                // Show profile creation modal
-                _showProfileCreationModal();
+                // Don't auto-show profile creation - let user initiate when they want to join/create team
+                console.log('👋 New user signed in - profile creation available when needed');
             }
             
         } catch (error) {
@@ -241,10 +244,16 @@ const UserProfile = (function() {
     // Handle edit profile
     function _handleEditProfile() {
         console.log('✏️ Edit profile clicked');
-        if (_currentUser && _userProfile) {
-            ProfileModal.show(_currentUser, 'edit', _userProfile);
+        if (_currentUser) {
+            if (_userProfile) {
+                // Edit existing profile
+                ProfileModal.show(_currentUser, 'edit', _userProfile);
+            } else {
+                // Create new profile
+                ProfileModal.show(_currentUser, 'create');
+            }
         } else {
-            console.error('❌ Cannot edit profile - missing user or profile data');
+            console.error('❌ Cannot edit profile - user not authenticated');
         }
     }
     

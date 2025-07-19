@@ -51,10 +51,12 @@ const TeamService = (function() {
         try {
             console.log('📦 Initializing team cache...');
             
-            const { collection, getDocs } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+            const { collection, getDocs, query, where } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
             
-            // Load all active teams
-            const teamsSnapshot = await getDocs(collection(_db, 'teams'));
+            // Load all teams (security rules filter out archived ones)
+            const teamsQuery = collection(_db, 'teams');
+            
+            const teamsSnapshot = await getDocs(teamsQuery);
             
             teamsSnapshot.forEach(doc => {
                 const teamData = { id: doc.id, ...doc.data() };
@@ -69,6 +71,7 @@ const TeamService = (function() {
         } catch (error) {
             console.error('❌ Error initializing team cache:', error);
             _cacheInitialized = false;
+            // Don't throw error - cache initialization failure shouldn't break the app
         }
     }
     
@@ -304,6 +307,34 @@ const TeamService = (function() {
         return null;
     }
     
+    // Generic Cloud Function caller
+    async function callFunction(functionName, data) {
+        if (!_initialized || !_functions) {
+            throw new Error('TeamService not initialized');
+        }
+        
+        try {
+            const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+            const cloudFunction = httpsCallable(_functions, functionName);
+            const result = await cloudFunction(data);
+            
+            return result.data;
+        } catch (error) {
+            console.error(`Error calling ${functionName}:`, error);
+            
+            // Extract user-friendly error message
+            if (error.code === 'unauthenticated') {
+                return { success: false, error: 'Please sign in to continue' };
+            } else if (error.code === 'permission-denied') {
+                return { success: false, error: 'You do not have permission for this action' };
+            } else if (error.message) {
+                return { success: false, error: error.message };
+            } else {
+                return { success: false, error: 'An unexpected error occurred' };
+            }
+        }
+    }
+    
     // Public API
     return {
         init,
@@ -317,7 +348,8 @@ const TeamService = (function() {
         generateJoinCode,
         validateTeamName,
         validateTeamTag,
-        validateJoinCode
+        validateJoinCode,
+        callFunction
     };
 })();
 

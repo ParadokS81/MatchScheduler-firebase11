@@ -494,6 +494,11 @@ const OnboardingModal = (function() {
             // Hide modal
             hide();
             
+            // Emit team created event for UI coordination
+            window.dispatchEvent(new CustomEvent('team-created', {
+                detail: { team }
+            }));
+            
             // Real-time listener will automatically update TeamInfo
             
         } catch (error) {
@@ -533,6 +538,11 @@ const OnboardingModal = (function() {
             
             // Hide modal
             hide();
+            
+            // Emit team joined event for UI coordination
+            window.dispatchEvent(new CustomEvent('team-joined', {
+                detail: { team }
+            }));
             
             // Real-time listener will automatically update TeamInfo
             

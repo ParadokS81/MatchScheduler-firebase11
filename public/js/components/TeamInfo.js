@@ -29,6 +29,11 @@ const TeamInfo = (function() {
         _initialized = true;
         _render();
         
+        // Set up event listeners for coordination
+        window.addEventListener('profile-created', _handleProfileCreated);
+        window.addEventListener('team-joined', _handleTeamJoined);
+        window.addEventListener('team-created', _handleTeamCreated);
+        
         console.log('🏆 TeamInfo component initialized');
     }
     
@@ -474,7 +479,7 @@ const TeamInfo = (function() {
     
     // Handle join/create team
     function _handleJoinCreateTeam() {
-        if (!_currentUser || !_userProfile) {
+        if (!_currentUser) {
             console.error('❌ User not authenticated');
             return;
         }
@@ -485,7 +490,57 @@ const TeamInfo = (function() {
             return;
         }
         
-        OnboardingModal.show(_currentUser, _userProfile);
+        // 2-step flow: Check if user has profile first
+        if (!_userProfile) {
+            // Step 1: Show profile creation modal first
+            console.log('User has no profile - showing profile creation modal first');
+            if (typeof ProfileModal !== 'undefined') {
+                ProfileModal.show(_currentUser, 'create');
+                // Step 2 will be triggered by profile-created event listener
+            } else {
+                console.error('❌ ProfileModal not available');
+            }
+        } else {
+            // Step 2: User has profile, show onboarding modal directly
+            OnboardingModal.show(_currentUser, _userProfile);
+        }
+    }
+    
+    // Handle profile creation event for 2-step flow
+    async function _handleProfileCreated(event) {
+        console.log('Profile created event received - refreshing profile and showing onboarding modal');
+        const { user } = event.detail;
+        
+        try {
+            // Refresh user profile from Firebase to get latest data
+            if (typeof AuthService !== 'undefined') {
+                const refreshedProfile = await AuthService.getUserProfile(user.uid);
+                
+                // Update the component with the new profile data (this will set up listeners)
+                updateUser(user, refreshedProfile);
+                
+                // Show onboarding modal with refreshed profile
+                if (typeof OnboardingModal !== 'undefined') {
+                    OnboardingModal.show(user, refreshedProfile);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Failed to refresh profile after creation:', error);
+        }
+    }
+    
+    // Handle team joined event
+    function _handleTeamJoined(event) {
+        console.log('Team joined event received - refreshing team data');
+        // The Firebase listener should pick this up automatically, but let's force a refresh
+        _loadUserTeams();
+    }
+    
+    // Handle team created event  
+    function _handleTeamCreated(event) {
+        console.log('Team created event received - refreshing team data');
+        // The Firebase listener should pick this up automatically, but let's force a refresh
+        _loadUserTeams();
     }
     
     // Handle copy join code

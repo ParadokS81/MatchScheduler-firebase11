@@ -41,10 +41,14 @@
         const functions = getFunctions(app);
         
         // Connect to emulators in development
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        if (window.location.hostname === 'localhost' || 
+            window.location.hostname === '127.0.0.1' ||
+            window.location.hostname.startsWith('100.74.12.')) {
             try {
-                connectFunctionsEmulator(functions, 'localhost', 5001);
-                console.log('🔗 Connected to Functions emulator on localhost:5001');
+                // Use the same host as the current page for Functions emulator
+                const functionsHost = window.location.hostname;
+                connectFunctionsEmulator(functions, functionsHost, 5001);
+                console.log(`🔗 Connected to Functions emulator on ${functionsHost}:5001`);
             } catch (error) {
                 console.warn('⚠️ Failed to connect to Functions emulator:', error);
                 console.warn('Error details:', error);
@@ -171,6 +175,7 @@
     <!-- JavaScript Modules -->
     <script src="js/services/AuthService.js"></script>
     <script src="js/services/TeamService.js"></script>
+    <script src="js/services/ConfirmationModal.js"></script>
     <script src="js/components/ToastService.js"></script>
     <script src="js/components/UserProfile.js"></script>
     <script src="js/components/ProfileModal.js"></script>

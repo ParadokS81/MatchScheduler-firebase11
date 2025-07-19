@@ -141,6 +141,13 @@ const TeamManagementDrawer = (function() {
             .map(num => `<option value="${num}" ${num === _teamData.maxPlayers ? 'selected' : ''}>${num}</option>`)
             .join('');
         
+        const isLastMember = _teamData.playerRoster.length === 1;
+        const leaveButtonClass = isLastMember 
+            ? 'w-full px-4 py-2 bg-destructive hover:bg-destructive/90 text-destructive-foreground text-sm font-medium rounded-lg transition-colors'
+            : 'w-full px-4 py-2 bg-muted text-muted-foreground text-sm font-medium rounded-lg cursor-not-allowed';
+        const leaveButtonDisabled = isLastMember ? '' : 'disabled';
+        const leaveButtonTitle = isLastMember ? '' : 'title="Leaders cannot leave their team. Transfer leadership first or be the last member."';
+        
         return `
             <!-- Join Code Row -->
             <div class="drawer-row">
@@ -219,9 +226,9 @@ const TeamManagementDrawer = (function() {
                 </button>
                 <button 
                     id="leave-team-btn"
-                    class="w-full px-4 py-2 bg-muted text-muted-foreground text-sm font-medium rounded-lg cursor-not-allowed"
-                    disabled
-                    title="Leaders cannot leave their team"
+                    class="${leaveButtonClass}"
+                    ${leaveButtonDisabled}
+                    ${leaveButtonTitle}
                 >
                     Leave Team
                 </button>
@@ -319,47 +326,300 @@ const TeamManagementDrawer = (function() {
     
     // Handle copy join code
     async function _handleCopyJoinCode(e) {
-        const joinCode = e.target.dataset.joinCode;
-        if (!joinCode) return;
+        const joinCode = _teamData.joinCode;
+        const teamName = _teamData.teamName;
+        
+        if (!joinCode || !teamName) return;
+        
+        // Enhanced copy string per PRD
+        const copyText = `Use code: ${joinCode} to join ${teamName} at ${window.location.origin}`;
         
         try {
-            await navigator.clipboard.writeText(joinCode);
+            await navigator.clipboard.writeText(copyText);
             
             // Show success feedback
             if (typeof ToastService !== 'undefined') {
                 ToastService.showSuccess('Join code copied to clipboard!');
             }
             
-            // Temporary button feedback
-            const originalText = e.target.textContent;
-            e.target.textContent = 'Copied!';
-            e.target.classList.add('text-primary');
-            
-            setTimeout(() => {
-                e.target.textContent = originalText;
-                e.target.classList.remove('text-primary');
-            }, 1000);
-            
         } catch (error) {
             console.error('❌ Error copying to clipboard:', error);
             
-            if (typeof ToastService !== 'undefined') {
-                ToastService.showError('Failed to copy join code');
+            // Fallback for older browsers
+            try {
+                const textArea = document.createElement("textarea");
+                textArea.value = copyText;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showSuccess('Join code copied to clipboard!');
+                }
+            } catch (fallbackError) {
+                console.error('❌ Fallback copy also failed:', fallbackError);
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showError('Failed to copy join code');
+                }
             }
         }
     }
     
-    // Handle regenerate join code (placeholder)
-    function _handleRegenerateJoinCode() {
-        if (typeof ToastService !== 'undefined') {
-            ToastService.showInfo('Regenerate join code - Not implemented yet');
-        }
+    // Handle regenerate join code
+    async function _handleRegenerateJoinCode() {
+        // Show confirmation modal first
+        const modalResult = await showRegenerateModal();
+        
+        if (!modalResult.confirmed) return;
+        
+        // The modal handles the entire regenerate flow including copy
+        // No additional logic needed here
     }
     
-    // Handle max players change (placeholder)
-    function _handleMaxPlayersChange() {
-        if (typeof ToastService !== 'undefined') {
-            ToastService.showInfo('Max players update - Not implemented yet');
+    // Custom regenerate modal with copy functionality
+    async function showRegenerateModal() {
+        return new Promise((resolve) => {
+            // Create modal HTML
+            const modalHTML = `
+                <div class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div class="bg-slate-800 border border-slate-700 rounded-lg shadow-xl w-full max-w-md">
+                        <!-- Header -->
+                        <div class="flex items-center justify-between p-4 border-b border-slate-700">
+                            <h2 class="text-xl font-bold text-sky-400">Regenerate Join Code?</h2>
+                            <button id="regenerate-close-btn" class="text-slate-400 hover:text-white">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        
+                        <!-- Body -->
+                        <div class="p-6">
+                            <div id="regenerate-modal-content">
+                                <!-- Initial confirmation content -->
+                                <div class="space-y-4">
+                                    <div class="text-center">
+                                        <div class="w-16 h-16 rounded-full bg-yellow-500/20 flex items-center justify-center mx-auto mb-4">
+                                            <svg class="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.664-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                                            </svg>
+                                        </div>
+                                        <p class="text-foreground text-sm leading-relaxed">Old codes will no longer work.</p>
+                                    </div>
+                                    
+                                    <!-- Actions -->
+                                    <div class="flex gap-3 pt-2">
+                                        <button 
+                                            id="regenerate-confirm-btn"
+                                            class="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-md transition-colors"
+                                        >
+                                            Regenerate
+                                        </button>
+                                        <button 
+                                            id="regenerate-cancel-btn"
+                                            class="flex-1 px-4 py-2 bg-secondary hover:bg-secondary/90 text-secondary-foreground font-medium rounded-md transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Add modal to DOM
+            const modalContainer = document.getElementById('modal-container');
+            modalContainer.innerHTML = modalHTML;
+            modalContainer.classList.remove('hidden');
+            
+            // Attach event listeners
+            const confirmBtn = document.getElementById('regenerate-confirm-btn');
+            const cancelBtn = document.getElementById('regenerate-cancel-btn');
+            const closeBtn = document.getElementById('regenerate-close-btn');
+            
+            // Cancel/close handlers
+            const handleClose = () => {
+                modalContainer.classList.add('hidden');
+                modalContainer.innerHTML = '';
+                resolve({ confirmed: false });
+            };
+            
+            cancelBtn.addEventListener('click', handleClose);
+            closeBtn.addEventListener('click', handleClose);
+            
+            // Close on backdrop click
+            modalContainer.addEventListener('click', (e) => {
+                if (e.target === modalContainer) {
+                    handleClose();
+                }
+            });
+            
+            // Close on escape key
+            const handleKeyDown = (e) => {
+                if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', handleKeyDown);
+                    handleClose();
+                }
+            };
+            document.addEventListener('keydown', handleKeyDown);
+            
+            // Confirm handler
+            confirmBtn.addEventListener('click', async () => {
+                // Show loading state
+                confirmBtn.disabled = true;
+                confirmBtn.innerHTML = '<div class="flex items-center justify-center gap-2"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div><span>Regenerating...</span></div>';
+                
+                try {
+                    const result = await TeamService.callFunction('regenerateJoinCode', {
+                        teamId: _teamData.id
+                    });
+                    
+                    if (result.success) {
+                        // Update modal to show success with copy button
+                        showSuccessContent(result.data.joinCode);
+                    } else {
+                        // Show error and revert button
+                        if (typeof ToastService !== 'undefined') {
+                            ToastService.showError(result.error || 'Failed to regenerate code');
+                        }
+                        confirmBtn.disabled = false;
+                        confirmBtn.innerHTML = 'Regenerate';
+                    }
+                } catch (error) {
+                    console.error('Error regenerating join code:', error);
+                    if (typeof ToastService !== 'undefined') {
+                        ToastService.showError('Network error - please try again');
+                    }
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = 'Regenerate';
+                }
+            });
+            
+            // Success content with copy button
+            function showSuccessContent(newJoinCode) {
+                // Update header title
+                const headerTitle = document.querySelector('#regenerate-close-btn').parentElement.querySelector('h2');
+                headerTitle.textContent = 'New Join Code Generated!';
+                
+                const contentDiv = document.getElementById('regenerate-modal-content');
+                contentDiv.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="text-center">
+                            <div class="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
+                                <svg class="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                            </div>
+                            <div class="bg-muted rounded-lg p-4 mb-4">
+                                <div class="text-2xl font-mono font-bold text-foreground">${newJoinCode}</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Copy Actions -->
+                        <div class="flex gap-3 pt-2">
+                            <button 
+                                id="copy-new-code-btn"
+                                class="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-md transition-colors"
+                            >
+                                Copy & Close
+                            </button>
+                            <button 
+                                id="close-only-btn"
+                                class="flex-1 px-4 py-2 bg-secondary hover:bg-secondary/90 text-secondary-foreground font-medium rounded-md transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                // Add copy button handler
+                const copyBtn = document.getElementById('copy-new-code-btn');
+                const closeOnlyBtn = document.getElementById('close-only-btn');
+                
+                copyBtn.addEventListener('click', async () => {
+                    // Copy the enhanced format
+                    const copyText = `Use code: ${newJoinCode} to join ${_teamData.teamName} at ${window.location.origin}`;
+                    
+                    try {
+                        await navigator.clipboard.writeText(copyText);
+                        if (typeof ToastService !== 'undefined') {
+                            ToastService.showSuccess('Join code copied to clipboard!');
+                        }
+                    } catch (error) {
+                        // Fallback for older browsers
+                        try {
+                            const textArea = document.createElement("textarea");
+                            textArea.value = copyText;
+                            document.body.appendChild(textArea);
+                            textArea.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(textArea);
+                            if (typeof ToastService !== 'undefined') {
+                                ToastService.showSuccess('Join code copied to clipboard!');
+                            }
+                        } catch (fallbackError) {
+                            console.error('Copy failed:', fallbackError);
+                            if (typeof ToastService !== 'undefined') {
+                                ToastService.showError('Failed to copy join code');
+                            }
+                        }
+                    }
+                    
+                    // Close modal after copy
+                    document.removeEventListener('keydown', handleKeyDown);
+                    modalContainer.classList.add('hidden');
+                    modalContainer.innerHTML = '';
+                    resolve({ confirmed: true, copied: true });
+                });
+                
+                closeOnlyBtn.addEventListener('click', () => {
+                    document.removeEventListener('keydown', handleKeyDown);
+                    modalContainer.classList.add('hidden');
+                    modalContainer.innerHTML = '';
+                    resolve({ confirmed: true, copied: false });
+                });
+            }
+        });
+    }
+    
+    // Handle max players change
+    async function _handleMaxPlayersChange(event) {
+        const newValue = parseInt(event.target.value);
+        const oldValue = _teamData.maxPlayers;
+        const currentRosterSize = _teamData.playerRoster.length;
+        
+        // Optimistically update UI
+        _teamData.maxPlayers = newValue;
+        
+        // Silently validate
+        if (newValue < currentRosterSize) {
+            // Revert without any error message
+            event.target.value = oldValue;
+            _teamData.maxPlayers = oldValue;
+            return;
+        }
+        
+        try {
+            const result = await TeamService.callFunction('updateTeamSettings', {
+                teamId: _teamData.id,
+                maxPlayers: newValue
+            });
+            
+            if (!result.success) {
+                // Silently revert on error
+                event.target.value = oldValue;
+                _teamData.maxPlayers = oldValue;
+            }
+            // No success feedback - the change is visible
+        } catch (error) {
+            console.error('Error updating max players:', error);
+            // Silently revert
+            event.target.value = oldValue;
+            _teamData.maxPlayers = oldValue;
         }
     }
     
@@ -384,10 +644,54 @@ const TeamManagementDrawer = (function() {
         }
     }
     
-    // Handle leave team (placeholder)
-    function _handleLeaveTeam() {
-        if (typeof ToastService !== 'undefined') {
-            ToastService.showInfo('Leave team - Not implemented yet');
+    // Handle leave team
+    async function _handleLeaveTeam() {
+        const isLastMember = _teamData.playerRoster.length === 1;
+        const message = isLastMember 
+            ? 'You are the last member. Leaving will archive this team permanently.'
+            : 'Are you sure you want to leave this team? You can rejoin later with a join code.';
+        
+        const confirmed = await showConfirmModal({
+            title: 'Leave Team?',
+            message: message,
+            confirmText: 'Leave Team',
+            confirmClass: 'bg-destructive hover:bg-destructive/90',
+            cancelText: 'Cancel'
+        });
+        
+        if (!confirmed) return;
+        
+        const button = document.getElementById('leave-team-btn');
+        if (!button) return;
+        
+        const originalContent = button.innerHTML;
+        
+        // Show loading state
+        button.disabled = true;
+        button.innerHTML = '<div class="flex items-center justify-center gap-2"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-destructive-foreground"></div><span>Leaving...</span></div>';
+        
+        try {
+            const result = await TeamService.callFunction('leaveTeam', {
+                teamId: _teamData.id
+            });
+            
+            if (result.success) {
+                // Navigation/switching handled by parent components
+                // No toast needed - the UI change is feedback enough
+            } else {
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showError(result.error || 'Failed to leave team');
+                }
+                button.disabled = false;
+                button.innerHTML = originalContent;
+            }
+        } catch (error) {
+            console.error('Error leaving team:', error);
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showError('Network error - please try again');
+            }
+            button.disabled = false;
+            button.innerHTML = originalContent;
         }
     }
     

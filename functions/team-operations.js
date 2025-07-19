@@ -244,6 +244,10 @@ exports.createTeam = onCall(async (request) => {
 
 // Join team function
 exports.joinTeam = onCall(async (request) => {
+    console.log('🚀 joinTeam function called');
+    console.log('Request auth:', request.auth ? 'authenticated' : 'not authenticated');
+    console.log('Request data:', request.data);
+    
     try {
         // Check authentication
         if (!request.auth) {
@@ -380,11 +384,371 @@ exports.joinTeam = onCall(async (request) => {
         
     } catch (error) {
         console.error('❌ Error joining team:', error);
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
         
         if (error instanceof HttpsError) {
             throw error;
         }
         
         throw new HttpsError('internal', 'Failed to join team: ' + error.message);
+    }
+});
+
+// Regenerate join code function
+exports.regenerateJoinCode = onCall(async (request) => {
+    try {
+        // Check authentication
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        }
+        
+        const userId = request.auth.uid;
+        const { teamId } = request.data;
+        
+        // Validate input
+        if (!teamId || typeof teamId !== 'string') {
+            throw new HttpsError('invalid-argument', 'teamId is required');
+        }
+        
+        // Get team and verify user is leader
+        const teamDoc = await db.collection('teams').doc(teamId).get();
+        if (!teamDoc.exists) {
+            throw new HttpsError('not-found', 'Team not found');
+        }
+        
+        const team = teamDoc.data();
+        if (team.leaderId !== userId) {
+            throw new HttpsError('permission-denied', 'Only team leaders can regenerate join codes');
+        }
+        
+        // Generate new join code
+        const generateJoinCode = () => {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let result = '';
+            for (let i = 0; i < 6; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return result;
+        };
+        
+        let newJoinCode;
+        let attempts = 0;
+        
+        // Ensure unique join code
+        do {
+            newJoinCode = generateJoinCode();
+            const existingTeam = await db.collection('teams')
+                .where('joinCode', '==', newJoinCode)
+                .limit(1)
+                .get();
+            
+            if (existingTeam.empty) {
+                break;
+            }
+            
+            attempts++;
+            if (attempts > 10) {
+                throw new HttpsError('internal', 'Failed to generate unique join code');
+            }
+        } while (true);
+        
+        // Update team document
+        await db.collection('teams').doc(teamId).update({
+            joinCode: newJoinCode,
+            lastActivityAt: FieldValue.serverTimestamp()
+        });
+        
+        // Log event - PRD format: YYYYMMDD-HHMM-teamname-eventtype_XXXX
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+        const teamNameClean = team.teamName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+        const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
+        const eventId = `${dateStr}-${timeStr}-${teamNameClean}-joincode_regenerated_${randomSuffix}`;
+        
+        await db.collection('eventLog').doc(eventId).set({
+            eventId,
+            teamId,
+            teamName: team.teamName,
+            type: 'JOIN_CODE_REGENERATED',
+            category: 'TEAM_MANAGEMENT',
+            timestamp: FieldValue.serverTimestamp(),
+            userId,
+            player: {
+                displayName: team.playerRoster.find(p => p.userId === userId)?.displayName || 'Unknown',
+                initials: team.playerRoster.find(p => p.userId === userId)?.initials || 'UN'
+            },
+            details: {
+                oldJoinCode: team.joinCode,
+                newJoinCode
+            }
+        });
+        
+        console.log('✅ Join code regenerated successfully:', teamId);
+        
+        return {
+            success: true,
+            data: {
+                joinCode: newJoinCode
+            }
+        };
+        
+    } catch (error) {
+        console.error('❌ Error regenerating join code:', error);
+        
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        
+        throw new HttpsError('internal', 'Failed to regenerate join code: ' + error.message);
+    }
+});
+
+// Leave team function
+exports.leaveTeam = onCall(async (request) => {
+    try {
+        // Check authentication
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        }
+        
+        const userId = request.auth.uid;
+        const { teamId } = request.data;
+        
+        // Validate input
+        if (!teamId || typeof teamId !== 'string') {
+            throw new HttpsError('invalid-argument', 'teamId is required');
+        }
+        
+        // Get team and user documents
+        const [teamDoc, userDoc] = await Promise.all([
+            db.collection('teams').doc(teamId).get(),
+            db.collection('users').doc(userId).get()
+        ]);
+        
+        if (!teamDoc.exists) {
+            throw new HttpsError('not-found', 'Team not found');
+        }
+        
+        if (!userDoc.exists) {
+            throw new HttpsError('not-found', 'User not found');
+        }
+        
+        const team = teamDoc.data();
+        const user = userDoc.data();
+        
+        // Check if user is on team
+        const playerIndex = team.playerRoster.findIndex(p => p.userId === userId);
+        if (playerIndex === -1) {
+            throw new HttpsError('permission-denied', 'User is not on this team');
+        }
+        
+        const player = team.playerRoster[playerIndex];
+        const isLeader = team.leaderId === userId;
+        const isLastMember = team.playerRoster.length === 1;
+        
+        // Leaders can only leave if they're the last member
+        if (isLeader && !isLastMember) {
+            throw new HttpsError('permission-denied', 'Leaders cannot leave their team unless they are the last member');
+        }
+        
+        // Execute in transaction
+        await db.runTransaction(async (transaction) => {
+            // Remove player from team roster
+            const updatedRoster = team.playerRoster.filter(p => p.userId !== userId);
+            
+            // Update user's teams
+            const userTeams = { ...user.teams };
+            delete userTeams[teamId];
+            
+            if (isLastMember) {
+                // Archive team if last member
+                transaction.update(db.collection('teams').doc(teamId), {
+                    status: 'archived',
+                    playerRoster: updatedRoster,
+                    lastActivityAt: FieldValue.serverTimestamp()
+                });
+                
+                // Log team archived event - PRD format: YYYYMMDD-HHMM-teamname-eventtype_XXXX
+                const now = new Date();
+                const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+                const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+                const teamNameClean = team.teamName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+                const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
+                const archiveEventId = `${dateStr}-${timeStr}-${teamNameClean}-team_archived_${randomSuffix}`;
+                
+                transaction.set(db.collection('eventLog').doc(archiveEventId), {
+                    eventId: archiveEventId,
+                    teamId,
+                    teamName: team.teamName,
+                    type: 'TEAM_ARCHIVED',
+                    category: 'TEAM_MANAGEMENT',
+                    timestamp: FieldValue.serverTimestamp(),
+                    userId,
+                    player: {
+                        displayName: player.displayName,
+                        initials: player.initials
+                    },
+                    details: {
+                        reason: 'last_member_left',
+                        finalRosterSize: 0
+                    }
+                });
+            } else {
+                // Just remove player from team
+                transaction.update(db.collection('teams').doc(teamId), {
+                    playerRoster: updatedRoster,
+                    lastActivityAt: FieldValue.serverTimestamp()
+                });
+            }
+            
+            // Update user document
+            transaction.update(db.collection('users').doc(userId), {
+                teams: userTeams,
+                lastActivityAt: FieldValue.serverTimestamp()
+            });
+            
+            // Log leave event - PRD format: YYYYMMDD-HHMM-teamname-eventtype_XXXX
+            const now = new Date();
+            const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+            const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+            const teamNameClean = team.teamName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+            const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
+            const leaveEventId = `${dateStr}-${timeStr}-${teamNameClean}-left_${randomSuffix}`;
+            
+            console.log('📝 Creating leave event:', leaveEventId);
+            
+            transaction.set(db.collection('eventLog').doc(leaveEventId), {
+                eventId: leaveEventId,
+                teamId,
+                teamName: team.teamName,
+                type: 'LEFT',
+                category: 'PLAYER_MOVEMENT',
+                timestamp: FieldValue.serverTimestamp(),
+                userId,
+                player: {
+                    displayName: player.displayName,
+                    initials: player.initials
+                },
+                details: {
+                    wasLeader: isLeader,
+                    wasLastMember: isLastMember,
+                    remainingRosterSize: updatedRoster.length
+                }
+            });
+            
+            console.log('📝 Leave event transaction set, will commit with transaction');
+        });
+        
+        console.log('✅ Player left team successfully:', { teamId, userId, isLastMember });
+        
+        return {
+            success: true,
+            data: {
+                leftTeam: true,
+                teamArchived: isLastMember
+            }
+        };
+        
+    } catch (error) {
+        console.error('❌ Error leaving team:', error);
+        
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        
+        throw new HttpsError('internal', 'Failed to leave team: ' + error.message);
+    }
+});
+
+// Update team settings function
+exports.updateTeamSettings = onCall(async (request) => {
+    try {
+        // Check authentication
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        }
+        
+        const userId = request.auth.uid;
+        const { teamId, maxPlayers } = request.data;
+        
+        // Validate input
+        if (!teamId || typeof teamId !== 'string') {
+            throw new HttpsError('invalid-argument', 'teamId is required');
+        }
+        
+        if (!maxPlayers || typeof maxPlayers !== 'number' || maxPlayers < 4 || maxPlayers > 20) {
+            throw new HttpsError('invalid-argument', 'maxPlayers must be between 4 and 20');
+        }
+        
+        // Get team document
+        const teamDoc = await db.collection('teams').doc(teamId).get();
+        if (!teamDoc.exists) {
+            throw new HttpsError('not-found', 'Team not found');
+        }
+        
+        const team = teamDoc.data();
+        
+        // Check if user is team leader
+        if (team.leaderId !== userId) {
+            throw new HttpsError('permission-denied', 'Only team leaders can update team settings');
+        }
+        
+        // Validate maxPlayers is not less than current roster size
+        if (maxPlayers < team.playerRoster.length) {
+            throw new HttpsError('invalid-argument', `Max players cannot be less than current roster size (${team.playerRoster.length})`);
+        }
+        
+        // Update team document
+        await db.collection('teams').doc(teamId).update({
+            maxPlayers,
+            lastActivityAt: FieldValue.serverTimestamp()
+        });
+        
+        // Log event - PRD format: YYYYMMDD-HHMM-teamname-eventtype_XXXX
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+        const teamNameClean = team.teamName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+        const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
+        const eventId = `${dateStr}-${timeStr}-${teamNameClean}-settings_updated_${randomSuffix}`;
+        
+        await db.collection('eventLog').doc(eventId).set({
+            eventId,
+            teamId,
+            teamName: team.teamName,
+            type: 'TEAM_SETTINGS_UPDATED',
+            category: 'TEAM_MANAGEMENT',
+            timestamp: FieldValue.serverTimestamp(),
+            userId,
+            player: {
+                displayName: team.playerRoster.find(p => p.userId === userId)?.displayName || 'Unknown',
+                initials: team.playerRoster.find(p => p.userId === userId)?.initials || 'UN'
+            },
+            details: {
+                oldMaxPlayers: team.maxPlayers,
+                newMaxPlayers: maxPlayers
+            }
+        });
+        
+        console.log('✅ Team settings updated successfully:', teamId);
+        
+        return {
+            success: true,
+            data: {
+                maxPlayers
+            }
+        };
+        
+    } catch (error) {
+        console.error('❌ Error updating team settings:', error);
+        
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        
+        throw new HttpsError('internal', 'Failed to update team settings: ' + error.message);
     }
 });
