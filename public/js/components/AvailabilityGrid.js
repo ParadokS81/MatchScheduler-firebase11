@@ -12,6 +12,9 @@ const AvailabilityGrid = (function() {
     const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
     const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+    // Threshold to distinguish click from drag (in pixels)
+    const DRAG_THRESHOLD = 5;
+
     function formatTime(slot) {
         return `${slot.slice(0, 2)}:${slot.slice(2)}`;
     }
@@ -28,7 +31,31 @@ const AvailabilityGrid = (function() {
         let _selectedCells = new Set();
         let _clickHandler = null;
 
-        function _handleCellClick(cellId) {
+        // Advanced selection state
+        let _isDragging = false;
+        let _dragStartCell = null;
+        let _dragStartPos = { x: 0, y: 0 };
+        let _dragDistance = 0;
+        let _lastClickedCell = null; // For shift+click
+        let _lastValidDragCell = null; // Last valid cell during drag (within this grid)
+        let _documentMouseUpHandler = null;
+
+        // Selection change callback
+        let _onSelectionChangeCallback = null;
+
+        /**
+         * Notify listeners of selection change
+         */
+        function _notifySelectionChange() {
+            if (_onSelectionChangeCallback) {
+                _onSelectionChangeCallback();
+            }
+        }
+
+        /**
+         * Handle cell click with notification
+         */
+        function _handleCellClickWithNotify(cellId) {
             const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
             if (!cell) return;
 
@@ -39,19 +66,262 @@ const AvailabilityGrid = (function() {
                 _selectedCells.add(cellId);
                 cell.classList.add('selected');
             }
+
+            _notifySelectionChange();
+        }
+
+        /**
+         * Get all cells within a rectangular selection
+         */
+        function _getCellsInRectangle(startId, endId) {
+            const [startDay, startTime] = startId.split('_');
+            const [endDay, endTime] = endId.split('_');
+
+            const startDayIdx = DAYS.indexOf(startDay);
+            const endDayIdx = DAYS.indexOf(endDay);
+            const startTimeIdx = TIME_SLOTS.indexOf(startTime);
+            const endTimeIdx = TIME_SLOTS.indexOf(endTime);
+
+            // Get min/max for proper rectangle
+            const minDay = Math.min(startDayIdx, endDayIdx);
+            const maxDay = Math.max(startDayIdx, endDayIdx);
+            const minTime = Math.min(startTimeIdx, endTimeIdx);
+            const maxTime = Math.max(startTimeIdx, endTimeIdx);
+
+            const cells = [];
+            for (let d = minDay; d <= maxDay; d++) {
+                for (let t = minTime; t <= maxTime; t++) {
+                    cells.push(`${DAYS[d]}_${TIME_SLOTS[t]}`);
+                }
+            }
+            return cells;
+        }
+
+        /**
+         * Apply rectangular selection with toggle behavior
+         */
+        function _applyRectangularSelection(startId, endId) {
+            const cellsInRect = _getCellsInRectangle(startId, endId);
+
+            // Toggle behavior: if all are selected, deselect all; else select all
+            const allSelected = cellsInRect.every(id => _selectedCells.has(id));
+
+            cellsInRect.forEach(cellId => {
+                const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
+                if (!cell) return;
+
+                if (allSelected) {
+                    _selectedCells.delete(cellId);
+                    cell.classList.remove('selected');
+                } else {
+                    _selectedCells.add(cellId);
+                    cell.classList.add('selected');
+                }
+            });
+
+            _notifySelectionChange();
+        }
+
+        /**
+         * Update drag preview highlighting
+         */
+        function _updateDragPreview(startId, endId) {
+            _clearDragPreview();
+
+            const cellsInRect = _getCellsInRectangle(startId, endId);
+            cellsInRect.forEach(cellId => {
+                const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
+                if (cell) cell.classList.add('drag-preview');
+            });
+        }
+
+        /**
+         * Clear drag preview from all cells
+         */
+        function _clearDragPreview() {
+            const previewCells = _container?.querySelectorAll('.drag-preview');
+            previewCells?.forEach(cell => cell.classList.remove('drag-preview'));
+        }
+
+        /**
+         * Handle mouse down for drag selection
+         */
+        function _handleMouseDown(e) {
+            const cell = e.target.closest('.grid-cell');
+            if (!cell || !cell.dataset.cellId) return;
+
+            _isDragging = true;
+            _dragStartCell = cell.dataset.cellId;
+            _dragStartPos = { x: e.clientX, y: e.clientY };
+            _dragDistance = 0;
+
+            // Add dragging class to prevent text selection
+            const gridContainer = _container?.querySelector('.availability-grid-container');
+            if (gridContainer) gridContainer.classList.add('dragging');
+
+            // Start preview
+            _updateDragPreview(_dragStartCell, _dragStartCell);
+
+            // Prevent text selection during drag
+            e.preventDefault();
+        }
+
+        /**
+         * Handle mouse move for drag selection
+         */
+        function _handleMouseMove(e) {
+            if (!_isDragging || !_dragStartCell) return;
+
+            // Track drag distance
+            _dragDistance = Math.max(
+                _dragDistance,
+                Math.abs(e.clientX - _dragStartPos.x),
+                Math.abs(e.clientY - _dragStartPos.y)
+            );
+
+            // Only accept cells within THIS grid container
+            const cell = e.target.closest('.grid-cell');
+            if (!cell || !cell.dataset.cellId) return;
+
+            // Verify the cell belongs to this grid instance
+            if (!_container?.contains(cell)) return;
+
+            _lastValidDragCell = cell.dataset.cellId;
+            _updateDragPreview(_dragStartCell, cell.dataset.cellId);
+        }
+
+        /**
+         * Handle mouse up for drag selection
+         */
+        function _handleMouseUp(e) {
+            if (!_isDragging) return;
+
+            // Remove dragging class
+            const gridContainer = _container?.querySelector('.availability-grid-container');
+            if (gridContainer) gridContainer.classList.remove('dragging');
+
+            // If barely moved, treat as click (handled by click event)
+            if (_dragDistance < DRAG_THRESHOLD) {
+                _clearDragPreview();
+                _isDragging = false;
+                _dragStartCell = null;
+                _lastValidDragCell = null;
+                return;
+            }
+
+            // Use last valid drag cell (stays within this grid) or fall back to start
+            const endCell = _lastValidDragCell || _dragStartCell;
+
+            // Apply selection to all cells in rectangle
+            _applyRectangularSelection(_dragStartCell, endCell);
+            _clearDragPreview();
+
+            _isDragging = false;
+            _dragStartCell = null;
+            _lastValidDragCell = null;
+        }
+
+        /**
+         * Handle shift+click for range selection
+         */
+        function _handleShiftClick(cellId) {
+            if (!_lastClickedCell) {
+                // No previous cell, treat as normal click
+                _handleCellClickWithNotify(cellId);
+                _lastClickedCell = cellId;
+                return;
+            }
+
+            // Select rectangle between last clicked and current
+            _applyRectangularSelection(_lastClickedCell, cellId);
+            _lastClickedCell = cellId;
+        }
+
+        /**
+         * Handle day header click (toggle entire column)
+         */
+        function _handleDayHeaderClick(day) {
+            const columnCells = TIME_SLOTS.map(time => `${day}_${time}`);
+
+            // Toggle: if all selected, deselect; else select all
+            const allSelected = columnCells.every(id => _selectedCells.has(id));
+
+            columnCells.forEach(cellId => {
+                const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
+                if (!cell) return;
+
+                if (allSelected) {
+                    _selectedCells.delete(cellId);
+                    cell.classList.remove('selected');
+                } else {
+                    _selectedCells.add(cellId);
+                    cell.classList.add('selected');
+                }
+            });
+
+            _notifySelectionChange();
+        }
+
+        /**
+         * Handle time header click (toggle entire row)
+         */
+        function _handleTimeHeaderClick(time) {
+            const rowCells = DAYS.map(day => `${day}_${time}`);
+
+            // Toggle: if all selected, deselect; else select all
+            const allSelected = rowCells.every(id => _selectedCells.has(id));
+
+            rowCells.forEach(cellId => {
+                const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
+                if (!cell) return;
+
+                if (allSelected) {
+                    _selectedCells.delete(cellId);
+                    cell.classList.remove('selected');
+                } else {
+                    _selectedCells.add(cellId);
+                    cell.classList.add('selected');
+                }
+            });
+
+            _notifySelectionChange();
+        }
+
+        /**
+         * Select all cells in this grid
+         */
+        function selectAll() {
+            DAYS.forEach(day => {
+                TIME_SLOTS.forEach(time => {
+                    const cellId = `${day}_${time}`;
+                    _selectedCells.add(cellId);
+                    const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
+                    if (cell) cell.classList.add('selected');
+                });
+            });
+            _notifySelectionChange();
+        }
+
+        /**
+         * Clear all selections in this grid
+         */
+        function clearAll() {
+            clearSelection();
+            _notifySelectionChange();
         }
 
         function _render() {
             if (!_container) return;
 
             // Build the grid HTML - compact for 1080p
+            // Added data attributes for clickable headers
             _container.innerHTML = `
                 <div class="availability-grid-container">
                     <!-- Day Headers Row -->
                     <div class="grid-header">
                         <div class="time-label-spacer"></div>
-                        ${DAY_LABELS.map(day => `
-                            <div class="day-header">${day}</div>
+                        ${DAYS.map((day, idx) => `
+                            <div class="day-header clickable" data-day="${day}">${DAY_LABELS[idx]}</div>
                         `).join('')}
                     </div>
 
@@ -59,7 +329,7 @@ const AvailabilityGrid = (function() {
                     <div class="grid-body">
                         ${TIME_SLOTS.map(time => `
                             <div class="grid-row">
-                                <div class="time-label">${formatTime(time)}</div>
+                                <div class="time-label clickable" data-time="${time}">${formatTime(time)}</div>
                                 ${DAYS.map(day => `
                                     <div class="grid-cell" data-cell-id="${day}_${time}"></div>
                                 `).join('')}
@@ -69,14 +339,53 @@ const AvailabilityGrid = (function() {
                 </div>
             `;
 
-            // Event delegation for better performance
+            _attachEventListeners();
+        }
+
+        /**
+         * Attach all event listeners for the grid
+         */
+        function _attachEventListeners() {
+            // Click handler for cells, day headers, and time headers
             _clickHandler = (e) => {
+                // Cell click (with shift detection)
                 const cell = e.target.closest('.grid-cell');
                 if (cell && cell.dataset.cellId) {
-                    _handleCellClickWithNotify(cell.dataset.cellId);
+                    if (e.shiftKey && _lastClickedCell) {
+                        _handleShiftClick(cell.dataset.cellId);
+                    } else {
+                        // Only handle as click if not a drag
+                        if (_dragDistance < DRAG_THRESHOLD) {
+                            _handleCellClickWithNotify(cell.dataset.cellId);
+                            _lastClickedCell = cell.dataset.cellId;
+                        }
+                    }
+                    return;
+                }
+
+                // Day header click
+                const dayHeader = e.target.closest('.day-header');
+                if (dayHeader && dayHeader.dataset.day) {
+                    _handleDayHeaderClick(dayHeader.dataset.day);
+                    return;
+                }
+
+                // Time header click
+                const timeLabel = e.target.closest('.time-label');
+                if (timeLabel && timeLabel.dataset.time) {
+                    _handleTimeHeaderClick(timeLabel.dataset.time);
+                    return;
                 }
             };
             _container.addEventListener('click', _clickHandler);
+
+            // Drag selection events
+            _container.addEventListener('mousedown', _handleMouseDown);
+            _container.addEventListener('mousemove', _handleMouseMove);
+
+            // Mouse up on document (in case drag ends outside grid)
+            _documentMouseUpHandler = _handleMouseUp;
+            document.addEventListener('mouseup', _documentMouseUpHandler);
         }
 
         function init() {
@@ -103,10 +412,27 @@ const AvailabilityGrid = (function() {
         }
 
         function cleanup() {
+            // Remove container event listeners
             if (_container && _clickHandler) {
                 _container.removeEventListener('click', _clickHandler);
             }
+
+            // Remove document-level listener for drag
+            if (_documentMouseUpHandler) {
+                document.removeEventListener('mouseup', _documentMouseUpHandler);
+                _documentMouseUpHandler = null;
+            }
+
+            // Clear drag preview if active
+            _clearDragPreview();
+
+            // Reset state
             _selectedCells.clear();
+            _isDragging = false;
+            _dragStartCell = null;
+            _lastClickedCell = null;
+            _lastValidDragCell = null;
+
             if (_container) _container.innerHTML = '';
             _container = null;
         }
@@ -191,25 +517,15 @@ const AvailabilityGrid = (function() {
             _onSelectionChangeCallback = callback;
         }
 
-        // Internal: Call the selection change callback if registered
-        let _onSelectionChangeCallback = null;
-
-        // Update the click handler to notify on selection changes
-        function _handleCellClickWithNotify(cellId) {
+        /**
+         * Select a specific cell by ID (for template loading)
+         * @param {string} cellId - The cell ID to select (e.g., "mon_1800")
+         */
+        function selectCell(cellId) {
             const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
-            if (!cell) return;
-
-            if (_selectedCells.has(cellId)) {
-                _selectedCells.delete(cellId);
-                cell.classList.remove('selected');
-            } else {
+            if (cell && !_selectedCells.has(cellId)) {
                 _selectedCells.add(cellId);
                 cell.classList.add('selected');
-            }
-
-            // Notify listeners of selection change
-            if (_onSelectionChangeCallback) {
-                _onSelectionChangeCallback();
             }
         }
 
@@ -222,7 +538,10 @@ const AvailabilityGrid = (function() {
             setSyncingCells,
             clearSyncingCells,
             updateAvailabilityDisplay,
-            onSelectionChange
+            onSelectionChange,
+            selectAll,
+            clearAll,
+            selectCell
         };
 
         return instance;

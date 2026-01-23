@@ -68,7 +68,10 @@ const MatchSchedulerApp = (function() {
             getSelectedCells: _getAllSelectedCells,
             clearSelections: _clearAllSelections,
             onSyncStart: _handleSyncStart,
-            onSyncEnd: _handleSyncEnd
+            onSyncEnd: _handleSyncEnd,
+            selectAll: _handleSelectAll,
+            clearAll: _handleClearAll,
+            loadTemplate: _handleLoadTemplate
         });
 
         // Register selection change handlers
@@ -129,6 +132,46 @@ const MatchSchedulerApp = (function() {
     function _handleSyncEnd() {
         if (_weekDisplay1) _weekDisplay1.clearSyncingCells();
         if (_weekDisplay2) _weekDisplay2.clearSyncingCells();
+    }
+
+    /**
+     * Handle Select All - select all cells in both visible weeks
+     */
+    function _handleSelectAll() {
+        if (_weekDisplay1) _weekDisplay1.selectAll();
+        if (_weekDisplay2) _weekDisplay2.selectAll();
+    }
+
+    /**
+     * Handle Clear All - clear all selections in both visible weeks
+     */
+    function _handleClearAll() {
+        if (_weekDisplay1) _weekDisplay1.clearAll();
+        if (_weekDisplay2) _weekDisplay2.clearAll();
+    }
+
+    /**
+     * Handle Load Template - apply template slots to a specific week grid
+     * @param {string[]} slots - Array of slot IDs from template
+     * @param {number} weekIndex - 0 for first week, 1 for second week
+     */
+    function _handleLoadTemplate(slots, weekIndex) {
+        const targetWeek = weekIndex === 0 ? _weekDisplay1 : _weekDisplay2;
+        if (!targetWeek) {
+            console.error('Grid not found for week index:', weekIndex);
+            return;
+        }
+
+        // Clear current selection in that grid
+        targetWeek.clearSelection();
+
+        // Select the template slots
+        slots.forEach(slotId => {
+            targetWeek.selectCell(slotId);
+        });
+
+        // Notify selection change so buttons update
+        GridActionButtons.onSelectionChange();
     }
 
     /**
@@ -257,6 +300,9 @@ const MatchSchedulerApp = (function() {
         }
         if (typeof AvailabilityService !== 'undefined') {
             AvailabilityService.cleanup();
+        }
+        if (typeof TemplateService !== 'undefined') {
+            TemplateService.cleanup();
         }
     }
 

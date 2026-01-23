@@ -137,8 +137,14 @@ service cloud.firestore {
       function isValidLastActivityAt() {
         return request.resource.data.lastActivityAt is timestamp;
       }
+
+      // User templates subcollection
+      match /templates/{templateId} {
+        // Users can only read/write their own templates
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
-    
+
     // Teams collection security rules
     match /teams/{teamId} {
       // READ: Anyone can read teams (guest browsing + authenticated users)
@@ -328,89 +334,10 @@ service cloud.firestore {
     match /availability/{documentId} {
       // READ: Anyone can read availability data (needed for team comparison + guest browsing)
       allow read: if true;
-      
-      // WRITE: Only team members can write to their team's availability data with strict validation
-      allow write: if request.auth != null
-        && isAvailabilityTeamMember(documentId)
-        && hasValidAvailabilityData(documentId)
-        && onlyAllowedAvailabilityFields();
-      
-      // DELETE: Disallow direct deletion
-      allow delete: if false;
-      
-      // === AVAILABILITY VALIDATION FUNCTIONS ===
-      function isAvailabilityTeamMember(docId) {
-        // Extract teamId from compound documentId format: {teamId}_{year}-W{weekNumber}
-        // Example: "ABC123_2024-W01" -> teamId = "ABC123"
-        let teamId = getTeamIdFromDocumentId(docId);
-        
-        // Simplified check: if teamId extraction worked, allow access
-        // More detailed team membership validation happens in Cloud Functions
-        return teamId != null && teamId.size() > 0;
-      }
-      
-      function getTeamIdFromDocumentId(docId) {
-        // Split on underscore and take first part as teamId
-        // documentId format: {teamId}_{year}-W{weekNumber}
-        let parts = docId.split('_');
-        return parts.size() > 0 ? parts[0] : null;
-      }
-      
-      function hasValidAvailabilityData(docId) {
-        // Validate fields that are being updated using 'in' operator (production compatible)
-        let data = request.resource.data;
-        return hasConsistentTeamId(docId)
-          && (!('availabilityGrid' in data) || isValidAvailabilityGrid())
-          && (!('weekId' in data) || isValidWeekId())
-          && (!('teamId' in data) || isValidTeamIdField(docId))
-          && (!('year' in data) || isValidYear())
-          && (!('weekNumber' in data) || isValidWeekNumber());
-      }
-      
-      function hasConsistentTeamId(docId) {
-        // Ensure teamId in document matches teamId from document ID
-        let expectedTeamId = getTeamIdFromDocumentId(docId);
-        return !('teamId' in request.resource.data)
-          || request.resource.data.teamId == expectedTeamId;
-      }
-      
-      function isValidTeamIdField(docId) {
-        // Validate teamId field matches document ID if present
-        let expectedTeamId = getTeamIdFromDocumentId(docId);
-        return request.resource.data.teamId is string
-          && request.resource.data.teamId == expectedTeamId;
-      }
-      
-      function isValidAvailabilityGrid() {
-        // Ensure availabilityGrid is a map (object) structure
-        return request.resource.data.availabilityGrid is map;
-      }
-      
-      function isValidWeekId() {
-        // Validate weekId format: YYYY-WXX (e.g., 2024-W01)
-        return request.resource.data.weekId is string
-          && request.resource.data.weekId.matches('^\\d{4}-W\\d{2}$');
-      }
-      
-      function isValidYear() {
-        // Validate year is a reasonable integer
-        return request.resource.data.year is int
-          && request.resource.data.year >= 2024
-          && request.resource.data.year <= 2030;
-      }
-      
-      function isValidWeekNumber() {
-        // Validate week number is between 1-53
-        return request.resource.data.weekNumber is int
-          && request.resource.data.weekNumber >= 1
-          && request.resource.data.weekNumber <= 53;
-      }
-      
-      function onlyAllowedAvailabilityFields() {
-        // Prevent users from setting metadata fields using 'in' operator (production compatible)
-        return !('lastUpdatedAt' in request.resource.data)
-          && !('lastUpdatedBy' in request.resource.data);
-      }
+
+      // WRITE: Only Cloud Functions can write (validated server-side)
+      // Cloud Function validates: auth, team membership, slot format, week format
+      allow write: if false;
     }
     
     // Event Log collection - Read-only for users (replaces rosterEvents)

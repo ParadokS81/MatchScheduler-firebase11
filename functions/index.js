@@ -9,6 +9,7 @@ const { processLogoUpload } = require('./logo-processing');
 const { createProfile, updateProfile, getProfile } = require('./user-profile');
 const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings } = require('./team-operations');
 const { updateAvailability } = require('./availability');
+const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
@@ -25,6 +26,11 @@ exports.updateTeamSettings = updateTeamSettings;
 
 // Availability functions
 exports.updateAvailability = updateAvailability;
+
+// Template functions
+exports.saveTemplate = saveTemplate;
+exports.deleteTemplate = deleteTemplate;
+exports.renameTemplate = renameTemplate;
 
 // Simple test function
 exports.helloWorld = onRequest((request, response) => {

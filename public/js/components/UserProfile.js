@@ -93,6 +93,11 @@ const UserProfile = (function() {
             if (userDoc.exists()) {
                 _userProfile = userDoc.data();
                 console.log('📊 User profile loaded:', _userProfile.displayName);
+
+                // Load user's templates
+                if (typeof TemplateService !== 'undefined') {
+                    TemplateService.loadUserTemplates();
+                }
             } else {
                 console.log('⚠️ User profile not found in database - user needs to create profile when joining team');
                 _userProfile = null;

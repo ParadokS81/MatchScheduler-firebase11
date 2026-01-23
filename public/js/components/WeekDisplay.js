@@ -150,6 +150,34 @@ const WeekDisplay = (function() {
             }
         }
 
+        /**
+         * Select all cells in this week's grid
+         */
+        function selectAll() {
+            if (_grid) {
+                _grid.selectAll();
+            }
+        }
+
+        /**
+         * Clear all selections in this week's grid
+         */
+        function clearAll() {
+            if (_grid) {
+                _grid.clearAll();
+            }
+        }
+
+        /**
+         * Select a specific cell by ID (for template loading)
+         * @param {string} cellId - The cell ID to select (e.g., "mon_1800")
+         */
+        function selectCell(cellId) {
+            if (_grid) {
+                _grid.selectCell(cellId);
+            }
+        }
+
         function cleanup() {
             if (_grid) {
                 _grid.cleanup();
@@ -169,6 +197,9 @@ const WeekDisplay = (function() {
             setSyncingCells,
             clearSyncingCells,
             onSelectionChange,
+            selectAll,
+            clearAll,
+            selectCell,
             cleanup
         };
 
