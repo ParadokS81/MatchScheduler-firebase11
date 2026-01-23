@@ -222,11 +222,16 @@ const TeamInfo = (function() {
             );
             
             console.log('📡 Direct Firebase listener attached for team:', team.teamName);
-            
+
         } catch (error) {
             console.error('❌ Error setting up team listener:', error);
         }
-        
+
+        // Notify the app of team selection change for availability listeners
+        if (typeof MatchSchedulerApp !== 'undefined' && MatchSchedulerApp.setSelectedTeam) {
+            MatchSchedulerApp.setSelectedTeam(team);
+        }
+
         _render();
     }
     

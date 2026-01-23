@@ -4,6 +4,11 @@
 This file reinforces critical patterns that are commonly violated during implementation.
 For complete architecture specifications, refer to the Pillar documents.
 
+## Essential References
+- **Data Schema**: `context/SCHEMA.md` - Firestore document structures (ALWAYS check before writing backend code)
+- **Pillar Documents**: `context/Pillar*.md` - Architecture specifications
+- **Slice Specs**: `context/slices/` - Feature implementation details
+
 ---
 
 ## THE Critical Pattern: Cache + Listeners
@@ -87,6 +92,74 @@ TeamService.onTeamUpdate((team) => { ... }); // No! Direct listeners only
 
 ---
 
+## THE Second Critical Pattern: Frontend ↔ Backend Integration
+
+**A feature isn't done until the frontend and backend are connected.**
+
+### Complete Integration Example
+```javascript
+// ✅ CORRECT: Full integration from button to database
+
+// 1. UI Component
+const TeamDrawer = (function() {
+    async function handleRegenerateClick() {
+        const button = document.getElementById('regenerate-btn');
+        button.disabled = true;
+        button.textContent = 'Generating...';
+        
+        try {
+            // 2. Call backend through service
+            const result = await TeamService.regenerateJoinCode(
+                currentTeamId, 
+                currentUserId
+            );
+            
+            if (result.success) {
+                // 3. Success - UI will update via listener
+                showToast('New join code generated!', 'success');
+            } else {
+                // 4. Error handling with user feedback
+                showToast(result.error || 'Failed to generate code', 'error');
+            }
+        } catch (error) {
+            // 5. Network error handling
+            console.error('Regenerate failed:', error);
+            showToast('Network error - please try again', 'error');
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Regenerate';
+        }
+    }
+    
+    return { init, handleRegenerateClick };
+})();
+
+// 6. Service calls Cloud Function
+const TeamService = {
+    async regenerateJoinCode(teamId, userId) {
+        return callCloudFunction('regenerateJoinCode', { teamId, userId });
+    }
+};
+
+// 7. Real-time listener updates UI automatically
+onSnapshot(doc(db, 'teams', teamId), (doc) => {
+    const teamData = doc.data();
+    document.getElementById('join-code').value = teamData.joinCode;
+    TeamService.updateCachedTeam(teamId, teamData);
+});
+```
+
+### Integration Checklist for EVERY Feature
+- [ ] Button click handler attached and working
+- [ ] Loading state shows during operation
+- [ ] Backend function called with correct parameters
+- [ ] Success case updates UI (via listener or directly)
+- [ ] Error cases show user-friendly messages
+- [ ] Network failures handled gracefully
+- [ ] Button re-enabled after operation
+
+---
+
 ## Non-Negotiable Technical Rules
 
 ### Firebase v11 Modular Imports
@@ -131,24 +204,116 @@ The grid structure is immutable. Never modify panel dimensions or positions.
 See Pillar 1 for complete layout specification.
 
 ### Component Pattern
-All components use revealing module pattern:
+Two patterns available depending on complexity:
+
+**Revealing Module Pattern** (existing components, simple state):
 ```javascript
 const ComponentName = (function() {
     // Private
     let _state = {};
-    
+
     // Public
-    return { 
-        init() { }, 
+    return {
+        init() { },
         cleanup() { }
     };
 })();
 ```
 
+**Alpine.js Pattern** (availability grid, reactive UI):
+```html
+<div x-data="componentName()">
+    <div @click="handleClick" :class="isActive ? 'bg-primary' : 'bg-muted'">
+        <span x-text="label"></span>
+    </div>
+</div>
+
+<script>
+function componentName() {
+    return {
+        isActive: false,
+        label: '',
+        init() {
+            // Get from cache, set up listener
+        },
+        handleClick() {
+            // Optimistic update + Firebase sync
+        }
+    }
+}
+</script>
+```
+
+**When to use which:**
+- Revealing Module: Simple components, existing code, minimal reactivity
+- Alpine.js: Availability grid, complex selections, real-time updates with many DOM elements
+
 ### Performance Requirements
 - **Hot paths** (frequent actions): Must use cache or optimistic updates for instant response
 - **Cold paths** (one-time actions): Can show loading states
 - See Pillar 2 for complete performance classifications
+
+---
+
+## Development Workflow Reminders
+
+### Firebase Emulator
+**The emulator is ALREADY RUNNING. Do not:**
+- ❌ Try to start it again
+- ❌ Change ports
+- ❌ Stop and restart it
+- ❌ Run `firebase emulators:start`
+
+**Instead:**
+- ✅ Check http://localhost:8080 for Firestore UI
+- ✅ Check http://localhost:5001 for Functions logs
+- ✅ Just refresh your browser to test changes
+
+### Testing Approach
+**After implementing a feature:**
+1. DO NOT write automated tests immediately
+2. DO NOT mess with emulator configuration
+3. Use QCHECK to find integration issues
+4. Fix issues (1-2 iterations normal)
+5. Use QTEST for manual testing guide
+6. Only write automated tests if specifically requested
+
+### Common Integration Mistakes (Check These First!)
+
+1. **Frontend calls backend but doesn't handle errors**
+```javascript
+// ❌ WRONG - No error handling
+const result = await TeamService.someAction();
+updateUI(result.data);
+
+// ✅ CORRECT - Handle all cases
+const result = await TeamService.someAction();
+if (result.success) {
+    updateUI(result.data);
+} else {
+    showError(result.error);
+}
+```
+
+2. **Backend updates database but frontend doesn't listen**
+```javascript
+// ❌ WRONG - No listener, UI won't update
+await updateDoc(doc(db, 'teams', teamId), { name: newName });
+
+// ✅ CORRECT - Listener will catch the update
+// (Listener already set up in component init)
+```
+
+3. **Missing loading states during operations**
+```javascript
+// ❌ WRONG - User doesn't know something is happening
+await longOperation();
+
+// ✅ CORRECT - Clear feedback
+setLoading(true);
+await longOperation();
+setLoading(false);
+```
 
 ---
 
@@ -178,13 +343,16 @@ const ComponentName = (function() {
 
 1. **Creating middleware/subscription services** - Use direct listeners
 2. **Using pixel units** - Use rem everywhere except borders
-3. **Complex state management** - Cache + listeners is enough
+3. **Complex state management** - Cache + listeners + Alpine is enough
 4. **Trying to start Firebase emulator** - It's already running
 5. **Over-engineering** - This is a 300-person community app, not Google
 6. **Modifying the sacred grid** - The layout is fixed
 7. **Using old Firebase syntax** - v11 modular imports only
 8. **Forgetting optimistic updates** - Hot paths must feel instant
 9. **Editing main.css directly** - Always edit src/css/input.css for custom CSS
+10. **Not connecting frontend to backend** - Every button needs a backend
+11. **Writing tests immediately** - Implementation first, check for errors, then test
+12. **Using React/Vue for new components** - Use Alpine.js for reactive UI needs
 
 ---
 
@@ -195,20 +363,31 @@ For all Q-commands and workflow instructions, see `CLAUDE-COMMANDS.md`
 Quick reference:
 - `QNEW` - Initialize context
 - `QPLAN [slice]` - Create technical slice
-- `QCODE [slice]` - Execute implementation
-- `QCHECK` - Verify implementation
+- `QCODE [slice]` - Execute implementation (no auto tests!)
+- `QCHECK` - Verify implementation and find issues
 - `QTEST` - Manual testing guide
 - `QSTATUS` - Progress check
 - `QGIT` - Commit changes
+
+Expected iteration cycle:
+1. QCODE implements the slice
+2. QCHECK finds issues (always will!)
+3. QCODE fixes issues (1-2 iterations normal)
+4. QTEST guides manual verification
 
 ---
 
 ## Remember
 
 1. **Cache + Listeners** is the foundation - everything else builds on this
-2. **Keep it simple** - 300 players don't need enterprise architecture
-3. **Hot paths are sacred** - Users expect instant response
-4. **Discord is home** - Design for where gamers actually communicate
-5. **Ship working features** - Perfect is the enemy of good
+2. **Frontend ↔ Backend integration** is critical - not done until connected
+3. **Keep it simple** - 300 players don't need enterprise architecture
+4. **Hot paths are sacred** - Users expect instant response
+5. **Discord is home** - Design for where gamers actually communicate
+6. **Ship working features** - Perfect is the enemy of good
+7. **Iterations are normal** - Expect to run QCHECK/fix cycles
 
-When in doubt, choose the simpler solution that follows the cache + listener pattern.
+When in doubt:
+- Choose the simpler solution that follows the cache + listener pattern
+- Make sure frontend and backend are actually connected
+- Test manually before writing automated tests

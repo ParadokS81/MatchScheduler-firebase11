@@ -40,30 +40,32 @@ Detailed specifications in `/context/slices/[slice-name].md`
 **Components:** TeamManagementDrawer  
 **Scope:** Drawer UI only, role-based views, animations
 
-### 📅 Slice 1.2c: Team Actions Implementation  
-**Status:** Not Started  
-**User Value:** Management buttons actually perform their actions  
-**PRD Sections:** 4.3.2, 4.3.3  
-**Components:** Copy function, Leave team, Regenerate code  
+### ✅ Slice 1.2c: Team Actions Implementation
+**Status:** Complete
+**User Value:** Management buttons actually perform their actions
+**PRD Sections:** 4.3.2, 4.3.3
+**Components:** Copy function, Leave team, Regenerate code
 **Scope:** Wire up drawer buttons (except modals)
 
 ---
 
 ## Part 2: Core Scheduling
 
-### 📅 Slice 2.1: Basic Availability Grid
-**Status:** Not Started  
-**User Value:** Users can see and click individual time slots  
-**PRD Sections:** 4.1.1, 4.1.2 (structure only)  
-**Components:** AvailabilityGrid, WeekDisplay  
-**Scope:** Grid rendering, single-slot click selection, week navigation
+### ✅ Slice 2.1: Basic Availability Grid
+**Status:** Complete
+**User Value:** Users can see and click individual time slots
+**PRD Sections:** 4.1.1, 4.1.2 (structure only)
+**Components:** AvailabilityGrid, WeekDisplay, WeekNavigation
+**Scope:** Grid rendering, single-slot click selection, week headers
+**Note:** Factory pattern for independent grid instances, 1080p/1440p optimized
 
-### 📅 Slice 2.2: Personal Availability Setting
-**Status:** Not Started  
-**User Value:** Users can add/remove themselves from time slots  
-**PRD Sections:** 4.1.3 (single click only), 4.1.5  
-**Components:** AvailabilityGrid (enhanced)  
+### ✅ Slice 2.2: Personal Availability Setting
+**Status:** Complete
+**User Value:** Users can add/remove themselves from time slots
+**PRD Sections:** 4.1.3 (single click only), 4.1.5
+**Components:** AvailabilityService, GridActionButtons, Cloud Function
 **Scope:** Add me/Remove me buttons, optimistic updates, Firebase sync
+**Note:** Blue border indicates user's saved availability, real-time updates via Firestore listeners
 
 ### 📅 Slice 2.3: Advanced Selection
 **Status:** Not Started  
@@ -202,11 +204,11 @@ Detailed specifications in `/context/slices/[slice-name].md`
 ---
 
 ## Progress Summary
-**Slices Complete:** 2.5 / 24
+**Slices Complete:** 7 / 24
 
 ## Current Focus
-Ready for Slice 1.2c - Team actions implementation
+Ready for Slice 2.3 - Advanced Selection (drag selection, header clicks, shift+click)
 
 ---
 
-*Last Updated: 2025-01-17*
+*Last Updated: 2026-01-23*

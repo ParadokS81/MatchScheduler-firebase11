@@ -19,7 +19,7 @@ const storage = getStorage();
  * 4. Update the team's document in Firestore with the new logo URLs.
  * 5. Clean up the original temporary file.
  */
-exports.processLogoUpload = onObjectFinalized(async (event) => {
+exports.processLogoUpload = onObjectFinalized({ region: 'europe-west10' }, async (event) => {
     const object = event.data;
     const filePath = object.name; // e.g., 'logo-uploads/teamId/userId/logo_123.png'
     const contentType = object.contentType;

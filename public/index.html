@@ -41,8 +41,9 @@
         const functions = getFunctions(app);
         
         // Connect to emulators in development
-        if (window.location.hostname === 'localhost' || 
+        if (window.location.hostname === 'localhost' ||
             window.location.hostname === '127.0.0.1' ||
+            window.location.hostname.startsWith('172.') ||
             window.location.hostname.startsWith('100.74.12.')) {
             try {
                 // Use the same host as the current page for Functions emulator
@@ -63,10 +64,8 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Centered Title -->
-        <h1 class="text-2xl font-bold text-primary text-center py-4">MatchScheduler</h1>
-        
         <!-- Main Content Area with Sacred 3x3 Grid -->
+        <!-- Title removed to maximize vertical space for 1080p optimization -->
         <main class="main-grid">
             <!-- Top Row -->
             <div id="panel-top-left" class="panel">
@@ -77,9 +76,7 @@
             </div>
             
             <div id="panel-top-center" class="panel">
-                <div class="panel-content flex items-center justify-center">
-                    <h3 class="text-lg font-semibold">Week Navigation</h3>
-                </div>
+                <!-- WeekNavigation renders here -->
             </div>
             
             <div id="panel-top-right" class="panel">
@@ -98,12 +95,7 @@
             </div>
             
             <div id="panel-middle-center" class="panel">
-                <div class="panel-content">
-                    <h3 class="text-lg font-semibold mb-2">Availability Grid Week 1</h3>
-                    <div id="availability-grid-week1" class="w-full h-full min-h-32 bg-muted rounded">
-                        <p class="text-muted-foreground p-4">Availability grid will be here</p>
-                    </div>
-                </div>
+                <!-- WeekDisplay (Week 1) renders here -->
             </div>
             
             <div id="panel-middle-right" class="panel">
@@ -117,17 +109,13 @@
             <div id="panel-bottom-left" class="panel">
                 <div class="panel-content">
                     <h3 class="text-lg font-semibold mb-2">Grid Tools</h3>
-                    <p class="text-muted-foreground">Grid tools will be here</p>
+                    <div id="grid-action-buttons-container"></div>
+                    <p class="text-muted-foreground text-sm mt-2">More tools coming soon</p>
                 </div>
             </div>
             
             <div id="panel-bottom-center" class="panel">
-                <div class="panel-content">
-                    <h3 class="text-lg font-semibold mb-2">Availability Grid Week 2</h3>
-                    <div id="availability-grid-week2" class="w-full h-full min-h-32 bg-muted rounded">
-                        <p class="text-muted-foreground p-4">Availability grid will be here</p>
-                    </div>
-                </div>
+                <!-- WeekDisplay (Week 2) renders here -->
             </div>
             
             <div id="panel-bottom-right" class="panel">
@@ -172,9 +160,13 @@
         </div>
     </div>
     
+    <!-- Alpine.js -->
+    <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
+
     <!-- JavaScript Modules -->
     <script src="js/services/AuthService.js"></script>
     <script src="js/services/TeamService.js"></script>
+    <script src="js/services/AvailabilityService.js"></script>
     <script src="js/services/ConfirmationModal.js"></script>
     <script src="js/components/ToastService.js"></script>
     <script src="js/components/UserProfile.js"></script>
@@ -182,6 +174,10 @@
     <script src="js/components/OnboardingModal.js"></script>
     <script src="js/components/TeamManagementDrawer.js"></script>
     <script src="js/components/TeamInfo.js"></script>
+    <script src="js/components/AvailabilityGrid.js"></script>
+    <script src="js/components/WeekDisplay.js"></script>
+    <script src="js/components/WeekNavigation.js"></script>
+    <script src="js/components/GridActionButtons.js"></script>
     <script src="js/app.js" type="module"></script>
 </body>
 </html>

@@ -11,6 +11,7 @@
 | Serverless Logic | Cloud Functions | Node.js 20 |
 | Authentication | Firebase Auth | Google Provider |
 | Frontend Framework | Vanilla JavaScript | ES6+ |
+| Reactive UI | Alpine.js | v3.13+ |
 | Styling | Tailwind CSS | v3+ |
 | Build Tool | None (MVP) / Vite (Post-MVP) | - |
 | Local Environment | Firebase Emulator Suite (Hybrid) | - |
@@ -26,6 +27,54 @@
 - **Simplicity:** For the project's scale, a full framework introduces unnecessary complexity and a steep learning curve. Vanilla JS is sufficient
 - **Performance:** Avoids the overhead of a large framework library, leading to faster initial load times
 - **No Build Step (for MVP):** Allows for rapid development and deployment without configuring complex build tools like Webpack or Vite initially
+
+### Reactive UI: Alpine.js
+
+**Decision:** Alpine.js is used for reactive UI components, particularly the availability grid and other interactive elements that benefit from declarative state management.
+
+**Reasoning:**
+
+- **Lightweight:** Only 15KB minified - adds minimal overhead compared to React/Vue
+- **Tailwind-Native:** Created by the same community, designed to work seamlessly with Tailwind CSS
+- **No Build Step:** Works directly in the browser via CDN, consistent with our MVP approach
+- **Declarative State:** Simplifies complex UI interactions (grid selection, toggles, real-time updates) without manual DOM manipulation
+- **Progressive Enhancement:** Can be added to specific components without rewriting existing vanilla JS code
+
+**Usage Pattern:**
+
+```html
+<!-- Alpine.js component example for availability grid -->
+<div x-data="availabilityGrid()" class="grid grid-cols-8">
+    <template x-for="slot in slots" :key="slot.id">
+        <div
+            @click="toggleSlot(slot.id)"
+            :class="slot.selected ? 'bg-primary' : 'bg-muted'"
+            class="p-2 cursor-pointer">
+            <span x-text="slot.label"></span>
+        </div>
+    </template>
+</div>
+
+<script>
+function availabilityGrid() {
+    return {
+        slots: [],
+        async init() {
+            // Load from cache, set up Firebase listener
+        },
+        toggleSlot(id) {
+            // Optimistic update + Firebase sync
+        }
+    }
+}
+</script>
+```
+
+**Integration with Existing Patterns:**
+
+- Services (AuthService, TeamService) remain vanilla JS - they manage cache
+- Alpine components consume services and own their Firebase listeners
+- The cache + listener pattern is preserved, Alpine just handles the reactive UI rendering
 
 ### Styling: Tailwind CSS
 

@@ -8,6 +8,7 @@ initializeApp();
 const { processLogoUpload } = require('./logo-processing');
 const { createProfile, updateProfile, getProfile } = require('./user-profile');
 const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings } = require('./team-operations');
+const { updateAvailability } = require('./availability');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
@@ -21,6 +22,9 @@ exports.joinTeam = joinTeam;
 exports.regenerateJoinCode = regenerateJoinCode;
 exports.leaveTeam = leaveTeam;
 exports.updateTeamSettings = updateTeamSettings;
+
+// Availability functions
+exports.updateAvailability = updateAvailability;
 
 // Simple test function
 exports.helloWorld = onRequest((request, response) => {
