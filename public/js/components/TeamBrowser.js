@@ -36,6 +36,9 @@ const TeamBrowser = (function() {
         TeamBrowserState.onFilterChange(() => _renderTeamList());
         TeamBrowserState.onSelectionChange(() => _renderTeamList());
 
+        // Listen for favorites changes to update star display
+        window.addEventListener('favorites-updated', _renderTeamList);
+
         // Subscribe to real-time team updates
         await _subscribeToTeams();
 
@@ -305,12 +308,12 @@ const TeamBrowser = (function() {
             });
         });
 
-        // Star button handlers (visual feedback only)
+        // Star button handlers - integrated with FavoritesService
         listContainer.querySelectorAll('.star-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                btn.classList.toggle('starred');
-                console.log('⭐ Star clicked (visual only):', btn.dataset.teamId);
+                const teamId = btn.dataset.teamId;
+                FavoritesService.toggleFavorite(teamId);
             });
         });
 
@@ -424,8 +427,16 @@ const TeamBrowser = (function() {
 
     function _renderTeamCard(team) {
         const isSelected = TeamBrowserState.isTeamSelected(team.id);
+        const isFavorite = typeof FavoritesService !== 'undefined' && FavoritesService.isFavorite(team.id);
         const playerCount = team.playerRoster?.length || 0;
-        const divisions = (team.divisions || []).join(', ') || 'No division';
+        // Normalize divisions - handle both "D1" strings and legacy numeric values
+        const rawDivisions = team.divisions || [];
+        const normalizedDivisions = rawDivisions.map(d => {
+            if (typeof d === 'number') return `D${d}`;
+            if (typeof d === 'string' && /^\d+$/.test(d)) return `D${d}`;
+            return d;
+        });
+        const divisions = normalizedDivisions.join(', ') || 'No division';
 
         // Truncate long team names
         const displayName = team.teamName?.length > 18
@@ -451,11 +462,11 @@ const TeamBrowser = (function() {
                         </div>
                     </div>
 
-                    <!-- Star Button (visual only) -->
-                    <button class="star-btn p-1 text-muted-foreground hover:text-yellow-400 transition-colors"
+                    <!-- Star Button -->
+                    <button class="star-btn p-1 ${isFavorite ? 'text-yellow-500' : 'text-muted-foreground'} hover:text-yellow-400 transition-colors"
                             data-team-id="${team.id}"
-                            title="Add to favorites">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            title="${isFavorite ? 'Remove from favorites' : 'Add to favorites'}">
+                        <svg class="w-4 h-4" fill="${isFavorite ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
                         </svg>
@@ -529,6 +540,8 @@ const TeamBrowser = (function() {
             _teamTooltip.remove();
             _teamTooltip = null;
         }
+        // Remove favorites listener
+        window.removeEventListener('favorites-updated', _renderTeamList);
         TeamBrowserState.reset();
         _allTeams = [];
         if (_container) {

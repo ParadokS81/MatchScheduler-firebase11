@@ -83,10 +83,15 @@ const TeamInfo = (function() {
                     if (doc.exists()) {
                         const userData = doc.data();
                         _userProfile = userData;
-                        
+
                         // Load teams whenever user profile changes
                         _loadUserTeams();
-                        
+
+                        // Update FavoritesService when favorites change (Slice 3.2)
+                        if (typeof FavoritesService !== 'undefined') {
+                            FavoritesService.updateFromFirestore(userData.favoriteTeams);
+                        }
+
                         console.log('👤 User profile updated, reloading teams...');
                     } else {
                         console.warn('⚠️ User profile document does not exist');

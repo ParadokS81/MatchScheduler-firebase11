@@ -10,6 +10,7 @@ const { createProfile, updateProfile, getProfile } = require('./user-profile');
 const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings } = require('./team-operations');
 const { updateAvailability } = require('./availability');
 const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
+const { updateFavorites } = require('./favorites');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
@@ -31,6 +32,9 @@ exports.updateAvailability = updateAvailability;
 exports.saveTemplate = saveTemplate;
 exports.deleteTemplate = deleteTemplate;
 exports.renameTemplate = renameTemplate;
+
+// Favorites functions
+exports.updateFavorites = updateFavorites;
 
 // Simple test function
 exports.helloWorld = onRequest((request, response) => {

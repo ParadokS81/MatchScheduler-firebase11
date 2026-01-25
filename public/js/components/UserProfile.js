@@ -78,6 +78,15 @@ const UserProfile = (function() {
             } else {
                 console.log('🎨 Rendering guest mode...');
                 _userProfile = null;
+
+                // Clear FavoritesService on logout (Slice 3.2)
+                if (typeof FavoritesService !== 'undefined') {
+                    FavoritesService.clear();
+                }
+                if (typeof FavoritesPanel !== 'undefined') {
+                    FavoritesPanel.cleanup();
+                }
+
                 _renderGuestMode();
             }
         });
@@ -97,6 +106,16 @@ const UserProfile = (function() {
                 // Load user's templates
                 if (typeof TemplateService !== 'undefined') {
                     TemplateService.loadUserTemplates();
+                }
+
+                // Initialize FavoritesService with user's favorites (Slice 3.2)
+                if (typeof FavoritesService !== 'undefined') {
+                    FavoritesService.init(uid, _userProfile.favoriteTeams || []);
+                }
+
+                // Initialize FavoritesPanel (Slice 3.2)
+                if (typeof FavoritesPanel !== 'undefined') {
+                    FavoritesPanel.init();
                 }
             } else {
                 console.log('⚠️ User profile not found in database - user needs to create profile when joining team');

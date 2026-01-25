@@ -234,6 +234,14 @@ const TeamService = (function() {
         return Array.from(_allTeamsCache.values());
     }
 
+    // Get single team from cache only (synchronous, for FavoritesPanel)
+    function getTeamFromCache(teamId) {
+        if (!_cacheInitialized || !teamId) {
+            return null;
+        }
+        return _allTeamsCache.get(teamId) || null;
+    }
+
     // Check if cache is ready
     function isCacheReady() {
         return _cacheInitialized;
@@ -355,6 +363,7 @@ const TeamService = (function() {
         createTeam,
         joinTeam,
         getTeam,
+        getTeamFromCache,
         getUserTeams,
         getAllTeams,
         isCacheReady,

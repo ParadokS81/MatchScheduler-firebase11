@@ -15,6 +15,13 @@ const TeamBrowserState = (function() {
     let _onSelectionChange = null;
     let _onFilterChange = null;
 
+    // Dispatch selection change event for cross-component communication
+    function _dispatchSelectionChange() {
+        window.dispatchEvent(new CustomEvent('team-selection-changed', {
+            detail: { selectedTeams: Array.from(_selectedTeams) }
+        }));
+    }
+
     // ========================================
     // Selection Methods
     // ========================================
@@ -37,6 +44,7 @@ const TeamBrowserState = (function() {
         if (_onSelectionChange) {
             _onSelectionChange(_selectedTeams);
         }
+        _dispatchSelectionChange();
 
         console.log('📋 Team selection:', Array.from(_selectedTeams));
         return isTeamSelected(teamId);
@@ -48,6 +56,7 @@ const TeamBrowserState = (function() {
             if (_onSelectionChange) {
                 _onSelectionChange(_selectedTeams);
             }
+            _dispatchSelectionChange();
             console.log('📋 Team selected:', teamId);
         }
     }
@@ -58,6 +67,7 @@ const TeamBrowserState = (function() {
             if (_onSelectionChange) {
                 _onSelectionChange(_selectedTeams);
             }
+            _dispatchSelectionChange();
         }
     }
 
@@ -66,6 +76,7 @@ const TeamBrowserState = (function() {
         if (_onSelectionChange) {
             _onSelectionChange(_selectedTeams);
         }
+        _dispatchSelectionChange();
     }
 
     function getSelectionCount() {

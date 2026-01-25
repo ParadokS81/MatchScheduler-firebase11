@@ -431,6 +431,13 @@ const MatchSchedulerApp = (function() {
         if (typeof TeamBrowser !== 'undefined') {
             TeamBrowser.cleanup();
         }
+        // Slice 3.2: Clean up Favorites
+        if (typeof FavoritesPanel !== 'undefined') {
+            FavoritesPanel.cleanup();
+        }
+        if (typeof FavoritesService !== 'undefined') {
+            FavoritesService.clear();
+        }
     }
 
     // Public API
