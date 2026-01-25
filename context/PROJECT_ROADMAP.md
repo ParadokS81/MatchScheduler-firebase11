@@ -111,19 +111,21 @@ Detailed specifications in `/context/slices/[slice-name].md`
 
 ## Part 3: Team Coordination
 
-### 📅 Slice 3.1: Team Browser
-**Status:** Not Started  
-**User Value:** Users can browse all active teams  
-**PRD Sections:** 4.2.1 (bottom panel only)  
-**Components:** TeamBrowser  
-**Scope:** List teams, search, show basic info
+### ✅ Slice 3.1: Team Browser
+**Status:** Complete
+**User Value:** Users can browse all active teams
+**PRD Sections:** 4.2.1 (bottom panel only)
+**Components:** TeamBrowser, TeamBrowserState
+**Scope:** List teams, search by name/player, division filters, team roster tooltip on hover
+**Note:** Real-time updates via Firestore listener, excludes user's current team
 
-### 📅 Slice 3.2: Favorites System
-**Status:** Not Started  
-**User Value:** Users can star teams for quick access  
-**PRD Sections:** 4.2.1 (middle panel)  
-**Components:** FavoritesPanel  
-**Scope:** Star/unstar teams, favorites list, localStorage
+### ✅ Slice 3.2: Favorites System
+**Status:** Complete
+**User Value:** Users can star teams for quick access
+**PRD Sections:** 4.2.1 (middle panel)
+**Components:** FavoritesPanel, FavoritesService, updateFavorites Cloud Function
+**Scope:** Star/unstar teams, favorites list, Firestore persistence, Select All/Deselect All
+**Note:** Optimistic updates, unified selection with TeamBrowser, team roster tooltip on hover
 
 ### 📅 Slice 3.3: Comparison Filters
 **Status:** Not Started  
@@ -209,11 +211,11 @@ Detailed specifications in `/context/slices/[slice-name].md`
 ---
 
 ## Progress Summary
-**Slices Complete:** 12 / 24
+**Slices Complete:** 14 / 24
 
 ## Current Focus
-Ready for Part 3 - Team Coordination (Slice 3.1)
+Ready for Slice 3.3 - Comparison Filters
 
 ---
 
-*Last Updated: 2026-01-23*
+*Last Updated: 2026-01-25*
