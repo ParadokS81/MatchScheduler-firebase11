@@ -214,6 +214,37 @@ const WeekDisplay = (function() {
             }
         }
 
+        // ========================================
+        // Slice 3.4: Comparison Mode Functions
+        // ========================================
+
+        /**
+         * Enter comparison mode
+         */
+        function enterComparisonMode() {
+            if (_grid) {
+                _grid.enterComparisonMode();
+            }
+        }
+
+        /**
+         * Exit comparison mode
+         */
+        function exitComparisonMode() {
+            if (_grid) {
+                _grid.exitComparisonMode();
+            }
+        }
+
+        /**
+         * Update comparison highlights
+         */
+        function updateComparisonHighlights() {
+            if (_grid) {
+                _grid.updateComparisonHighlights();
+            }
+        }
+
         function cleanup() {
             if (_grid) {
                 _grid.cleanup();
@@ -240,6 +271,10 @@ const WeekDisplay = (function() {
             updateTeamDisplay,
             onOverflowClick,
             refreshDisplay,
+            // Slice 3.4: Comparison mode functions
+            enterComparisonMode,
+            exitComparisonMode,
+            updateComparisonHighlights,
             cleanup
         };
 

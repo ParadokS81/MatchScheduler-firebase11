@@ -1,11 +1,13 @@
 // FavoritesPanel.js - Displays starred teams for quick comparison
 // Follows Cache + Listener pattern per CLAUDE.md
+// Enhanced for Slice 3.4: Compare Now and Exit Comparison functionality
 
 const FavoritesPanel = (function() {
     'use strict';
 
     let _container = null;
     let _unsubscribeTeams = null;
+    let _isComparing = false;
 
     // ========================================
     // Helpers
@@ -154,6 +156,29 @@ const FavoritesPanel = (function() {
         const favorites = FavoritesService.getFavorites();
         const selectedTeams = TeamBrowserState.getSelectedTeams();
 
+        // Check if comparison is active
+        const comparison = typeof ComparisonEngine !== 'undefined'
+            ? ComparisonEngine.getComparisonState()
+            : { active: false };
+        _isComparing = comparison.active;
+
+        // Build action button based on comparison state
+        // Need at least 1 opponent selected (user team comes from grid)
+        const actionButton = _isComparing
+            ? `<button id="exit-comparison-btn"
+                       class="w-full py-2 px-4 rounded-lg font-medium transition-colors
+                              bg-muted text-foreground hover:bg-muted/80 border border-border">
+                   Exit Comparison
+               </button>`
+            : `<button id="compare-now-btn"
+                       class="w-full py-2 px-4 rounded-lg font-medium transition-colors
+                              ${selectedTeams.size >= 1
+                                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                                  : 'bg-muted text-muted-foreground cursor-not-allowed'}"
+                       ${selectedTeams.size < 1 ? 'disabled' : ''}>
+                   Compare Now (${selectedTeams.size} opponent${selectedTeams.size !== 1 ? 's' : ''})
+               </button>`;
+
         _container.innerHTML = `
             <div class="p-4 h-full flex flex-col">
                 <div class="flex items-center justify-between mb-3">
@@ -181,14 +206,7 @@ const FavoritesPanel = (function() {
                 </div>
 
                 <div class="mt-3 pt-3 border-t border-border">
-                    <button id="compare-now-btn"
-                            class="w-full py-2 px-4 rounded-lg font-medium transition-colors
-                                   ${selectedTeams.size >= 2
-                                       ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                                       : 'bg-muted text-muted-foreground cursor-not-allowed'}"
-                            ${selectedTeams.size < 2 ? 'disabled' : ''}>
-                        Compare Now (${selectedTeams.size} selected)
-                    </button>
+                    ${actionButton}
                 </div>
             </div>
         `;
@@ -259,15 +277,64 @@ const FavoritesPanel = (function() {
             favorites.forEach(teamId => TeamBrowserState.deselectTeam(teamId));
         });
 
-        // Compare Now (stub for Slice 3.4)
-        document.getElementById('compare-now-btn')?.addEventListener('click', () => {
+        // Compare Now - Start comparison (Slice 3.4)
+        document.getElementById('compare-now-btn')?.addEventListener('click', async () => {
             const selected = TeamBrowserState.getSelectedTeams();
-            if (selected.size < 2) return;
+            if (selected.size < 1) return;
 
-            console.log('[Slice 3.4 stub] Compare teams:', Array.from(selected));
+            const button = document.getElementById('compare-now-btn');
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Comparing...';
+            }
 
-            if (typeof ToastService !== 'undefined') {
-                ToastService.showInfo(`Comparison feature coming soon! ${selected.size} teams selected.`);
+            try {
+                // User team is ALWAYS the team displayed in the grid
+                // All selected teams in browser are opponents
+                const userTeamId = typeof MatchSchedulerApp !== 'undefined'
+                    ? MatchSchedulerApp.getSelectedTeam()?.id
+                    : null;
+
+                if (!userTeamId) {
+                    throw new Error('No team selected in grid');
+                }
+
+                const opponentIds = Array.from(selected).filter(id => id !== userTeamId);
+
+                // Get current filter values
+                const filters = typeof FilterService !== 'undefined'
+                    ? FilterService.getFilters()
+                    : { yourTeam: 1, opponent: 1 };
+
+                console.log('[FavoritesPanel] Starting comparison:', {
+                    userTeamId,
+                    opponentIds,
+                    filters
+                });
+
+                // Start comparison
+                await ComparisonEngine.startComparison(userTeamId, opponentIds, filters);
+
+                if (typeof ToastService !== 'undefined') {
+                    const userTeam = TeamService.getTeamFromCache(userTeamId);
+                    ToastService.showSuccess(
+                        `Comparing [${userTeam?.teamTag || '??'}] with ${opponentIds.length} opponent(s)`
+                    );
+                }
+            } catch (error) {
+                console.error('[FavoritesPanel] Comparison failed:', error);
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showError('Failed to start comparison. Please try again.');
+                }
+            }
+
+            // Re-render to show Exit button (via event listener)
+        });
+
+        // Exit Comparison - End comparison mode (Slice 3.4)
+        document.getElementById('exit-comparison-btn')?.addEventListener('click', () => {
+            if (typeof ComparisonEngine !== 'undefined') {
+                ComparisonEngine.endComparison();
             }
         });
 
@@ -315,6 +382,10 @@ const FavoritesPanel = (function() {
 
         // Listen for selection changes (from TeamBrowserState)
         window.addEventListener('team-selection-changed', _render);
+
+        // Listen for comparison events (Slice 3.4)
+        window.addEventListener('comparison-started', _render);
+        window.addEventListener('comparison-ended', _render);
     }
 
     async function _setupTeamListener() {
@@ -348,6 +419,8 @@ const FavoritesPanel = (function() {
     function cleanup() {
         window.removeEventListener('favorites-updated', _render);
         window.removeEventListener('team-selection-changed', _render);
+        window.removeEventListener('comparison-started', _render);
+        window.removeEventListener('comparison-ended', _render);
         if (_unsubscribeTeams) {
             _unsubscribeTeams();
             _unsubscribeTeams = null;

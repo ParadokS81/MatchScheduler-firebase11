@@ -54,6 +54,9 @@ const MatchSchedulerApp = (function() {
         // Initialize TeamBrowser in bottom-right panel (Slice 3.1)
         _initializeTeamBrowser();
 
+        // Set up comparison event listeners (Slice 3.4)
+        _setupComparisonListeners();
+
         console.log('🧩 Components initialized');
     }
 
@@ -176,6 +179,45 @@ const MatchSchedulerApp = (function() {
         console.log('🎨 Display mode changed to:', mode);
         if (_weekDisplay1) _weekDisplay1.refreshDisplay();
         if (_weekDisplay2) _weekDisplay2.refreshDisplay();
+    }
+
+    // ========================================
+    // Slice 3.4: Comparison Event Listeners
+    // ========================================
+
+    /**
+     * Set up event listeners for comparison mode
+     */
+    function _setupComparisonListeners() {
+        // When comparison starts, enter comparison mode on both grids
+        window.addEventListener('comparison-started', () => {
+            console.log('📊 Comparison started - entering comparison mode');
+            if (_weekDisplay1) _weekDisplay1.enterComparisonMode();
+            if (_weekDisplay2) _weekDisplay2.enterComparisonMode();
+            // Initial highlight update
+            _updateComparisonHighlights();
+        });
+
+        // When comparison results update, refresh highlights
+        window.addEventListener('comparison-updated', () => {
+            console.log('📊 Comparison updated - refreshing highlights');
+            _updateComparisonHighlights();
+        });
+
+        // When comparison ends, exit comparison mode
+        window.addEventListener('comparison-ended', () => {
+            console.log('📊 Comparison ended - exiting comparison mode');
+            if (_weekDisplay1) _weekDisplay1.exitComparisonMode();
+            if (_weekDisplay2) _weekDisplay2.exitComparisonMode();
+        });
+    }
+
+    /**
+     * Update comparison highlights on both week grids
+     */
+    function _updateComparisonHighlights() {
+        if (_weekDisplay1) _weekDisplay1.updateComparisonHighlights();
+        if (_weekDisplay2) _weekDisplay2.updateComparisonHighlights();
     }
 
     /**
@@ -447,6 +489,10 @@ const MatchSchedulerApp = (function() {
         // Slice 3.3: Clean up FilterPanel
         if (typeof FilterPanel !== 'undefined') {
             FilterPanel.cleanup();
+        }
+        // Slice 3.4: End any active comparison
+        if (typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isActive()) {
+            ComparisonEngine.endComparison();
         }
     }
 

@@ -54,6 +54,9 @@ const AvailabilityGrid = (function() {
         let _availabilitySlots = null;
         let _onOverflowClickCallback = null;
 
+        // Comparison mode state (Slice 3.4)
+        let _comparisonMode = false;
+
         /**
          * Notify listeners of selection change
          */
@@ -379,6 +382,9 @@ const AvailabilityGrid = (function() {
          * Handle cell hover for tooltip (cells with 4+ players)
          */
         function _handleCellMouseEnter(e) {
+            // Don't show player tooltip in comparison mode - match tooltip handles it
+            if (_comparisonMode) return;
+
             const cell = e.target.closest('.grid-cell');
             if (!cell || !cell.classList.contains('has-overflow')) return;
 
@@ -461,6 +467,10 @@ const AvailabilityGrid = (function() {
             // Hover events for tooltip (using event capturing for mouseenter/mouseleave)
             _container.addEventListener('mouseenter', _handleCellMouseEnter, true);
             _container.addEventListener('mouseleave', _handleCellMouseLeave, true);
+
+            // Hover events for comparison match tooltip (Slice 3.4)
+            _container.addEventListener('mouseenter', _handleMatchCellMouseEnter, true);
+            _container.addEventListener('mouseleave', _handleMatchCellMouseLeave, true);
         }
 
         function init() {
@@ -506,6 +516,13 @@ const AvailabilityGrid = (function() {
                 PlayerTooltip.hideImmediate();
             }
 
+            // Hide and cleanup match tooltip (Slice 3.4)
+            _hideMatchTooltipImmediate();
+            if (_matchTooltip) {
+                _matchTooltip.remove();
+                _matchTooltip = null;
+            }
+
             // Reset state
             _selectedCells.clear();
             _isDragging = false;
@@ -516,13 +533,17 @@ const AvailabilityGrid = (function() {
             _currentUserId = null;
             _availabilitySlots = null;
             _onOverflowClickCallback = null;
+            _comparisonMode = false;
 
             if (_container) _container.innerHTML = '';
             _container = null;
         }
 
         function getWeekId() {
-            return _weekId;
+            // Return full ISO week format (YYYY-WW) for compatibility with ComparisonEngine
+            const now = new Date();
+            const year = now.getFullYear();
+            return `${year}-${String(_weekId).padStart(2, '0')}`;
         }
 
         /**
@@ -767,6 +788,342 @@ const AvailabilityGrid = (function() {
             }
         }
 
+        // ========================================
+        // Slice 3.4: Comparison Mode Functions
+        // ========================================
+
+        /**
+         * Enter comparison mode - adds visual styling to container
+         */
+        function enterComparisonMode() {
+            _comparisonMode = true;
+            const gridContainer = _container?.querySelector('.availability-grid-container');
+            if (gridContainer) {
+                gridContainer.classList.add('comparison-mode');
+            }
+        }
+
+        /**
+         * Exit comparison mode - removes all comparison styling
+         */
+        function exitComparisonMode() {
+            _comparisonMode = false;
+            const gridContainer = _container?.querySelector('.availability-grid-container');
+            if (gridContainer) {
+                gridContainer.classList.remove('comparison-mode');
+            }
+            // Clear all match highlights
+            clearComparisonHighlights();
+        }
+
+        /**
+         * Update cells with comparison match highlights
+         * Called when comparison results change
+         */
+        function updateComparisonHighlights() {
+            if (!_container || typeof ComparisonEngine === 'undefined') return;
+
+            // Use formatted week ID (YYYY-WW) for ComparisonEngine lookup
+            const weekIdFormatted = getWeekId();
+
+            const allCells = _container.querySelectorAll('.grid-cell');
+            allCells.forEach(cell => {
+                const cellId = cell.dataset.cellId;
+                if (!cellId) return;
+
+                // Remove existing comparison classes
+                cell.classList.remove('comparison-match-full', 'comparison-match-partial');
+
+                // Remove existing match count badge
+                const existingBadge = cell.querySelector('.match-count-badge');
+                if (existingBadge) existingBadge.remove();
+
+                // Get match info from ComparisonEngine
+                const matchInfo = ComparisonEngine.getSlotMatchInfo(weekIdFormatted, cellId);
+
+                if (matchInfo.hasMatch) {
+                    // Add appropriate class based on match type
+                    if (matchInfo.isFullMatch) {
+                        cell.classList.add('comparison-match-full');
+                    } else {
+                        cell.classList.add('comparison-match-partial');
+                    }
+
+                    // Add match count badge if multiple opponents match
+                    if (matchInfo.matches.length > 1) {
+                        const badge = document.createElement('span');
+                        badge.className = 'match-count-badge';
+                        badge.textContent = matchInfo.matches.length;
+                        cell.appendChild(badge);
+                    }
+                }
+            });
+        }
+
+        /**
+         * Clear all comparison highlights from cells
+         */
+        function clearComparisonHighlights() {
+            if (!_container) return;
+
+            const allCells = _container.querySelectorAll('.grid-cell');
+            allCells.forEach(cell => {
+                cell.classList.remove('comparison-match-full', 'comparison-match-partial');
+
+                // Remove match count badge
+                const badge = cell.querySelector('.match-count-badge');
+                if (badge) badge.remove();
+            });
+        }
+
+        /**
+         * Check if comparison mode is active
+         * @returns {boolean}
+         */
+        function isComparisonMode() {
+            return _comparisonMode;
+        }
+
+        // ========================================
+        // Slice 3.4: Match Tooltip Functions
+        // ========================================
+
+        let _matchTooltip = null;
+        let _matchTooltipHideTimeout = null;
+        let _matchTooltipCell = null; // Track which cell tooltip is showing for
+
+        /**
+         * Create match tooltip element if not exists
+         */
+        function _createMatchTooltip() {
+            if (_matchTooltip) return;
+
+            _matchTooltip = document.createElement('div');
+            _matchTooltip.className = 'match-tooltip';
+            _matchTooltip.style.display = 'none';
+            document.body.appendChild(_matchTooltip);
+
+            // Keep tooltip visible when hovering over it
+            _matchTooltip.addEventListener('mouseenter', () => {
+                if (_matchTooltipHideTimeout) {
+                    clearTimeout(_matchTooltipHideTimeout);
+                    _matchTooltipHideTimeout = null;
+                }
+            });
+
+            _matchTooltip.addEventListener('mouseleave', () => {
+                _hideMatchTooltip();
+            });
+        }
+
+        /**
+         * Show match tooltip for a cell
+         */
+        function _showMatchTooltip(cell, weekId, slotId) {
+            if (typeof ComparisonEngine === 'undefined') return;
+
+            const matches = ComparisonEngine.getSlotMatches(weekId, slotId);
+            if (matches.length === 0) return;
+
+            // Get user team info for side-by-side display
+            const userTeamInfo = ComparisonEngine.getUserTeamInfo(weekId, slotId);
+
+            _createMatchTooltip();
+
+            // Track which cell we're showing tooltip for
+            _matchTooltipCell = cell;
+
+            if (_matchTooltipHideTimeout) {
+                clearTimeout(_matchTooltipHideTimeout);
+                _matchTooltipHideTimeout = null;
+            }
+
+            // Build user team column HTML
+            let userTeamHtml = '';
+            if (userTeamInfo) {
+                const userAvailableHtml = userTeamInfo.availablePlayers.map(p => {
+                    const isCurrentUser = p.userId === _currentUserId;
+                    return `<div class="player-row player-available">
+                        <span class="player-status-dot available"></span>
+                        <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}${isCurrentUser ? ' (You)' : ''}</span>
+                    </div>`;
+                }).join('');
+
+                const userUnavailableHtml = userTeamInfo.unavailablePlayers.map(p =>
+                    `<div class="player-row player-unavailable">
+                        <span class="player-status-dot unavailable"></span>
+                        <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}</span>
+                    </div>`
+                ).join('');
+
+                userTeamHtml = `
+                    <div class="match-column user-team-column">
+                        <div class="match-team-header">
+                            <span class="match-team-tag">[${_escapeHtml(userTeamInfo.teamTag)}]</span>
+                            <span class="match-player-count">${userTeamInfo.availablePlayers.length}/${userTeamInfo.availablePlayers.length + userTeamInfo.unavailablePlayers.length}</span>
+                        </div>
+                        <div class="match-roster-list">
+                            ${userAvailableHtml}
+                            ${userUnavailableHtml}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Build opponents column HTML
+            const opponentsHtml = matches.map((match, index) => {
+                const availableHtml = match.availablePlayers.map(p =>
+                    `<div class="player-row player-available">
+                        <span class="player-status-dot available"></span>
+                        <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}</span>
+                    </div>`
+                ).join('');
+
+                const unavailableHtml = match.unavailablePlayers.map(p =>
+                    `<div class="player-row player-unavailable">
+                        <span class="player-status-dot unavailable"></span>
+                        <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}</span>
+                    </div>`
+                ).join('');
+
+                return `
+                    <div class="match-team-section">
+                        <div class="match-team-header">
+                            <span class="match-team-tag">[${_escapeHtml(match.teamTag)}]</span>
+                            <span class="match-team-name">${_escapeHtml(match.teamName)}</span>
+                            <span class="match-player-count">${match.availablePlayers.length}/${match.availablePlayers.length + match.unavailablePlayers.length}</span>
+                        </div>
+                        <div class="match-roster-list">
+                            ${availableHtml}
+                            ${unavailableHtml}
+                        </div>
+                    </div>
+                    ${index < matches.length - 1 ? '<hr class="match-divider">' : ''}
+                `;
+            }).join('');
+
+            // Combine into side-by-side layout
+            const tooltipHtml = `
+                <div class="match-tooltip-grid">
+                    ${userTeamHtml}
+                    <div class="match-column opponents-column">
+                        ${opponentsHtml}
+                    </div>
+                </div>
+            `;
+
+            _matchTooltip.innerHTML = tooltipHtml;
+
+            // Position tooltip near cell
+            const cellRect = cell.getBoundingClientRect();
+
+            // Make visible but off-screen to measure
+            _matchTooltip.style.visibility = 'hidden';
+            _matchTooltip.style.display = 'block';
+            const tooltipRect = _matchTooltip.getBoundingClientRect();
+
+            // Position to the right of the cell by default
+            let left = cellRect.right + 8;
+            let top = cellRect.top;
+
+            // If tooltip would go off right edge, show on left
+            if (left + tooltipRect.width > window.innerWidth - 8) {
+                left = cellRect.left - tooltipRect.width - 8;
+            }
+
+            // If tooltip would go off bottom, adjust up
+            if (top + tooltipRect.height > window.innerHeight - 8) {
+                top = window.innerHeight - tooltipRect.height - 8;
+            }
+
+            // Ensure tooltip doesn't go off top
+            if (top < 8) {
+                top = 8;
+            }
+
+            _matchTooltip.style.left = `${left}px`;
+            _matchTooltip.style.top = `${top}px`;
+            _matchTooltip.style.visibility = 'visible';
+        }
+
+        /**
+         * Hide match tooltip with delay
+         */
+        function _hideMatchTooltip() {
+            _matchTooltipHideTimeout = setTimeout(() => {
+                if (_matchTooltip) {
+                    _matchTooltip.style.display = 'none';
+                }
+                _matchTooltipCell = null;
+            }, 150);
+        }
+
+        /**
+         * Immediately hide match tooltip
+         */
+        function _hideMatchTooltipImmediate() {
+            if (_matchTooltipHideTimeout) {
+                clearTimeout(_matchTooltipHideTimeout);
+                _matchTooltipHideTimeout = null;
+            }
+            if (_matchTooltip) {
+                _matchTooltip.style.display = 'none';
+            }
+            _matchTooltipCell = null;
+        }
+
+        /**
+         * Handle mouse enter on match cells for tooltip
+         */
+        function _handleMatchCellMouseEnter(e) {
+            if (!_comparisonMode) return;
+
+            const cell = e.target.closest('.grid-cell');
+            if (!cell) return;
+
+            // Only show tooltip for match cells
+            if (!cell.classList.contains('comparison-match-full') &&
+                !cell.classList.contains('comparison-match-partial')) {
+                return;
+            }
+
+            // If already showing tooltip for this cell, just cancel any pending hide
+            if (_matchTooltipCell === cell) {
+                if (_matchTooltipHideTimeout) {
+                    clearTimeout(_matchTooltipHideTimeout);
+                    _matchTooltipHideTimeout = null;
+                }
+                return;
+            }
+
+            const cellId = cell.dataset.cellId;
+            if (cellId) {
+                _showMatchTooltip(cell, getWeekId(), cellId);
+            }
+        }
+
+        /**
+         * Handle mouse leave on match cells
+         */
+        function _handleMatchCellMouseLeave(e) {
+            if (!_comparisonMode) return;
+
+            const cell = e.target.closest('.grid-cell');
+            if (!cell) return;
+
+            // Only hide if this is the cell we're showing tooltip for
+            // and we're actually leaving the cell (not just moving to a child)
+            if (cell === _matchTooltipCell) {
+                // Check if relatedTarget (where mouse is going) is still inside the cell
+                const relatedTarget = e.relatedTarget;
+                if (relatedTarget && cell.contains(relatedTarget)) {
+                    // Still inside the cell, don't hide
+                    return;
+                }
+                _hideMatchTooltip();
+            }
+        }
+
         const instance = {
             init,
             getSelectedCells,
@@ -783,7 +1140,13 @@ const AvailabilityGrid = (function() {
             // Slice 2.5: Team view functions
             updateTeamDisplay,
             onOverflowClick,
-            refreshDisplay
+            refreshDisplay,
+            // Slice 3.4: Comparison mode functions
+            enterComparisonMode,
+            exitComparisonMode,
+            updateComparisonHighlights,
+            clearComparisonHighlights,
+            isComparisonMode
         };
 
         return instance;

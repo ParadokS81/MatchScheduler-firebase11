@@ -507,17 +507,16 @@ body {
   border-color: var(--primary);
 }
 
-/* User's own availability indicator - thick colored border */
+/* User's own availability indicator - NO border needed since badges show availability */
+/* The colored badge inside the cell already indicates the user is available */
 .grid-cell.user-available {
-  border: 2px solid var(--primary);
-  box-shadow: inset 0 0 0 1px var(--primary);
+  /* No special border - badge provides visual indicator */
 }
 
-/* User-available cells that are also selected */
+/* User-available cells that are also selected (editing mode) */
 .grid-cell.user-available.selected {
   background-color: var(--primary);
-  border: 2px solid var(--primary);
-  box-shadow: none;
+  border-color: var(--primary);
 }
 
 /* Sync shimmer animation for cells being saved */
@@ -880,4 +879,188 @@ body {
   font-weight: 600;
   background-color: var(--accent);
   color: var(--accent-foreground);
+}
+
+/* ========================================
+   SLICE 3.4: COMPARISON MODE STYLES
+   ======================================== */
+
+/* Semantic color variables for comparison */
+:root {
+  --success: oklch(0.60 0.18 145); /* Green for full match */
+  --warning: oklch(0.70 0.15 85);  /* Amber for partial match */
+}
+
+.dark {
+  --success: oklch(0.55 0.16 145);
+  --warning: oklch(0.65 0.14 85);
+}
+
+/* Comparison mode indicator on grid container */
+.availability-grid-container.comparison-mode {
+  /* Subtle visual indicator that we're in comparison mode */
+}
+
+/* Full match - 4+ players on both sides, ready for 4v4 */
+.grid-cell.comparison-match-full {
+  border: 2px solid var(--success) !important;
+  box-shadow: inset 0 0 0 1px oklch(from var(--success) l c h / 0.3);
+}
+
+.grid-cell.comparison-match-full:hover {
+  border-color: var(--success) !important;
+  box-shadow: inset 0 0 0 2px oklch(from var(--success) l c h / 0.4);
+}
+
+/* Partial match - meets filter but <4 players, possible with standins */
+.grid-cell.comparison-match-partial {
+  border: 2px solid var(--warning) !important;
+  box-shadow: inset 0 0 0 1px oklch(from var(--warning) l c h / 0.3);
+}
+
+.grid-cell.comparison-match-partial:hover {
+  border-color: var(--warning) !important;
+  box-shadow: inset 0 0 0 2px oklch(from var(--warning) l c h / 0.4);
+}
+
+/* Match tooltip - shown on hover of match cells */
+.match-tooltip {
+  position: fixed;
+  z-index: 100;
+  background-color: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 0.75rem;
+  min-width: 12rem;
+  max-width: 28rem;
+  font-size: 0.75rem;
+}
+
+/* Side-by-side grid layout for user team vs opponents */
+.match-tooltip-grid {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.match-tooltip-grid .match-column {
+  flex: 1;
+  min-width: 0;
+}
+
+.match-tooltip-grid .user-team-column {
+  padding-right: 0.75rem;
+  border-right: 1px solid var(--border);
+}
+
+.match-tooltip-grid .opponents-column {
+  /* Opponents column - can have multiple teams stacked */
+}
+
+.match-team-section {
+  margin-bottom: 0.5rem;
+}
+
+.match-team-section:last-child {
+  margin-bottom: 0;
+}
+
+.match-team-header {
+  font-weight: 600;
+  margin-bottom: 0.375rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.match-team-tag {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.match-team-name {
+  color: var(--foreground);
+}
+
+/* Vertical roster list for better readability */
+.match-roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.match-roster-list .player-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0;
+  font-size: 0.75rem;
+}
+
+.match-roster-list .player-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.match-roster-list .player-status-dot.available {
+  background-color: var(--success);
+}
+
+.match-roster-list .player-status-dot.unavailable {
+  background-color: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+.match-roster-list .player-available .player-name {
+  color: var(--foreground);
+}
+
+.match-roster-list .player-unavailable .player-name {
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}
+
+/* Player count in header */
+.match-player-count {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.match-divider {
+  margin: 0.5rem 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+/* Match count indicator badge - shows number of matching teams */
+.match-count-badge {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.25rem;
+  background-color: var(--success);
+  color: white;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  z-index: 10;
+}
+
+.comparison-match-partial .match-count-badge {
+  background-color: var(--warning);
+}
+
+/* Grid cell needs relative positioning for badge */
+.grid-cell.comparison-match-full,
+.grid-cell.comparison-match-partial {
+  position: relative;
 }
