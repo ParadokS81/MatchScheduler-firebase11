@@ -1,54 +1,81 @@
 ---
 description: Create detailed technical slice specification for implementation
 argument-hint: <slice-id>
-allowed-tools: Read, Write
+allowed-tools: Read, Write, Task, AskUserQuestion
 ---
 
 # Create Technical Slice for $ARGUMENTS
 
 Generate a comprehensive technical specification for slice $ARGUMENTS following the project template.
 
-## Pre-Work
+## Strategy: Use Task Agents to Preserve Context
 
-1. **Load Context** (if not already loaded):
-   - PROJECT_ROADMAP_V2.md
-   - PROJECT_SLICE_TEMPLATE.md
-   - Relevant Pillar documents
+This command uses Task agents for heavy exploration work, keeping the main conversation context lean.
 
-2. **Review Roadmap Entry**:
-   - Find slice $ARGUMENTS in the roadmap
-   - Note the PRD sections referenced
-   - Understand dependencies
+## Phase 1: Gather Context (via Task Agent)
 
-3. **Load PRD Sections**:
-   - Read only the specific PRD sections mentioned for this slice
-   - Focus on user journeys and requirements
+Use the Task tool with `subagent_type: "Explore"` to gather all needed context:
 
-## Clarifying Questions
+```
+Task(Explore): "Analyze slice $ARGUMENTS for MatchScheduler planning:
 
-Before creating the slice, ask about:
-- Any ambiguous requirements in the PRD
-- UI/UX preferences not specified
-- Performance considerations
-- Error handling approaches
-- Integration with existing components
+1. Read PROJECT_ROADMAP.md - find slice $ARGUMENTS entry, note PRD sections referenced
+2. Read PROJECT_SLICE_TEMPLATE.md - understand required sections
+3. Read the PRD sections mentioned for this slice (in Pillar 1)
+4. Search for existing components/services that will be modified
+5. Check context/slices/ for similar completed slices as reference
+6. Look at SCHEMA.md for relevant data structures
 
-## Slice Creation
+Return a structured summary:
+- Slice definition from roadmap
+- PRD requirements to implement
+- Existing code that will be touched
+- Data structures involved
+- Similar patterns from completed slices
+- Any obvious gaps or questions"
+```
 
-Follow PROJECT_SLICE_TEMPLATE.md structure:
+## Phase 2: Clarify Requirements
+
+After receiving the exploration summary, use AskUserQuestion for any ambiguities:
+- UI/UX preferences not specified in PRD
+- Performance approach if multiple options
+- Integration choices if unclear
+
+Only ask about significant gaps. Skip minor details (error wording, button text, etc.)
+
+## Phase 3: Create Slice Specification
+
+Based on exploration results and clarifications, create the slice spec following PROJECT_SLICE_TEMPLATE.md:
 
 1. **Slice Definition** - ID, name, user story, success criteria
-2. **PRD Mapping** - Primary, dependent, and ignored sections
-3. **Component Architecture** - New/modified components, services
-4. **Execution Boundaries** - Start state, end state, out of scope
+2. **PRD Mapping** - Primary, dependent, ignored sections
+3. **Full Stack Architecture** - Components, services, backend, integration points
+4. **Integration Code Examples** - Actual code showing connections
 5. **Performance Classification** - Hot paths vs cold paths
-6. **Test Scenarios** - Checklist format
-7. **Implementation Notes** - Gotchas and patterns
-8. **Pragmatic Assumptions** - Document any decisions made
+6. **Data Flow Diagram** - Visual flow from UI to database
+7. **Test Scenarios** - Frontend, backend, integration, E2E
+8. **Common Pitfalls** - What often gets missed
+9. **Implementation Notes** - Gotchas, patterns, dependencies
 
-## Output
+## Phase 4: Save Output
 
 Save the completed slice as:
 `/context/slices/slice-$ARGUMENTS-[descriptive-name].md`
 
-Replace [descriptive-name] with a kebab-case description of the feature.
+## Why This Approach Works
+
+- **Exploration happens in agent**: ~4000 tokens saved from main context
+- **Only the summary enters conversation**: Focused, relevant info only
+- **Clarifications are targeted**: You don't re-read docs to answer questions
+- **Slice spec is self-contained**: All context captured in the document
+
+## Quality Checklist
+
+Before saving:
+- [ ] Frontend AND backend requirements specified
+- [ ] Integration examples show actual code
+- [ ] Hot paths identified and approach specified
+- [ ] Test scenarios cover full stack
+- [ ] Data flow is complete (UI -> DB -> UI)
+- [ ] No anti-patterns from CLAUDE.md

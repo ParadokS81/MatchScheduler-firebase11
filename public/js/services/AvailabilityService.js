@@ -10,6 +10,13 @@ const AvailabilityService = (function() {
     let _cache = new Map(); // Key: "{teamId}_{weekId}", Value: availability doc
     let _listeners = new Map(); // Key: "{teamId}_{weekId}", Value: unsubscribe fn
 
+    /**
+     * Check if running in local dev mode
+     */
+    function _isDevMode() {
+        return window.firebase?.isLocalDev === true;
+    }
+
     async function init() {
         if (_initialized) return;
 
@@ -21,7 +28,7 @@ const AvailabilityService = (function() {
         _db = window.firebase.db;
         _functions = window.firebase.functions;
         _initialized = true;
-        console.log('📅 AvailabilityService initialized');
+        console.log('📅 AvailabilityService initialized', _isDevMode() ? '(DEV MODE - direct writes)' : '(Cloud Functions)');
     }
 
     /**
@@ -142,8 +149,41 @@ const AvailabilityService = (function() {
         });
         _cache.set(cacheKey, currentData);
 
-        // Call Cloud Function
         try {
+            // DEV MODE: Direct Firestore write (no Cloud Function)
+            if (_isDevMode()) {
+                const { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+
+                const docRef = doc(_db, 'availability', cacheKey);
+                const updateData = {};
+
+                slotIds.forEach(slotId => {
+                    updateData[`slots.${slotId}`] = arrayUnion(userId);
+                });
+                updateData.lastUpdated = serverTimestamp();
+
+                // Check if document exists
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    // Document exists - use updateDoc for nested field updates
+                    await updateDoc(docRef, updateData);
+                } else {
+                    // Document doesn't exist - create it with setDoc
+                    await setDoc(docRef, {
+                        teamId,
+                        weekId,
+                        slots: {},
+                        lastUpdated: serverTimestamp()
+                    });
+                    // Then update with the slots
+                    await updateDoc(docRef, updateData);
+                }
+
+                console.log(`🔧 DEV: Added to ${slotIds.length} slots`);
+                return { success: true };
+            }
+
+            // PRODUCTION: Call Cloud Function
             const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
             const updateFn = httpsCallable(_functions, 'updateAvailability');
 
@@ -204,8 +244,25 @@ const AvailabilityService = (function() {
             _cache.set(cacheKey, currentData);
         }
 
-        // Call Cloud Function
         try {
+            // DEV MODE: Direct Firestore write (no Cloud Function)
+            if (_isDevMode()) {
+                const { doc, updateDoc, arrayRemove, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+
+                const docRef = doc(_db, 'availability', cacheKey);
+                const updateData = {};
+
+                slotIds.forEach(slotId => {
+                    updateData[`slots.${slotId}`] = arrayRemove(userId);
+                });
+                updateData.lastUpdated = serverTimestamp();
+
+                await updateDoc(docRef, updateData);
+                console.log(`🔧 DEV: Removed ${userId} from ${slotIds.length} slots`);
+                return { success: true };
+            }
+
+            // PRODUCTION: Call Cloud Function
             const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
             const updateFn = httpsCallable(_functions, 'updateAvailability');
 

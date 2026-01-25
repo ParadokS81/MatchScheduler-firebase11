@@ -18,11 +18,11 @@
     <!-- Firebase v11 SDK -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
-        import { getFirestore } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
-        import { getAuth } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+        import { getFirestore, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+        import { getAuth, connectAuthEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
         import { getStorage } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
         import { getFunctions, connectFunctionsEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
-        
+
         // Firebase configuration
         const firebaseConfig = {
             apiKey: "AIzaSyAElazBT8eT13fT0wCO5K7z3-5D1z42ZBM",
@@ -32,34 +32,47 @@
             messagingSenderId: "340309534131",
             appId: "1:340309534131:web:77155fb67f95ec2816d7c6"
         };
-        
+
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
         const storage = getStorage(app);
         const functions = getFunctions(app);
-        
-        // Connect to emulators in development
-        if (window.location.hostname === 'localhost' ||
+
+        // Check if we should use emulators (localhost development)
+        const isLocalDev = window.location.hostname === 'localhost' ||
             window.location.hostname === '127.0.0.1' ||
             window.location.hostname.startsWith('172.') ||
-            window.location.hostname.startsWith('100.74.12.')) {
+            window.location.hostname.startsWith('192.168.') ||
+            window.location.hostname.startsWith('100.');
+
+        if (isLocalDev) {
+            const emulatorHost = window.location.hostname;
             try {
-                // Use the same host as the current page for Functions emulator
-                const functionsHost = window.location.hostname;
-                connectFunctionsEmulator(functions, functionsHost, 5001);
-                console.log(`🔗 Connected to Functions emulator on ${functionsHost}:5001`);
+                connectFirestoreEmulator(db, emulatorHost, 8080);
+                console.log(`🔗 Connected to Firestore emulator on ${emulatorHost}:8080`);
             } catch (error) {
-                console.warn('⚠️ Failed to connect to Functions emulator:', error);
-                console.warn('Error details:', error);
+                console.warn('⚠️ Firestore emulator connection failed:', error.message);
+            }
+            try {
+                connectAuthEmulator(auth, `http://${emulatorHost}:9099`, { disableWarnings: true });
+                console.log(`🔗 Connected to Auth emulator on ${emulatorHost}:9099`);
+            } catch (error) {
+                console.warn('⚠️ Auth emulator connection failed:', error.message);
+            }
+            try {
+                connectFunctionsEmulator(functions, emulatorHost, 5001);
+                console.log(`🔗 Connected to Functions emulator on ${emulatorHost}:5001`);
+            } catch (error) {
+                console.warn('⚠️ Functions emulator connection failed:', error.message);
             }
         } else {
-            console.log('ℹ️ Not localhost - using production Functions');
+            console.log('ℹ️ Using production Firebase services');
         }
-        
+
         // Make globally available
-        window.firebase = { app, db, auth, storage, functions };
+        window.firebase = { app, db, auth, storage, functions, isLocalDev };
     </script>
 </head>
 <body>
@@ -119,9 +132,8 @@
             </div>
             
             <div id="panel-bottom-right" class="panel">
-                <div class="panel-content">
-                    <h3 class="text-lg font-semibold mb-2">Browse Teams</h3>
-                    <p class="text-muted-foreground">Browse teams component will be here</p>
+                <div id="team-browser-container" class="panel-content">
+                    <!-- TeamBrowser component renders here -->
                 </div>
             </div>
         </main>
@@ -168,6 +180,7 @@
     <script src="js/services/TeamService.js"></script>
     <script src="js/services/AvailabilityService.js"></script>
     <script src="js/services/TemplateService.js"></script>
+    <script src="js/services/PlayerDisplayService.js"></script>
     <script src="js/services/ConfirmationModal.js"></script>
     <script src="js/components/ToastService.js"></script>
     <script src="js/components/UserProfile.js"></script>
@@ -179,6 +192,11 @@
     <script src="js/components/WeekDisplay.js"></script>
     <script src="js/components/WeekNavigation.js"></script>
     <script src="js/components/GridActionButtons.js"></script>
+    <script src="js/components/PlayerTooltip.js"></script>
+    <script src="js/components/OverflowModal.js"></script>
+    <script src="js/components/DevToolbar.js"></script>
+    <script src="js/services/TeamBrowserState.js"></script>
+    <script src="js/components/TeamBrowser.js"></script>
     <script src="js/app.js" type="module"></script>
 </body>
 </html>

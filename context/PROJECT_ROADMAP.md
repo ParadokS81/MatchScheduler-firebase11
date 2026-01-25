@@ -67,40 +67,45 @@ Detailed specifications in `/context/slices/[slice-name].md`
 **Scope:** Add me/Remove me buttons, optimistic updates, Firebase sync
 **Note:** Blue border indicates user's saved availability, real-time updates via Firestore listeners
 
-### 📅 Slice 2.3: Advanced Selection
-**Status:** Not Started  
-**User Value:** Users can select multiple slots efficiently  
-**PRD Sections:** 4.1.3 (multi-select methods)  
-**Components:** SelectionManager  
-**Scope:** Drag selection, header clicks, shift+click, select all
+### ✅ Slice 2.3: Advanced Selection
+**Status:** Complete
+**User Value:** Users can select multiple slots efficiently
+**PRD Sections:** 4.1.3 (multi-select methods)
+**Components:** AvailabilityGrid (enhanced), GridActionButtons
+**Scope:** Drag selection (rectangular), header clicks (day/time), shift+click, Select All/Clear All
+**Note:** Toggle behavior (all selected → deselect), cross-grid drag constrained to single grid
 
-### 📅 Slice 2.4: Templates & Grid Tools
-**Status:** Not Started  
-**User Value:** Users can save and reuse availability patterns  
-**PRD Sections:** 4.1.4  
-**Components:** GridTools, TemplateManager  
-**Scope:** Save/load templates, grid tools panel
+### ✅ Slice 2.4: Templates & Grid Tools
+**Status:** Complete
+**User Value:** Users can save and reuse availability patterns
+**PRD Sections:** 4.1.4
+**Components:** TemplateService, GridActionButtons (enhanced), Cloud Functions
+**Scope:** Save/load/rename/delete templates (max 3), load to W1/W2 independently
+**Note:** Real-time sync via Firestore listener, templates stored in /users/{userId}/templates subcollection
 
-### 📅 Slice 2.5: Team View Display
-**Status:** Not Started  
-**User Value:** Team members can see who's available when  
-**PRD Sections:** 4.1.2 (Team View Mode)  
-**Components:** PlayerDisplay, OverflowModal  
-**Scope:** Show initials/avatars, handle 4+ players, real-time updates
+### ✅ Slice 2.5: Team View Display
+**Status:** Complete
+**User Value:** Team members can see who's available when
+**PRD Sections:** 4.1.2 (Team View Mode)
+**Components:** PlayerDisplayService, PlayerTooltip, OverflowModal, AvailabilityGrid (enhanced)
+**Scope:** Show initials/avatars in cells, handle 4+ players with overflow, display mode toggle
+**Note:** Max 3 badges per cell, hover tooltip for 4+, click opens modal on overflow badge
 
-### 📅 Slice 2.6: Team Joining Flow
-**Status:** Not Started  
-**User Value:** Users can join teams via invite code  
-**PRD Sections:** 2.2 (Path A), 4.3.1  
-**Components:** JoinTeamModal  
+### ✅ Slice 2.6: Team Joining Flow
+**Status:** Complete
+**User Value:** Users can join teams via invite code
+**PRD Sections:** 2.2 (Path A), 4.3.1
+**Components:** OnboardingModal (join mode), TeamService, Cloud Function
 **Scope:** Enter code, validate, join team, show success
+**Note:** Full flow in OnboardingModal with validation, error handling, and real-time roster updates
 
-### 📅 Slice 2.7: Multi-Team Support
-**Status:** Not Started  
-**User Value:** Users can switch between their teams  
-**PRD Sections:** 2.4  
-**Components:** TeamSwitcher  
+### ✅ Slice 2.7: Multi-Team Support
+**Status:** Complete
+**User Value:** Users can switch between their teams
+**PRD Sections:** 2.4
+**Components:** TeamInfo (team switcher buttons), app.js (listener management)
 **Scope:** Team buttons, instant switching, cache management
+**Note:** 2-button grid when user has 2 teams, instant switch from cached _userTeams array, automatic availability listener swap
 
 ---
 
@@ -204,10 +209,10 @@ Detailed specifications in `/context/slices/[slice-name].md`
 ---
 
 ## Progress Summary
-**Slices Complete:** 7 / 24
+**Slices Complete:** 12 / 24
 
 ## Current Focus
-Ready for Slice 2.3 - Advanced Selection (drag selection, header clicks, shift+click)
+Ready for Part 3 - Team Coordination (Slice 3.1)
 
 ---
 

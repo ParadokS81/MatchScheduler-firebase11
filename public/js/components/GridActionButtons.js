@@ -1,5 +1,6 @@
 // GridActionButtons.js - Floating Add Me / Remove Me buttons with Template support
 // Following CLAUDE.md architecture: Revealing Module Pattern
+// Enhanced for Slice 2.5: Display mode toggle (Initials/Avatars)
 
 const GridActionButtons = (function() {
     'use strict';
@@ -12,6 +13,7 @@ const GridActionButtons = (function() {
     let _selectAllCallback = null; // Callback to select all cells
     let _clearAllCallback = null;  // Callback to clear all cells
     let _loadTemplateCallback = null; // Callback to load template to a week
+    let _onDisplayModeChangeCallback = null; // Callback when display mode changes
 
     function _render() {
         if (!_container) return;
@@ -20,8 +22,33 @@ const GridActionButtons = (function() {
         const canSaveMore = typeof TemplateService !== 'undefined' ? TemplateService.canSaveMore() : false;
         const hasSelection = _getSelectedCells ? _getSelectedCells().length > 0 : false;
 
+        // Get current display mode
+        const currentMode = typeof PlayerDisplayService !== 'undefined'
+            ? PlayerDisplayService.getDisplayMode()
+            : 'initials';
+        const isInitials = currentMode === 'initials';
+
         _container.innerHTML = `
             <div class="grid-action-buttons flex flex-col gap-3 p-3 bg-card border border-border rounded-lg shadow-md">
+                <!-- Display Mode Toggle (Slice 2.5) -->
+                <div class="flex items-center justify-between pb-2 border-b border-border">
+                    <span class="text-xs text-muted-foreground">Display</span>
+                    <div class="flex gap-1">
+                        <button id="display-mode-initials"
+                                class="px-2 py-1 text-xs rounded transition-colors ${isInitials ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}"
+                                title="Show initials">
+                            ABC
+                        </button>
+                        <button id="display-mode-avatars"
+                                class="px-2 py-1 text-xs rounded transition-colors ${!isInitials ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}"
+                                title="Show avatars">
+                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Action Buttons Row -->
                 <div class="flex flex-wrap gap-2">
                     <button id="add-me-btn"
@@ -117,6 +144,12 @@ const GridActionButtons = (function() {
         clearAllBtn?.addEventListener('click', _handleClearAll);
         saveTemplateBtn?.addEventListener('click', _handleSaveTemplate);
 
+        // Display mode toggle (Slice 2.5)
+        const initialsBtn = document.getElementById('display-mode-initials');
+        const avatarsBtn = document.getElementById('display-mode-avatars');
+        initialsBtn?.addEventListener('click', () => _setDisplayMode('initials'));
+        avatarsBtn?.addEventListener('click', () => _setDisplayMode('avatars'));
+
         // Load template buttons
         document.querySelectorAll('.load-template-btn').forEach(btn => {
             btn.addEventListener('click', _handleLoadTemplate);
@@ -126,6 +159,22 @@ const GridActionButtons = (function() {
         document.querySelectorAll('.template-menu-btn').forEach(btn => {
             btn.addEventListener('click', _handleTemplateMenu);
         });
+    }
+
+    /**
+     * Set display mode and notify listeners
+     * @param {'initials' | 'avatars'} mode
+     */
+    function _setDisplayMode(mode) {
+        if (typeof PlayerDisplayService !== 'undefined') {
+            PlayerDisplayService.setDisplayMode(mode);
+        }
+        _render(); // Re-render to update toggle state
+
+        // Notify parent to refresh grid display
+        if (_onDisplayModeChangeCallback) {
+            _onDisplayModeChangeCallback(mode);
+        }
     }
 
     function _handleSelectAll() {
@@ -490,6 +539,7 @@ const GridActionButtons = (function() {
      * @param {Function} options.selectAll - Selects all cells in both grids
      * @param {Function} options.clearAll - Clears all cells in both grids
      * @param {Function} options.loadTemplate - Loads template to specified week
+     * @param {Function} options.onDisplayModeChange - Called when display mode changes (Slice 2.5)
      */
     function init(containerId, options = {}) {
         _container = document.getElementById(containerId);
@@ -505,9 +555,13 @@ const GridActionButtons = (function() {
         _selectAllCallback = options.selectAll;
         _clearAllCallback = options.clearAll;
         _loadTemplateCallback = options.loadTemplate;
+        _onDisplayModeChangeCallback = options.onDisplayModeChange;
 
         // Listen for template updates to re-render
         window.addEventListener('templates-updated', _render);
+
+        // Listen for display mode changes from elsewhere (e.g., keyboard shortcut)
+        window.addEventListener('display-mode-changed', _render);
 
         _render();
         console.log('🎯 GridActionButtons initialized');
@@ -525,6 +579,7 @@ const GridActionButtons = (function() {
      */
     function cleanup() {
         window.removeEventListener('templates-updated', _render);
+        window.removeEventListener('display-mode-changed', _render);
         if (_container) _container.innerHTML = '';
         _container = null;
         _getSelectedCells = null;
@@ -534,6 +589,7 @@ const GridActionButtons = (function() {
         _selectAllCallback = null;
         _clearAllCallback = null;
         _loadTemplateCallback = null;
+        _onDisplayModeChangeCallback = null;
     }
 
     return {

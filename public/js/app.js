@@ -1,35 +1,36 @@
 // MatchScheduler Application Entry Point
 // Following PRD v2 Architecture with Revealing Module Pattern
+// Enhanced for Slice 2.5: Team view display with player badges
 
 const MatchSchedulerApp = (function() {
     'use strict';
-    
+
     // Private variables
     let _initialized = false;
     let _currentUser = null;
     let _selectedTeam = null;
     let _weekDisplay1 = null;
     let _weekDisplay2 = null;
-    
+
     // Initialize application
     function init() {
         if (_initialized) return;
-        
+
         console.log('🚀 MatchScheduler v3.0 - Initializing...');
-        
+
         // Wait for Firebase to be ready
         if (typeof window.firebase === 'undefined') {
             setTimeout(init, 100);
             return;
         }
-        
+
         _initializeComponents();
         _setupEventListeners();
         _initialized = true;
-        
+
         console.log('✅ MatchScheduler initialized successfully');
     }
-    
+
     // Initialize components
     function _initializeComponents() {
         // Initialize UserProfile component in top-left panel
@@ -44,7 +45,31 @@ const MatchSchedulerApp = (function() {
         // Initialize Availability Grid components
         _initializeAvailabilityGrid();
 
+        // Initialize TeamBrowser in bottom-right panel (Slice 3.1)
+        _initializeTeamBrowser();
+
         console.log('🧩 Components initialized');
+    }
+
+    // Initialize TeamBrowser component (Slice 3.1)
+    function _initializeTeamBrowser() {
+        if (typeof TeamBrowser !== 'undefined' && TeamService.isCacheReady()) {
+            TeamBrowser.init('team-browser-container');
+            console.log('🔍 TeamBrowser initialized');
+        } else {
+            // Retry after cache is ready
+            const checkCache = setInterval(() => {
+                if (TeamService.isCacheReady()) {
+                    clearInterval(checkCache);
+                    if (typeof TeamBrowser !== 'undefined') {
+                        TeamBrowser.init('team-browser-container');
+                        console.log('🔍 TeamBrowser initialized (after cache ready)');
+                    }
+                }
+            }, 200);
+            // Give up after 10 seconds
+            setTimeout(() => clearInterval(checkCache), 10000);
+        }
     }
 
     // Initialize availability grid components
@@ -63,6 +88,9 @@ const MatchSchedulerApp = (function() {
         _weekDisplay2 = WeekDisplay.create('panel-bottom-center', currentWeek + 1);
         _weekDisplay2.init();
 
+        // Set up overflow click handlers for both grids (Slice 2.5)
+        _setupOverflowHandlers();
+
         // Initialize GridActionButtons with callbacks
         GridActionButtons.init('grid-action-buttons-container', {
             getSelectedCells: _getAllSelectedCells,
@@ -71,7 +99,8 @@ const MatchSchedulerApp = (function() {
             onSyncEnd: _handleSyncEnd,
             selectAll: _handleSelectAll,
             clearAll: _handleClearAll,
-            loadTemplate: _handleLoadTemplate
+            loadTemplate: _handleLoadTemplate,
+            onDisplayModeChange: _handleDisplayModeChange
         });
 
         // Register selection change handlers
@@ -79,6 +108,68 @@ const MatchSchedulerApp = (function() {
         _weekDisplay2.onSelectionChange(() => GridActionButtons.onSelectionChange());
 
         console.log(`📅 Availability grids initialized for weeks ${currentWeek} and ${currentWeek + 1}`);
+    }
+
+    /**
+     * Set up overflow click handlers for both week grids (Slice 2.5)
+     */
+    function _setupOverflowHandlers() {
+        const handleOverflowClick = (cellId, weekNumber) => {
+            const team = _selectedTeam;
+            if (!team) return;
+
+            const currentUserId = window.firebase?.auth?.currentUser?.uid;
+
+            // Determine which week display this is from (weekNumber is the grid's week number)
+            const weekDisplay = weekNumber === _weekDisplay1?.getWeekNumber()
+                ? _weekDisplay1
+                : _weekDisplay2;
+
+            const weekId = weekDisplay?.getWeekId();
+            const availabilityData = AvailabilityService.getCachedData(team.id, weekId);
+
+            // Extract slots from availability data
+            let slots = {};
+            if (availabilityData?.slots && typeof availabilityData.slots === 'object') {
+                slots = availabilityData.slots;
+            } else if (availabilityData) {
+                Object.entries(availabilityData).forEach(([key, value]) => {
+                    if (key.startsWith('slots.')) {
+                        const slotId = key.replace('slots.', '');
+                        slots[slotId] = value;
+                    }
+                });
+            }
+
+            const playerIds = slots[cellId] || [];
+
+            if (playerIds.length > 0 && typeof OverflowModal !== 'undefined') {
+                OverflowModal.show(
+                    cellId,
+                    weekId,
+                    playerIds,
+                    team.playerRoster || [],
+                    currentUserId
+                );
+            }
+        };
+
+        if (_weekDisplay1) {
+            _weekDisplay1.onOverflowClick(handleOverflowClick);
+        }
+        if (_weekDisplay2) {
+            _weekDisplay2.onOverflowClick(handleOverflowClick);
+        }
+    }
+
+    /**
+     * Handle display mode change (Slice 2.5)
+     * Refresh all grids when switching between initials/avatars
+     */
+    function _handleDisplayModeChange(mode) {
+        console.log('🎨 Display mode changed to:', mode);
+        if (_weekDisplay1) _weekDisplay1.refreshDisplay();
+        if (_weekDisplay2) _weekDisplay2.refreshDisplay();
     }
 
     /**
@@ -193,11 +284,17 @@ const MatchSchedulerApp = (function() {
         if (team) {
             // Set up new availability listeners
             _setupAvailabilityListeners(team.id);
+
+            // Update TeamBrowser to exclude new current team (Slice 3.1)
+            if (typeof TeamBrowser !== 'undefined') {
+                TeamBrowser.setCurrentTeam(team.id);
+            }
         }
     }
 
     /**
      * Set up availability listeners for a team
+     * Enhanced for Slice 2.5: Now updates team display with player badges
      * @param {string} teamId
      */
     async function _setupAvailabilityListeners(teamId) {
@@ -213,7 +310,9 @@ const MatchSchedulerApp = (function() {
             const data1 = AvailabilityService.getCachedData(teamId, week1Id);
             console.log('📊 Week 1 initial data:', data1);
             if (data1 && userId && _weekDisplay1) {
+                // Update both personal availability indicator and team display
                 _weekDisplay1.getGrid()?.updateAvailabilityDisplay(data1, userId);
+                _updateTeamDisplay(_weekDisplay1, data1, userId);
             }
 
             // Subscribe to real-time updates (get userId dynamically in callback)
@@ -222,6 +321,7 @@ const MatchSchedulerApp = (function() {
                 console.log('🔄 Week 1 listener fired:', data, 'user:', currentUserId);
                 if (_weekDisplay1 && currentUserId) {
                     _weekDisplay1.getGrid()?.updateAvailabilityDisplay(data, currentUserId);
+                    _updateTeamDisplay(_weekDisplay1, data, currentUserId);
                 }
             });
         }
@@ -232,7 +332,9 @@ const MatchSchedulerApp = (function() {
             const data2 = AvailabilityService.getCachedData(teamId, week2Id);
             console.log('📊 Week 2 initial data:', data2);
             if (data2 && userId && _weekDisplay2) {
+                // Update both personal availability indicator and team display
                 _weekDisplay2.getGrid()?.updateAvailabilityDisplay(data2, userId);
+                _updateTeamDisplay(_weekDisplay2, data2, userId);
             }
 
             // Subscribe to real-time updates (get userId dynamically in callback)
@@ -241,11 +343,25 @@ const MatchSchedulerApp = (function() {
                 console.log('🔄 Week 2 listener fired:', data, 'user:', currentUserId);
                 if (_weekDisplay2 && currentUserId) {
                     _weekDisplay2.getGrid()?.updateAvailabilityDisplay(data, currentUserId);
+                    _updateTeamDisplay(_weekDisplay2, data, currentUserId);
                 }
             });
         }
     }
-    
+
+    /**
+     * Update team display with player badges (Slice 2.5)
+     * @param {Object} weekDisplay - WeekDisplay instance
+     * @param {Object} availabilityData - Availability data from Firebase
+     * @param {string} currentUserId - Current user's ID
+     */
+    function _updateTeamDisplay(weekDisplay, availabilityData, currentUserId) {
+        if (!weekDisplay || !_selectedTeam) return;
+
+        const playerRoster = _selectedTeam.playerRoster || [];
+        weekDisplay.updateTeamDisplay(availabilityData, playerRoster, currentUserId);
+    }
+
     // Setup event listeners
     function _setupEventListeners() {
         // Settings button
@@ -253,26 +369,26 @@ const MatchSchedulerApp = (function() {
         if (settingsBtn) {
             settingsBtn.addEventListener('click', _handleSettingsClick);
         }
-        
+
         // Save button
         const saveBtn = document.getElementById('save-btn');
         if (saveBtn) {
             saveBtn.addEventListener('click', _handleSaveClick);
         }
     }
-    
-    
+
+
     // Event handlers
     function _handleSettingsClick() {
         console.log('⚙️ Settings clicked');
         // TODO: Implement settings modal
     }
-    
+
     function _handleSaveClick() {
         console.log('💾 Save clicked');
         // TODO: Implement save functionality
     }
-    
+
     // Cleanup function
     function cleanup() {
         if (typeof UserProfile !== 'undefined') {
@@ -303,6 +419,17 @@ const MatchSchedulerApp = (function() {
         }
         if (typeof TemplateService !== 'undefined') {
             TemplateService.cleanup();
+        }
+        // Slice 2.5: Clean up tooltip and modal
+        if (typeof PlayerTooltip !== 'undefined') {
+            PlayerTooltip.cleanup();
+        }
+        if (typeof OverflowModal !== 'undefined') {
+            OverflowModal.cleanup();
+        }
+        // Slice 3.1: Clean up TeamBrowser
+        if (typeof TeamBrowser !== 'undefined') {
+            TeamBrowser.cleanup();
         }
     }
 

@@ -9,6 +9,7 @@ This document defines the authoritative data structures for all Firestore collec
 | Collection | Document ID Format | Purpose |
 |------------|-------------------|---------|
 | `users` | `{userId}` (Firebase Auth UID) | User profiles and team memberships |
+| `users/{userId}/templates` | Auto-generated | User's availability templates (max 3) |
 | `teams` | Auto-generated | Team information and rosters |
 | `availability` | `{teamId}_{weekId}` | Weekly availability per team |
 | `eventLog` | Custom format | Audit trail for team operations |
@@ -45,6 +46,38 @@ interface UserDocument {
 - `teams` is an object/map, NOT an array
 - Check team membership: `userProfile.teams[teamId] === true`
 - Max 2 teams per user enforced at write time
+
+---
+
+## `/users/{userId}/templates/{templateId}`
+
+User's saved availability templates (subcollection).
+
+```typescript
+interface TemplateDocument {
+  name: string;           // 1-20 chars, user-defined template name
+  slots: string[];        // Array of slot IDs: ["mon_1800", "tue_1930", ...]
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+```
+
+**Example Document:**
+```json
+{
+  "name": "Weekday Evenings",
+  "slots": ["mon_1900", "mon_1930", "tue_1900", "tue_1930", "wed_1900", "wed_1930"],
+  "createdAt": "<Timestamp>",
+  "updatedAt": "<Timestamp>"
+}
+```
+
+**Key Points:**
+- Subcollection under user document (automatic user isolation)
+- Maximum 3 templates per user (enforced by Cloud Function)
+- Slots use same format as availability: `{day}_{time}`
+- Templates store patterns only (day/time), not week-specific data
+- Used for quick loading of recurring availability patterns
 
 ---
 
@@ -243,6 +276,7 @@ const docId = `${teamId}_${weekId}`;
 | Collection | Read | Write |
 |------------|------|-------|
 | `users` | Own document only | Own document via Cloud Functions |
+| `users/{userId}/templates` | Own templates only | Own templates via Cloud Functions |
 | `teams` | Authenticated users | Cloud Functions only |
 | `availability` | Authenticated users | Cloud Functions only |
 | `eventLog` | Authenticated users | Cloud Functions only |
@@ -253,3 +287,4 @@ const docId = `${teamId}_${weekId}`;
 
 - **2026-01-23**: Initial schema documentation
 - Includes: users, teams, availability, eventLog collections
+- **2026-01-23**: Added templates subcollection under users (Slice 2.4)

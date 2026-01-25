@@ -1,0 +1,167 @@
+// TeamBrowserState.js - Selection and filter state for team browser
+// Lightweight state helper following Revealing Module Pattern
+
+const TeamBrowserState = (function() {
+    'use strict';
+
+    // Selection state
+    let _selectedTeams = new Set();
+
+    // Filter state
+    let _searchQuery = '';
+    let _divisionFilters = new Set(); // Empty = all, or contains 'D1', 'D2', 'D3'
+
+    // Callbacks for state changes
+    let _onSelectionChange = null;
+    let _onFilterChange = null;
+
+    // ========================================
+    // Selection Methods
+    // ========================================
+
+    function getSelectedTeams() {
+        return new Set(_selectedTeams);
+    }
+
+    function isTeamSelected(teamId) {
+        return _selectedTeams.has(teamId);
+    }
+
+    function toggleTeamSelection(teamId) {
+        if (_selectedTeams.has(teamId)) {
+            _selectedTeams.delete(teamId);
+        } else {
+            _selectedTeams.add(teamId);
+        }
+
+        if (_onSelectionChange) {
+            _onSelectionChange(_selectedTeams);
+        }
+
+        console.log('📋 Team selection:', Array.from(_selectedTeams));
+        return isTeamSelected(teamId);
+    }
+
+    function selectTeam(teamId) {
+        if (!_selectedTeams.has(teamId)) {
+            _selectedTeams.add(teamId);
+            if (_onSelectionChange) {
+                _onSelectionChange(_selectedTeams);
+            }
+            console.log('📋 Team selected:', teamId);
+        }
+    }
+
+    function deselectTeam(teamId) {
+        if (_selectedTeams.has(teamId)) {
+            _selectedTeams.delete(teamId);
+            if (_onSelectionChange) {
+                _onSelectionChange(_selectedTeams);
+            }
+        }
+    }
+
+    function clearSelection() {
+        _selectedTeams.clear();
+        if (_onSelectionChange) {
+            _onSelectionChange(_selectedTeams);
+        }
+    }
+
+    function getSelectionCount() {
+        return _selectedTeams.size;
+    }
+
+    // ========================================
+    // Filter Methods
+    // ========================================
+
+    function getSearchQuery() {
+        return _searchQuery;
+    }
+
+    function setSearchQuery(query) {
+        _searchQuery = (query || '').toLowerCase().trim();
+        if (_onFilterChange) {
+            _onFilterChange({ search: _searchQuery, divisions: _divisionFilters });
+        }
+    }
+
+    function getDivisionFilters() {
+        return new Set(_divisionFilters);
+    }
+
+    function isDivisionActive(division) {
+        return _divisionFilters.has(division);
+    }
+
+    function toggleDivisionFilter(division) {
+        if (_divisionFilters.has(division)) {
+            _divisionFilters.delete(division);
+        } else {
+            _divisionFilters.add(division);
+        }
+        if (_onFilterChange) {
+            _onFilterChange({ search: _searchQuery, divisions: _divisionFilters });
+        }
+        console.log('🏷️ Division filters:', Array.from(_divisionFilters));
+    }
+
+    function clearDivisionFilters() {
+        _divisionFilters.clear();
+        if (_onFilterChange) {
+            _onFilterChange({ search: _searchQuery, divisions: _divisionFilters });
+        }
+    }
+
+    // ========================================
+    // Event Handlers
+    // ========================================
+
+    function onSelectionChange(callback) {
+        _onSelectionChange = callback;
+    }
+
+    function onFilterChange(callback) {
+        _onFilterChange = callback;
+    }
+
+    // ========================================
+    // Lifecycle
+    // ========================================
+
+    function reset() {
+        _selectedTeams.clear();
+        _searchQuery = '';
+        _divisionFilters.clear();
+        _onSelectionChange = null;
+        _onFilterChange = null;
+    }
+
+    // Public API
+    return {
+        // Selection
+        getSelectedTeams,
+        isTeamSelected,
+        toggleTeamSelection,
+        selectTeam,
+        deselectTeam,
+        clearSelection,
+        getSelectionCount,
+
+        // Filters
+        getSearchQuery,
+        setSearchQuery,
+        getDivisionFilters,
+        isDivisionActive,
+        toggleDivisionFilter,
+        clearDivisionFilters,
+
+        // Events
+        onSelectionChange,
+        onFilterChange,
+
+        // Lifecycle
+        reset
+    };
+})();

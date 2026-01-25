@@ -225,6 +225,20 @@ const TeamService = (function() {
         }
     }
     
+    // Get all teams from cache (for TeamBrowser)
+    function getAllTeams() {
+        if (!_cacheInitialized) {
+            console.warn('⚠️ TeamService cache not initialized yet');
+            return [];
+        }
+        return Array.from(_allTeamsCache.values());
+    }
+
+    // Check if cache is ready
+    function isCacheReady() {
+        return _cacheInitialized;
+    }
+
     // Cleanup cache
     function cleanup() {
         // Clear cache
@@ -342,6 +356,8 @@ const TeamService = (function() {
         joinTeam,
         getTeam,
         getUserTeams,
+        getAllTeams,
+        isCacheReady,
         // Removed subscribe/unsubscribe - components handle their own listeners
         updateCachedTeam,
         cleanup,

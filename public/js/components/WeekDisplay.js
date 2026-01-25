@@ -1,5 +1,6 @@
 // WeekDisplay.js - Factory pattern for independent week display instances
 // Container for availability grid with week header
+// Enhanced for Slice 2.5: Team display integration with player badges
 
 const WeekDisplay = (function() {
     'use strict';
@@ -178,6 +179,41 @@ const WeekDisplay = (function() {
             }
         }
 
+        // ========================================
+        // Slice 2.5: Team View Display Functions
+        // ========================================
+
+        /**
+         * Update the grid with team availability display (player badges)
+         * @param {Object} availabilityData - The availability document data
+         * @param {Array} playerRoster - Team's playerRoster array
+         * @param {string} currentUserId - Current user's ID
+         */
+        function updateTeamDisplay(availabilityData, playerRoster, currentUserId) {
+            if (_grid) {
+                _grid.updateTeamDisplay(availabilityData, playerRoster, currentUserId);
+            }
+        }
+
+        /**
+         * Register callback for overflow badge clicks
+         * @param {Function} callback - Called with (cellId, weekId) when overflow is clicked
+         */
+        function onOverflowClick(callback) {
+            if (_grid) {
+                _grid.onOverflowClick(callback);
+            }
+        }
+
+        /**
+         * Refresh the display (e.g., when display mode changes)
+         */
+        function refreshDisplay() {
+            if (_grid) {
+                _grid.refreshDisplay();
+            }
+        }
+
         function cleanup() {
             if (_grid) {
                 _grid.cleanup();
@@ -200,6 +236,10 @@ const WeekDisplay = (function() {
             selectAll,
             clearAll,
             selectCell,
+            // Slice 2.5: Team view functions
+            updateTeamDisplay,
+            onOverflowClick,
+            refreshDisplay,
             cleanup
         };
 

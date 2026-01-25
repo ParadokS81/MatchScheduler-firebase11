@@ -1,5 +1,6 @@
 // AvailabilityGrid.js - Factory pattern for independent grid instances
 // Vanilla JS with Revealing Module Pattern
+// Enhanced for Slice 2.5: Player badges, tooltip hover, overflow handling
 
 const AvailabilityGrid = (function() {
     'use strict';
@@ -14,6 +15,10 @@ const AvailabilityGrid = (function() {
 
     // Threshold to distinguish click from drag (in pixels)
     const DRAG_THRESHOLD = 5;
+
+    // Player badge display constants
+    const MAX_VISIBLE_BADGES = 3;  // Show 3 badges + overflow indicator
+    const TOOLTIP_THRESHOLD = 4;   // Show tooltip when 4+ players
 
     function formatTime(slot) {
         return `${slot.slice(0, 2)}:${slot.slice(2)}`;
@@ -42,6 +47,12 @@ const AvailabilityGrid = (function() {
 
         // Selection change callback
         let _onSelectionChangeCallback = null;
+
+        // Team view state (Slice 2.5)
+        let _playerRoster = null;
+        let _currentUserId = null;
+        let _availabilitySlots = null;
+        let _onOverflowClickCallback = null;
 
         /**
          * Notify listeners of selection change
@@ -147,6 +158,11 @@ const AvailabilityGrid = (function() {
          * Handle mouse down for drag selection
          */
         function _handleMouseDown(e) {
+            // Don't start drag if clicking on overflow badge
+            if (e.target.closest('.player-badge.overflow')) {
+                return;
+            }
+
             const cell = e.target.closest('.grid-cell');
             if (!cell || !cell.dataset.cellId) return;
 
@@ -343,11 +359,66 @@ const AvailabilityGrid = (function() {
         }
 
         /**
+         * Handle overflow badge click
+         */
+        function _handleOverflowClick(e) {
+            const overflowBadge = e.target.closest('.player-badge.overflow');
+            if (!overflowBadge) return;
+
+            e.stopPropagation(); // Don't trigger cell selection
+
+            const cell = overflowBadge.closest('.grid-cell');
+            const cellId = cell?.dataset.cellId;
+
+            if (cellId && _onOverflowClickCallback) {
+                _onOverflowClickCallback(cellId, _weekId);
+            }
+        }
+
+        /**
+         * Handle cell hover for tooltip (cells with 4+ players)
+         */
+        function _handleCellMouseEnter(e) {
+            const cell = e.target.closest('.grid-cell');
+            if (!cell || !cell.classList.contains('has-overflow')) return;
+
+            const cellId = cell.dataset.cellId;
+            const playerIds = _availabilitySlots?.[cellId] || [];
+
+            if (playerIds.length >= TOOLTIP_THRESHOLD && _playerRoster && typeof PlayerTooltip !== 'undefined') {
+                const players = PlayerDisplayService.getPlayersDisplay(
+                    playerIds,
+                    _playerRoster,
+                    _currentUserId
+                );
+                PlayerTooltip.show(cell, players, _currentUserId);
+            }
+        }
+
+        /**
+         * Handle cell mouse leave for tooltip
+         */
+        function _handleCellMouseLeave(e) {
+            const cell = e.target.closest('.grid-cell');
+            if (!cell || !cell.classList.contains('has-overflow')) return;
+
+            if (typeof PlayerTooltip !== 'undefined') {
+                PlayerTooltip.hide();
+            }
+        }
+
+        /**
          * Attach all event listeners for the grid
          */
         function _attachEventListeners() {
-            // Click handler for cells, day headers, and time headers
+            // Click handler for cells, day headers, time headers, and overflow badges
             _clickHandler = (e) => {
+                // Check for overflow badge click first
+                if (e.target.closest('.player-badge.overflow')) {
+                    _handleOverflowClick(e);
+                    return;
+                }
+
                 // Cell click (with shift detection)
                 const cell = e.target.closest('.grid-cell');
                 if (cell && cell.dataset.cellId) {
@@ -386,6 +457,10 @@ const AvailabilityGrid = (function() {
             // Mouse up on document (in case drag ends outside grid)
             _documentMouseUpHandler = _handleMouseUp;
             document.addEventListener('mouseup', _documentMouseUpHandler);
+
+            // Hover events for tooltip (using event capturing for mouseenter/mouseleave)
+            _container.addEventListener('mouseenter', _handleCellMouseEnter, true);
+            _container.addEventListener('mouseleave', _handleCellMouseLeave, true);
         }
 
         function init() {
@@ -426,12 +501,21 @@ const AvailabilityGrid = (function() {
             // Clear drag preview if active
             _clearDragPreview();
 
+            // Hide tooltip if visible
+            if (typeof PlayerTooltip !== 'undefined') {
+                PlayerTooltip.hideImmediate();
+            }
+
             // Reset state
             _selectedCells.clear();
             _isDragging = false;
             _dragStartCell = null;
             _lastClickedCell = null;
             _lastValidDragCell = null;
+            _playerRoster = null;
+            _currentUserId = null;
+            _availabilitySlots = null;
+            _onOverflowClickCallback = null;
 
             if (_container) _container.innerHTML = '';
             _container = null;
@@ -529,6 +613,160 @@ const AvailabilityGrid = (function() {
             }
         }
 
+        // ========================================
+        // Slice 2.5: Team View Display Functions
+        // ========================================
+
+        /**
+         * Escape HTML to prevent XSS
+         */
+        function _escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        /**
+         * Render player badges inside a cell
+         * @param {HTMLElement} cell - The grid cell element
+         * @param {Array<string>} playerIds - User IDs of available players
+         * @param {Array} playerRoster - Team's playerRoster array
+         * @param {string} currentUserId - Current user's ID
+         * @param {string} displayMode - 'initials' or 'avatars'
+         */
+        function _renderPlayerBadges(cell, playerIds, playerRoster, currentUserId, displayMode) {
+            if (!playerIds || playerIds.length === 0) {
+                cell.innerHTML = '';
+                cell.classList.remove('has-players', 'has-overflow');
+                return;
+            }
+
+            cell.classList.add('has-players');
+
+            const players = PlayerDisplayService.getPlayersDisplay(playerIds, playerRoster, currentUserId);
+            const hasOverflow = players.length > MAX_VISIBLE_BADGES;
+            const visiblePlayers = hasOverflow ? players.slice(0, MAX_VISIBLE_BADGES) : players;
+            const overflowCount = players.length - MAX_VISIBLE_BADGES;
+
+            // Mark cell for tooltip behavior if 4+ players
+            if (players.length >= TOOLTIP_THRESHOLD) {
+                cell.classList.add('has-overflow');
+                cell.dataset.playerCount = players.length;
+            } else {
+                cell.classList.remove('has-overflow');
+                delete cell.dataset.playerCount;
+            }
+
+            let badgesHtml = '<div class="player-badges">';
+
+            visiblePlayers.forEach(player => {
+                const isCurrentUserClass = player.isCurrentUser ? 'current-user' : '';
+                const escapedName = _escapeHtml(player.displayName);
+                const escapedInitials = _escapeHtml(player.initials);
+
+                if (displayMode === 'avatars' && player.photoURL) {
+                    badgesHtml += `
+                        <div class="player-badge avatar ${isCurrentUserClass}" data-player-name="${escapedName}">
+                            <img src="${player.photoURL}" alt="${escapedInitials}" />
+                        </div>
+                    `;
+                } else {
+                    badgesHtml += `
+                        <div class="player-badge initials ${isCurrentUserClass}" data-player-name="${escapedName}">
+                            ${escapedInitials}
+                        </div>
+                    `;
+                }
+            });
+
+            if (hasOverflow) {
+                badgesHtml += `
+                    <button class="player-badge overflow" data-overflow-count="${overflowCount}">
+                        +${overflowCount}
+                    </button>
+                `;
+            }
+
+            badgesHtml += '</div>';
+            cell.innerHTML = badgesHtml;
+        }
+
+        /**
+         * Update all cells with player availability data (team view mode)
+         * @param {Object} availabilityData - The availability document data
+         * @param {Array} playerRoster - Team's playerRoster array
+         * @param {string} currentUserId - Current user's ID
+         */
+        function updateTeamDisplay(availabilityData, playerRoster, currentUserId) {
+            if (!_container || !availabilityData) return;
+
+            // Store data for tooltip access
+            _playerRoster = playerRoster;
+            _currentUserId = currentUserId;
+
+            // Extract slots from availability data (handle both flat and nested structures)
+            let slots = {};
+            if (availabilityData.slots && typeof availabilityData.slots === 'object') {
+                slots = availabilityData.slots;
+            } else {
+                // Handle flat "slots.xxx" keys
+                Object.entries(availabilityData).forEach(([key, value]) => {
+                    if (key.startsWith('slots.')) {
+                        const slotId = key.replace('slots.', '');
+                        slots[slotId] = value;
+                    }
+                });
+            }
+
+            _availabilitySlots = slots;
+
+            const displayMode = typeof PlayerDisplayService !== 'undefined'
+                ? PlayerDisplayService.getDisplayMode()
+                : 'initials';
+
+            // Process each cell
+            const allCells = _container.querySelectorAll('.grid-cell');
+            allCells.forEach(cell => {
+                const cellId = cell.dataset.cellId;
+                const playerIds = slots[cellId] || [];
+
+                _renderPlayerBadges(cell, playerIds, playerRoster, currentUserId, displayMode);
+
+                // Update user-available state (keep existing border indicator)
+                if (playerIds.includes(currentUserId)) {
+                    cell.classList.add('user-available');
+                } else {
+                    cell.classList.remove('user-available');
+                }
+            });
+
+            // Hide stale tooltip if grid re-rendered
+            if (typeof PlayerTooltip !== 'undefined' && PlayerTooltip.isVisible()) {
+                PlayerTooltip.hideImmediate();
+            }
+        }
+
+        /**
+         * Register callback for overflow badge clicks
+         * @param {Function} callback - Called with (cellId, weekId) when overflow is clicked
+         */
+        function onOverflowClick(callback) {
+            _onOverflowClickCallback = callback;
+        }
+
+        /**
+         * Refresh the display (e.g., when display mode changes)
+         */
+        function refreshDisplay() {
+            if (_availabilitySlots && _playerRoster && _currentUserId) {
+                updateTeamDisplay(
+                    { slots: _availabilitySlots },
+                    _playerRoster,
+                    _currentUserId
+                );
+            }
+        }
+
         const instance = {
             init,
             getSelectedCells,
@@ -541,7 +779,11 @@ const AvailabilityGrid = (function() {
             onSelectionChange,
             selectAll,
             clearAll,
-            selectCell
+            selectCell,
+            // Slice 2.5: Team view functions
+            updateTeamDisplay,
+            onOverflowClick,
+            refreshDisplay
         };
 
         return instance;

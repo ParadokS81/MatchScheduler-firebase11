@@ -58,4 +58,4 @@ temp/
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+*.sw?service-account.json

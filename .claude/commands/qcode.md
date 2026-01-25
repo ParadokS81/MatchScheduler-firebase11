@@ -1,89 +1,75 @@
 ---
 description: Execute implementation for a specific slice
 argument-hint: <slice-id>
-allowed-tools: Read, Write, Bash
+allowed-tools: Read, Write, Edit, Bash, Task, TodoWrite, AskUserQuestion
 ---
 
 # Implement Slice $ARGUMENTS
 
 Execute the technical specification for slice $ARGUMENTS with focus on clean, performant code that works end-to-end.
 
-## Pre-Implementation
+## Strategy: TodoWrite + Targeted Exploration
 
-1. **Load Slice Specification**:
+Use TodoWrite to track progress visibly. Use Task agents for exploration to preserve context.
+
+## Phase 1: Load Slice & Create Task List
+
+1. **Read the slice specification**:
    ```
    Read: /context/slices/slice-$ARGUMENTS-*.md
    ```
 
-2. **Verify Context**:
-   - Ensure CLAUDE.md patterns are understood
-   - Confirm cache + listener architecture is clear
-   - Review performance requirements
-   - **CRITICAL**: Identify all integration points between frontend and backend
+2. **Create detailed TodoWrite task list** from the slice:
+   - Extract all frontend tasks
+   - Extract all backend tasks
+   - Extract all integration tasks
+   - Add verification tasks at the end
 
-3. **STOP - Clarification Phase** (REQUIRED):
-   Present findings and ask questions BEFORE any coding:
+Example:
+```
+TodoWrite([
+  { content: "Create PlayerDisplayService", status: "pending" },
+  { content: "Enhance AvailabilityGrid with badge rendering", status: "pending" },
+  { content: "Add CSS for player badges", status: "pending" },
+  { content: "Wire up overflow click handler", status: "pending" },
+  { content: "Test integration points", status: "pending" }
+])
+```
+
+## Phase 2: Clarification (if needed)
+
+If the slice has gaps or ambiguities, use AskUserQuestion ONCE:
+```
+AskUserQuestion({
+  questions: [{
+    question: "The slice mentions X but doesn't specify Y. Which approach?",
+    header: "Approach",
+    options: [
+      { label: "Option A", description: "..." },
+      { label: "Option B", description: "..." }
+    ]
+  }]
+})
+```
+
+Only ask about significant gaps. Skip minor details.
+
+## Phase 3: Implementation
+
+Work through the todo list systematically:
+
+1. **Mark task in_progress** before starting each task
+2. **Use Task(Explore)** when you need to find existing patterns:
    ```
-   I've reviewed slice $ARGUMENTS. Before implementing:
-   
-   Questions:
-   1. [Specific UI/UX question if any ambiguity]
-   2. [Technical approach question if multiple options]
-   3. [Integration question if unclear]
-   
-   If no questions: "The slice is clear and comprehensive. Ready to implement with [brief summary of approach]?"
+   Task(Explore): "Find how other components handle X in this codebase"
    ```
-   
-   WAIT for user response before proceeding.
+3. **Implement the task** using Edit/Write
+4. **Mark task completed** immediately after finishing
+5. **Move to next task**
 
-## Clarifying Questions
+### Core Patterns (from CLAUDE.md)
 
-Ask ONLY about significant gaps or ambiguities that would block implementation:
-- **Missing functionality**: "The slice references X but doesn't specify how it works"
-- **Architectural decisions**: "Should this use existing pattern Y or create new pattern Z?"
-- **Integration gaps**: "How should component A communicate with component B?"
-- **Business logic**: "What should happen when user does X in situation Y?"
-- **Missing dependencies**: "This needs function X which doesn't exist yet"
-
-DO NOT ask about:
-- Error message wording (use common sense)
-- Loading spinner styles (use existing patterns)
-- Button text (follow the slice or use reasonable defaults)
-- Minor UI details (implement reasonably, can adjust later)
-
-## Implementation Checklist
-
-Create a DETAILED task list before starting:
-
-### Frontend Tasks
-- [ ] Component structure following revealing module pattern
-- [ ] Firebase v11 modular imports only
-- [ ] Cache + listener pattern for data
-- [ ] rem units for all sizing (except borders)
-- [ ] All UI actions have event handlers
-- [ ] Error states prepared for backend failures
-
-### Backend Tasks (MUST IMPLEMENT IN /functions/)
-- [ ] Create Cloud Functions in /functions/[appropriate-file].js
-- [ ] Implement each function specified in the slice
-- [ ] Add input validation for all parameters
-- [ ] Implement proper error responses with messages
-- [ ] Add event logging as specified
-- [ ] Export functions in /functions/index.js
-- [ ] Update security rules if needed
-
-### Integration Tasks (CRITICAL - DO NOT SKIP)
-- [ ] Frontend service methods exist to call Cloud Functions
-- [ ] Every button/action calls the correct backend function
-- [ ] Backend responses update the UI correctly
-- [ ] Real-time listeners connected and updating UI
-- [ ] Error responses from backend shown to user
-- [ ] Loading states during backend operations
-- [ ] Cache updates when backend changes data
-
-## Core Patterns to Follow
-
-### Cache + Listener Pattern
+**Cache + Listener Pattern**:
 ```javascript
 // Service manages cache only
 const Service = {
@@ -92,37 +78,20 @@ const Service = {
 };
 
 // Component owns its listener
-const Component = (function() {
-    async function init() {
-        const data = Service.getData(id); // Instant
-        render(data);
-        
-        const unsubscribe = onSnapshot(doc(db, 'collection', id), (doc) => {
-            updateUI(doc.data());
-            Service.updateCache(id, doc.data());
-        });
-    }
-})();
+onSnapshot(doc(db, 'collection', id), (doc) => {
+    updateUI(doc.data());
+    Service.updateCache(id, doc.data());
+});
 ```
 
-### Frontend → Backend Integration Pattern
+**Frontend -> Backend Integration**:
 ```javascript
-// REQUIRED: Show how frontend calls backend
 async function handleUserAction() {
     try {
         setLoading(true);
-        
-        // Call the Cloud Function
-        const result = await callCloudFunction('functionName', {
-            param1: value1,
-            param2: value2
-        });
-        
+        const result = await callCloudFunction('functionName', params);
         if (result.success) {
-            // Update UI with response
             updateUI(result.data);
-            // Update cache if needed
-            Service.updateCache(id, result.data);
         } else {
             showError(result.error);
         }
@@ -134,108 +103,46 @@ async function handleUserAction() {
 }
 ```
 
-### Sacred 3x3 Grid
-Never modify panel dimensions or grid structure.
+### Technical Rules
+- Firebase v11 modular imports only
+- rem units (Tailwind handles this)
+- Edit src/css/input.css for custom CSS (not main.css)
+- Never modify sacred 3x3 grid structure
 
-### Performance Requirements
-- Hot paths: Use cache or optimistic updates
-- Cold paths: Can show loading states
+## Phase 4: Integration Verification
 
-## Integration Requirements (NEVER SKIP)
+Before declaring complete, trace each user journey:
 
-Every slice implementation MUST demonstrate these working connections:
+1. User action -> Handler fires?
+2. Handler -> Backend call made?
+3. Backend -> Database updated?
+4. Database -> Listener fires?
+5. Listener -> UI updates?
+6. Error case -> User sees feedback?
 
-1. **User Action → Backend Call**: 
-   - Show the actual button click handler
-   - Show the Cloud Function invocation
-   - Include proper error handling
+Use Task(Explore) if you need to verify connections:
+```
+Task(Explore): "Verify the integration between ComponentX and ServiceY -
+trace the data flow from button click to database update"
+```
 
-2. **Backend Response → UI Update**: 
-   - Show how success data updates the screen
-   - Show how errors display to the user
-   - Include loading state management
+## Phase 5: Wrap Up
 
-3. **Database Change → UI Refresh**: 
-   - Show real-time listener setup
-   - Show UI update when data changes
-   - Show cache synchronization
+1. Mark all todos as completed
+2. Provide a brief summary of what was implemented
+3. **STOP** - Wait for user to run QCHECK
 
-4. **Error Case → User Feedback**: 
-   - Show validation error display
-   - Show network error handling
-   - Show permission error messages
+## What NOT to Do
 
-**If any of these are missing, the implementation is incomplete.**
+- Do NOT write automated tests (wait for explicit request)
+- Do NOT start/stop Firebase emulators (already running)
+- Do NOT start web servers
+- Do NOT run the app to "verify" (that's QCHECK/QTEST)
 
-## Connection Verification Phase
+## Context Efficiency
 
-After implementing frontend and backend:
-
-1. **Trace Each User Journey**:
-   - Start from user click
-   - Follow through frontend handler
-   - Verify Cloud Function call
-   - Confirm database update
-   - Check listener fires
-   - Verify UI updates
-
-2. **Test Integration Points**:
-   ```javascript
-   // Example verification code
-   console.log('Testing integration...');
-   // 1. Trigger action
-   await button.click();
-   // 2. Verify function called
-   console.log('Cloud Function called:', functionName);
-   // 3. Check response
-   console.log('Response received:', response);
-   // 4. Verify UI updated
-   console.log('UI state:', currentUIState);
-   ```
-
-3. **Verify Error Flows**:
-   - Force network failure
-   - Send invalid data
-   - Test permission denial
-   - Confirm user sees appropriate feedback
-
-## Post-Implementation
-
-After completing the code:
-1. Review against slice test scenarios
-2. **CRITICAL**: Verify all integration points work
-3. Check for common pitfalls listed in slice
-4. Ensure all patterns are followed
-5. Verify performance requirements met
-6. **Run through complete user journey from UI to database and back**
-
-## Testing Approach
-
-**DO NOT:**
-- Write automated tests immediately after implementation
-- Start/stop Firebase emulators (they're already running)
-- Change emulator ports or configuration
-- Create test files without being asked
-- Start ANY web servers (python http.server, etc.)
-- Attempt to "verify" the implementation by running it
-
-**STOP after implementation is complete. Do NOT test.**
-
-**Testing workflow:**
-1. Complete implementation
-2. Mark todos as done
-3. **STOP - Wait for user to run QCHECK**
-4. Fix issues found by QCHECK (1-2 iterations expected)
-5. Only test when user runs QTEST command
-
-## Final Integration Checklist
-
-Before declaring complete, verify:
-- [ ] Can a user complete the entire journey defined in the slice?
-- [ ] Do all UI actions result in appropriate backend calls?
-- [ ] Do all backend responses update the UI?
-- [ ] Do database changes reflect in the UI via listeners?
-- [ ] Are all error cases handled with user feedback?
-- [ ] Is the connection between frontend and backend clear in the code?
-
-**Remember: A feature isn't done until it works end-to-end!**
+This approach saves context by:
+- **TodoWrite**: Visible progress without re-explaining
+- **Task(Explore)**: Pattern searches don't fill main context
+- **Slice spec**: Self-contained reference, read once
+- **Focused implementation**: One task at a time
