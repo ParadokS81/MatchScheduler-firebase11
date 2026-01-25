@@ -135,19 +135,21 @@ Detailed specifications in `/context/slices/[slice-name].md`
 **Scope:** Min player dropdowns for both teams (1-4 range)
 **Note:** Compact single-row layout "Minimum Players [x] vs [x]", session-specific (resets on refresh)
 
-### 📅 Slice 3.4: Basic Comparison
-**Status:** Not Started  
-**User Value:** Teams can see matching time slots  
-**PRD Sections:** 4.2.2, 4.2.3  
-**Components:** ComparisonEngine  
-**Scope:** Compare button, calculate matches, show results
+### ✅ Slice 3.4: Basic Comparison
+**Status:** Complete
+**User Value:** Teams can see matching time slots
+**PRD Sections:** 4.2.2, 4.2.3
+**Components:** ComparisonEngine, AvailabilityGrid (enhanced), FavoritesPanel (enhanced)
+**Scope:** Compare button, calculate matches, visual highlights, hover tooltip with rosters
+**Note:** Green borders for full match (4v4), amber for partial. Side-by-side tooltip shows user team vs opponents. Filter changes trigger live recalculation.
 
 ### 📅 Slice 3.5: Comparison Details
-**Status:** Not Started  
-**User Value:** Users can see who's available in matching slots  
-**PRD Sections:** 4.2.4, 4.2.6  
-**Components:** ComparisonModal  
-**Scope:** Click match slot, show both rosters, contact info
+**Status:** Not Started
+**User Value:** Users can see who's available in matching slots
+**PRD Sections:** 4.2.4, 4.2.6
+**Components:** ComparisonModal
+**Scope:** Click match slot for detailed view, contact info
+**Note:** Most tooltip functionality already in 3.4, this slice for enhanced modal view
 
 ### 📅 Slice 3.6: Leader Management
 **Status:** Not Started  
@@ -212,11 +214,11 @@ Detailed specifications in `/context/slices/[slice-name].md`
 ---
 
 ## Progress Summary
-**Slices Complete:** 15 / 24
+**Slices Complete:** 16 / 24
 
 ## Current Focus
-Ready for Slice 3.4 - Basic Comparison
+Ready for Slice 3.5 - Comparison Details (or skip to 3.6 Leader Management)
 
 ---
 
-*Last Updated: 2026-01-25*
+*Last Updated: 2026-01-26*
