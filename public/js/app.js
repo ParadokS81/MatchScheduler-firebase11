@@ -1,6 +1,7 @@
 // MatchScheduler Application Entry Point
 // Following PRD v2 Architecture with Revealing Module Pattern
 // Enhanced for Slice 2.5: Team view display with player badges
+// Enhanced for Slice 3.3: Comparison filter controls
 
 const MatchSchedulerApp = (function() {
     'use strict';
@@ -41,6 +42,11 @@ const MatchSchedulerApp = (function() {
 
         // Initialize ToastService for notifications
         ToastService.init();
+
+        // Initialize FilterPanel in top-right panel (Slice 3.3)
+        if (typeof FilterPanel !== 'undefined') {
+            FilterPanel.init('panel-top-right');
+        }
 
         // Initialize Availability Grid components
         _initializeAvailabilityGrid();
@@ -437,6 +443,10 @@ const MatchSchedulerApp = (function() {
         }
         if (typeof FavoritesService !== 'undefined') {
             FavoritesService.clear();
+        }
+        // Slice 3.3: Clean up FilterPanel
+        if (typeof FilterPanel !== 'undefined') {
+            FilterPanel.cleanup();
         }
     }
 

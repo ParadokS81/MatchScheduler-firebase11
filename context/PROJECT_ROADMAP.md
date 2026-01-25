@@ -127,12 +127,13 @@ Detailed specifications in `/context/slices/[slice-name].md`
 **Scope:** Star/unstar teams, favorites list, Firestore persistence, Select All/Deselect All
 **Note:** Optimistic updates, unified selection with TeamBrowser, team roster tooltip on hover
 
-### 📅 Slice 3.3: Comparison Filters
-**Status:** Not Started  
-**User Value:** Users can set minimum player requirements  
-**PRD Sections:** 4.2.1 (top panel)  
-**Components:** FilterPanel  
-**Scope:** Min player dropdowns for both teams
+### ✅ Slice 3.3: Comparison Filters
+**Status:** Complete
+**User Value:** Users can set minimum player requirements
+**PRD Sections:** 4.2.1 (top panel)
+**Components:** FilterPanel, FilterService
+**Scope:** Min player dropdowns for both teams (1-4 range)
+**Note:** Compact single-row layout "Minimum Players [x] vs [x]", session-specific (resets on refresh)
 
 ### 📅 Slice 3.4: Basic Comparison
 **Status:** Not Started  
@@ -211,10 +212,10 @@ Detailed specifications in `/context/slices/[slice-name].md`
 ---
 
 ## Progress Summary
-**Slices Complete:** 14 / 24
+**Slices Complete:** 15 / 24
 
 ## Current Focus
-Ready for Slice 3.3 - Comparison Filters
+Ready for Slice 3.4 - Basic Comparison
 
 ---
 
