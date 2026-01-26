@@ -443,12 +443,18 @@ const TeamBrowser = (function() {
             ? team.teamName.substring(0, 16) + '...'
             : team.teamName;
 
+        // Check for small logo
+        const smallLogoUrl = team.activeLogo?.urls?.small;
+        const badgeContent = smallLogoUrl
+            ? `<img src="${smallLogoUrl}" alt="${team.teamTag}" class="w-full h-full object-cover">`
+            : (team.teamTag || '??');
+
         return `
             <div class="team-card ${isSelected ? 'selected' : ''}" data-team-id="${team.id}">
                 <div class="card-content flex items-center gap-2">
-                    <!-- Team Tag Badge -->
-                    <div class="team-tag-badge">
-                        ${team.teamTag || '??'}
+                    <!-- Team Tag Badge / Logo -->
+                    <div class="team-tag-badge overflow-hidden">
+                        ${badgeContent}
                     </div>
 
                     <!-- Team Info -->

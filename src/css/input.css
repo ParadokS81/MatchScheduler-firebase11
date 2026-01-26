@@ -87,7 +87,8 @@ body {
 .app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh; /* Fixed viewport height - grid drives layout, not content */
+  overflow: hidden; /* Prevent content from pushing layout */
   padding: 1rem;
 }
 
@@ -113,6 +114,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0; /* Critical: prevents grid item from growing beyond allocated track size */
 }
 
 .panel-content {
@@ -120,6 +122,8 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0; /* Allow flex child to shrink below content size */
+  overflow: hidden; /* Ensure children respect panel bounds */
 }
 
 /* Responsive Grid */
@@ -763,6 +767,23 @@ body {
 
 .team-browser {
   height: 100%;
+  min-height: 0; /* Allow flex child to shrink */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Team browser container - ensure it fills panel and constrains */
+#team-browser-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Browser header should not shrink */
+.browser-header {
+  flex-shrink: 0;
 }
 
 /* Division Filter Buttons */
@@ -796,8 +817,31 @@ body {
 
 /* Team List Container */
 .team-list {
+  flex: 1 1 0; /* Grow, shrink, and start from 0 basis */
+  min-height: 0; /* Critical for flex overflow to work */
+  max-height: 100%; /* Never exceed parent */
+  overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+}
+
+/* Favorites List Container */
+#favorites-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+#favorites-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+#favorites-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#favorites-list::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 2px;
 }
 
 .team-list::-webkit-scrollbar {
@@ -1088,4 +1132,169 @@ body {
 .grid-cell.comparison-match-partial {
   position: relative;
   cursor: pointer;
+}
+
+/* ========================================
+   SLICE 4.2: ENHANCED COMPARISON MODAL - VS LAYOUT
+   ======================================== */
+
+/* VS Container - side by side layout */
+.vs-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+/* VS Divider in the middle */
+.vs-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0 0.5rem;
+  align-self: center;
+}
+
+.vs-text {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Team Card in VS layout */
+.vs-team-card {
+  flex: 1;
+  min-width: 0;
+  background-color: oklch(from var(--muted) l c h / 0.2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+/* Opponent side wrapper - holds tabs + card */
+.vs-opponent-side {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.vs-opponent-side .vs-team-card {
+  flex: none; /* Don't stretch the card inside opponent side */
+}
+
+/* Roster section inside team card */
+.vs-roster {
+  max-height: 12rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Player status dots in VS roster */
+.vs-roster .player-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.vs-roster .player-status-dot.available {
+  background-color: var(--success);
+}
+
+.vs-roster .player-status-dot.unavailable {
+  background-color: var(--muted-foreground);
+  opacity: 0.4;
+}
+
+.vs-roster::-webkit-scrollbar {
+  width: 4px;
+}
+
+.vs-roster::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vs-roster::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 2px;
+}
+
+/* Opponent Tabs Container - legacy (kept for backwards compat) */
+.opponent-tabs-container {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Opponent Tabs Header - new style above opponent card */
+.opponent-tabs-header {
+  /* No border, just spacing */
+}
+
+/* Header opponent selector - inline with title */
+.header-opponent-selector {
+  display: flex;
+  align-items: center;
+  padding-left: 1rem;
+  border-left: 1px solid var(--border);
+}
+
+.opponent-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Individual opponent tab */
+.opponent-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background-color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.opponent-tab:hover {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.opponent-tab-active {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.opponent-tab-active:hover {
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* Responsive - stack vertically on small screens */
+@media (max-width: 640px) {
+  .vs-container {
+    flex-direction: column;
+  }
+
+  .vs-divider {
+    align-self: center;
+    padding: 0.5rem 0;
+  }
+
+  .vs-text {
+    font-size: 1.25rem;
+  }
+
+  .vs-team-card {
+    width: 100%;
+  }
 }

@@ -19,11 +19,19 @@ const storage = getStorage();
  * 4. Update the team's document in Firestore with the new logo URLs.
  * 5. Clean up the original temporary file.
  */
-exports.processLogoUpload = onObjectFinalized({ region: 'europe-west10' }, async (event) => {
+exports.processLogoUpload = onObjectFinalized({
+    region: 'europe-west10',
+    bucket: 'matchscheduler-dev.firebasestorage.app'
+}, async (event) => {
+    console.log('=== processLogoUpload TRIGGERED ===');
+    console.log('Event data:', JSON.stringify(event.data, null, 2));
+
     const object = event.data;
     const filePath = object.name; // e.g., 'logo-uploads/teamId/userId/logo_123.png'
     const contentType = object.contentType;
     const bucket = storage.bucket(object.bucket);
+
+    console.log(`File path: ${filePath}, Content type: ${contentType}, Bucket: ${object.bucket}`);
 
     // --- Basic validation and exit conditions ---
 
@@ -116,12 +124,23 @@ exports.processLogoUpload = onObjectFinalized({ region: 'europe-west10' }, async
         const processedLogos = await Promise.all(uploadPromises);
 
         // 6. Get public URLs for all processed logos
+        // Use public URLs instead of signed URLs (works in both emulator and production)
+        const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+
         const urlPromises = processedLogos.map(async (logo) => {
             const file = bucket.file(logo.path);
-            const [url] = await file.getSignedUrl({
-                action: 'read',
-                expires: '03-09-2491' // A very long time in the future
-            });
+
+            let url;
+            if (isEmulator) {
+                // In emulator, construct the download URL directly
+                const encodedPath = encodeURIComponent(logo.path);
+                url = `http://127.0.0.1:9199/v0/b/${object.bucket}/o/${encodedPath}?alt=media`;
+            } else {
+                // In production, make the file public and use the public URL
+                await file.makePublic();
+                url = `https://storage.googleapis.com/${object.bucket}/${logo.path}`;
+            }
+
             return { size: logo.size, url: url };
         });
 
@@ -143,10 +162,16 @@ exports.processLogoUpload = onObjectFinalized({ region: 'europe-west10' }, async
         await db.runTransaction(async (transaction) => {
             const currentTeamDoc = await transaction.get(teamRef);
             const currentTeamData = currentTeamDoc.data();
-            
+
+            // Archive old logo if it exists in the subcollection
             if (currentTeamData.activeLogo && currentTeamData.activeLogo.logoId) {
                 const oldLogoRef = teamRef.collection('logos').doc(currentTeamData.activeLogo.logoId);
-                transaction.update(oldLogoRef, { status: 'archived' });
+                const oldLogoDoc = await transaction.get(oldLogoRef);
+                if (oldLogoDoc.exists) {
+                    transaction.update(oldLogoRef, { status: 'archived' });
+                } else {
+                    console.log(`Old logo document ${currentTeamData.activeLogo.logoId} not found, skipping archive.`);
+                }
             }
 
             const newLogoRef = teamRef.collection('logos').doc(newLogoId);

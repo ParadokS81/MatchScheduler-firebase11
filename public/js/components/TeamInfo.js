@@ -181,22 +181,31 @@ const TeamInfo = (function() {
                 (doc) => {
                     if (doc.exists()) {
                         const teamData = { id: doc.id, ...doc.data() };
-                        
-                        // Only update if data actually changed (avoid duplicate cache updates)
-                        if (!_selectedTeam || JSON.stringify(_selectedTeam) !== JSON.stringify(teamData)) {
+
+                        // Check if meaningful data changed (avoid Firestore timestamp comparison issues)
+                        const hasChanged = !_selectedTeam ||
+                            _selectedTeam.teamName !== teamData.teamName ||
+                            _selectedTeam.teamTag !== teamData.teamTag ||
+                            _selectedTeam.joinCode !== teamData.joinCode ||
+                            _selectedTeam.maxPlayers !== teamData.maxPlayers ||
+                            _selectedTeam.leaderId !== teamData.leaderId ||
+                            _selectedTeam.playerRoster?.length !== teamData.playerRoster?.length ||
+                            _selectedTeam.activeLogo?.logoId !== teamData.activeLogo?.logoId;
+
+                        if (hasChanged) {
                             _selectedTeam = teamData;
-                            
+
                             // Update team in userTeams array
                             const index = _userTeams.findIndex(t => t.id === teamData.id);
                             if (index !== -1) {
                                 _userTeams[index] = teamData;
                             }
-                            
+
                             // Update TeamService cache with real-time data
                             if (typeof TeamService !== 'undefined') {
                                 TeamService.updateCachedTeam(doc.id, teamData);
                             }
-                            
+
                             _render();
                             console.log('🔄 Team data updated via direct listener:', teamData.teamName);
                         } else {
@@ -376,13 +385,19 @@ const TeamInfo = (function() {
                 </div>
             `).join('');
             
+            // Check if team has a logo
+            const logoUrl = _selectedTeam.activeLogo?.urls?.medium;
+            const logoSection = logoUrl
+                ? `<img src="${logoUrl}" alt="${_selectedTeam.teamName} logo" class="w-full h-full object-cover">`
+                : `<span class="text-2xl font-bold text-muted-foreground">${_selectedTeam.teamTag}</span>`;
+
             teamCard = `
                 <div class="mb-4" id="team-card-container">
                     <!-- Logo with its own frame -->
-                    <div class="bg-card border border-border rounded-lg p-4 w-32 h-32 flex items-center justify-center mb-4 mx-auto">
-                        <span class="text-2xl font-bold text-muted-foreground">${_selectedTeam.teamTag}</span>
+                    <div class="bg-card border border-border rounded-lg overflow-hidden w-32 h-32 flex items-center justify-center mb-4 mx-auto">
+                        ${logoSection}
                     </div>
-                    
+
                     <!-- Roster below logo (no frame) -->
                     <div class="space-y-1">
                         ${rosterHTML}

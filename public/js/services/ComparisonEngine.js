@@ -109,6 +109,7 @@ const ComparisonEngine = (function() {
                             teamId: opponentId,
                             teamTag: opponentTeam?.teamTag || '??',
                             teamName: opponentTeam?.teamName || 'Unknown',
+                            leaderId: opponentTeam?.leaderId || null,
                             availablePlayers,
                             unavailablePlayers
                         });
@@ -255,6 +256,7 @@ const ComparisonEngine = (function() {
             teamId: _userTeamId,
             teamTag: userTeam.teamTag || '??',
             teamName: userTeam.teamName || 'Your Team',
+            leaderId: userTeam.leaderId || null,
             availablePlayers,
             unavailablePlayers
         };

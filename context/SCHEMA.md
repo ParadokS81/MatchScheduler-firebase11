@@ -28,13 +28,22 @@ interface UserDocument {
   email: string;              // From Google Auth
   photoURL: string | null;    // From Google Auth or custom
 
-  // Gaming identity
-  discordTag: string | null;  // e.g., "username#1234" or "username"
+  // Discord integration (Slice 4.3/4.4)
+  // Can be populated via: Discord OAuth linking, or manual entry (legacy)
+  discordUsername: string | null;   // Display name: "username" (new format) or "user#1234" (legacy)
+  discordUserId: string | null;     // Numeric ID: "123456789012345678" - required for DM deep links
+  discordLinkedAt: Timestamp | null; // When Discord was linked via OAuth (null if manual entry)
+
+  // DEPRECATED: Use discordUsername instead
+  discordTag: string | null;  // e.g., "username#1234" or "username" - kept for backwards compatibility
 
   // Team memberships (max 2 teams)
   teams: {
     [teamId: string]: true    // Map of team IDs user belongs to
   };
+
+  // Favorites (for comparison workflow)
+  favoriteTeams: string[];    // Array of teamIds the user has starred
 
   // Metadata
   createdAt: Timestamp;
@@ -103,6 +112,16 @@ interface TeamDocument {
   // Roster (embedded array)
   playerRoster: PlayerEntry[];
 
+  // Logo (optional, set when team uploads a logo)
+  activeLogo?: {
+    logoId: string;           // References /teams/{teamId}/logos/{logoId}
+    urls: {
+      large: string;          // 400px - for large displays
+      medium: string;         // 150px - for drawer, cards
+      small: string;          // 48px - for badges, comparison view
+    };
+  };
+
   // Metadata
   createdAt: Timestamp;
   lastActivityAt: Timestamp;
@@ -116,6 +135,32 @@ interface PlayerEntry {
   role: 'leader' | 'member';
 }
 ```
+
+---
+
+## `/teams/{teamId}/logos/{logoId}`
+
+Team logo versions (subcollection). Stores history of uploaded logos.
+
+```typescript
+interface LogoDocument {
+  status: 'active' | 'archived';  // Only one logo is 'active' at a time
+  uploadedBy: string;             // userId who uploaded
+  uploadedAt: Timestamp;
+  urls: {
+    large: string;                // 400px signed URL
+    medium: string;               // 150px signed URL
+    small: string;                // 48px signed URL
+  };
+}
+```
+
+**Key Points:**
+- Subcollection under team document
+- Only one logo has `status: 'active'` at any time
+- Previous logos are set to `status: 'archived'` when a new logo is uploaded
+- URLs are Firebase Storage signed URLs with long expiration
+- Cloud Function `processLogoUpload` manages this collection
 
 **Key Points:**
 - `playerRoster` is an ARRAY, not an object

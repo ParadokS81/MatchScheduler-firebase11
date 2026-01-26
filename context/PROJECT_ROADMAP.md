@@ -163,19 +163,21 @@ Detailed specifications in `/context/slices/[slice-name].md`
 
 ## Part 4: Polish & Enhancement
 
-### 📅 Slice 4.1: Logo Upload
-**Status:** Not Started  
-**User Value:** Teams can upload custom logos  
-**PRD Sections:** 4.3.2 (Logo Management)  
-**Components:** LogoUploadModal  
-**Scope:** File selection, cropping UI, upload progress
+### ✅ Slice 4.1: Logo Upload
+**Status:** Complete
+**User Value:** Teams can upload custom logos
+**PRD Sections:** 4.3.2 (Logo Management)
+**Components:** LogoUploadModal, LogoUploadService, logo-processing Cloud Function
+**Scope:** File selection, client-side preview, upload to Firebase Storage, server-side processing (resize to 3 sizes), Firestore update
+**Note:** Leaders only. Cloud Function triggers on upload, validates permissions, creates small/medium/large thumbnails, stores URLs in team document.
 
-### 📅 Slice 4.2: Logo Display
-**Status:** Not Started  
-**User Value:** Team logos appear throughout the app  
-**PRD Sections:** 4.3.2  
-**Components:** TeamLogo component  
-**Scope:** Display in drawer, comparison view, team cards
+### ✅ Slice 4.2: Enhanced Comparison Modal
+**Status:** Complete
+**User Value:** Team logos appear in comparison modal with improved VS layout
+**PRD Sections:** 4.3.2, 4.2.4
+**Components:** ComparisonModal (rewritten), TeamInfo (logo display)
+**Scope:** Side-by-side VS layout, team logos in cards, green/grey player availability dots, opponent selector tabs in header, Discord contact for leaders
+**Note:** Clean header with "Match Details — Day at Time" format. Opponent tabs on right side for multi-match slots. Logos also display in TeamInfo panel.
 
 ### 📅 Slice 4.3: Discord OAuth & Account Linking
 **Status:** Not Started
@@ -228,10 +230,10 @@ discordLinkedAt: Timestamp | null
 ---
 
 ## Progress Summary
-**Slices Complete:** 17 / 23 (3.6 and 3.7 bundled)
+**Slices Complete:** 19 / 23 (3.6 and 3.7 bundled)
 
 ## Current Focus
-Part 3 complete! Moving to Part 4 - Polish & Enhancement (4.1/4.2 Logo in progress)
+Part 4 in progress! Next up: Slice 4.3 Discord OAuth or Slice 4.5 Error States
 
 ---
 

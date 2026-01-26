@@ -8,7 +8,7 @@
     "dev": "npm run start",
     "dev:local": "concurrently \"npm run serve\" \"npm run css:watch\"",
     "serve": "npx http-server ./public -p 3000 -c-1",
-    "firebase": "firebase emulators:start --only auth,firestore,functions,hosting",
+    "firebase": "firebase emulators:start --only auth,firestore,functions,hosting,storage,eventarc",
     "css:watch": "tailwindcss -i ./src/css/input.css -o ./public/css/main.css --watch",
     "css:build": "tailwindcss -i ./src/css/input.css -o ./public/css/main.css --minify",
     "build": "npm run css:build && npm run build:js",
@@ -20,7 +20,8 @@
     "test": "npm run test:functions",
     "test:functions": "cd functions && npm test",
     "logs": "firebase functions:log",
-    "seed:emulator": "node scripts/seed-emulator.js"
+    "seed:emulator": "node scripts/seed-emulator.js",
+    "seed:qw": "node scripts/seed-qw-teams.js"
   },
   "keywords": [
     "gaming",
@@ -39,6 +40,7 @@
     "concurrently": "^9.2.0",
     "firebase-admin": "^13.6.0",
     "postcss": "^8.4.0",
+    "sharp": "^0.33.5",
     "tailwindcss": "^3.4.0"
   },
   "engines": {

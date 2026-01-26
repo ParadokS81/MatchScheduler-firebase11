@@ -30,6 +30,9 @@
       }
     ]
   },
+  "storage": {
+    "rules": "storage.rules"
+  },
   "emulators": {
     "auth": {
       "port": 9099,
@@ -41,6 +44,14 @@
     },
     "functions": {
       "port": 5001,
+      "host": "0.0.0.0"
+    },
+    "storage": {
+      "port": 9199,
+      "host": "0.0.0.0"
+    },
+    "eventarc": {
+      "port": 9299,
       "host": "0.0.0.0"
     },
     "hosting": {

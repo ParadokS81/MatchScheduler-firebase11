@@ -7,6 +7,9 @@
     
     <!-- CSS -->
     <link href="css/main.css" rel="stylesheet">
+
+    <!-- Cropper.js for image cropping -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
     
     <!-- Meta Tags -->
     <meta name="description" content="Gaming community match scheduling platform for tournaments and clan matches">
@@ -20,7 +23,7 @@
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
         import { getFirestore, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
         import { getAuth, connectAuthEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
-        import { getStorage } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
+        import { getStorage, connectStorageEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
         import { getFunctions, connectFunctionsEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
 
         // Firebase configuration
@@ -66,6 +69,12 @@
                 console.log(`🔗 Connected to Functions emulator on ${emulatorHost}:5001`);
             } catch (error) {
                 console.warn('⚠️ Functions emulator connection failed:', error.message);
+            }
+            try {
+                connectStorageEmulator(storage, emulatorHost, 9199);
+                console.log(`🔗 Connected to Storage emulator on ${emulatorHost}:9199`);
+            } catch (error) {
+                console.warn('⚠️ Storage emulator connection failed:', error.message);
             }
         } else {
             console.log('ℹ️ Using production Firebase services');
@@ -172,6 +181,9 @@
     <!-- Alpine.js -->
     <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
 
+    <!-- Cropper.js for image cropping -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+
     <!-- JavaScript Modules -->
     <script src="js/services/AuthService.js"></script>
     <script src="js/services/TeamService.js"></script>
@@ -202,6 +214,8 @@
     <script src="js/components/FilterPanel.js"></script>
     <script src="js/services/ComparisonEngine.js"></script>
     <script src="js/components/ComparisonModal.js"></script>
+    <script src="js/services/LogoUploadService.js"></script>
+    <script src="js/components/LogoUploadModal.js"></script>
     <script src="js/app.js" type="module"></script>
 </body>
 </html>

@@ -428,6 +428,20 @@ const AvailabilityGrid = (function() {
                 // Cell click (with shift detection)
                 const cell = e.target.closest('.grid-cell');
                 if (cell && cell.dataset.cellId) {
+                    // Slice 3.5: Check if clicking a match cell in comparison mode
+                    if (_comparisonMode &&
+                        (cell.classList.contains('comparison-match-full') ||
+                         cell.classList.contains('comparison-match-partial'))) {
+                        // Open comparison modal instead of selecting
+                        e.stopPropagation();
+                        const slotId = cell.dataset.cellId;
+                        const weekId = getWeekId();
+                        if (typeof ComparisonModal !== 'undefined') {
+                            ComparisonModal.show(weekId, slotId);
+                        }
+                        return;
+                    }
+
                     if (e.shiftKey && _lastClickedCell) {
                         _handleShiftClick(cell.dataset.cellId);
                     } else {

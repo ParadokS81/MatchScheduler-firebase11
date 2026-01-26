@@ -235,6 +235,12 @@ const FavoritesPanel = (function() {
             const isSelected = selectedTeams.has(teamId);
             const playerCount = Array.isArray(team.playerRoster) ? team.playerRoster.length : 0;
 
+            // Check for small logo
+            const smallLogoUrl = team.activeLogo?.urls?.small;
+            const badgeContent = smallLogoUrl
+                ? `<img src="${smallLogoUrl}" alt="${team.teamTag}" class="w-8 h-8 rounded object-cover">`
+                : `<span class="w-8 h-8 rounded bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">${team.teamTag || '??'}</span>`;
+
             return `
                 <div class="favorite-team-card p-3 rounded-lg cursor-pointer transition-all
                             ${isSelected
@@ -243,8 +249,8 @@ const FavoritesPanel = (function() {
                      data-team-id="${teamId}">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2">
-                            <span class="font-medium text-foreground">[${team.teamTag || '??'}]</span>
-                            <span class="text-muted-foreground">${team.teamName || 'Unknown'}</span>
+                            ${badgeContent}
+                            <span class="text-foreground font-medium">${team.teamName || 'Unknown'}</span>
                         </div>
                         <button class="unfavorite-btn p-1 rounded hover:bg-destructive/20
                                        text-yellow-500 hover:text-destructive transition-colors"

@@ -195,17 +195,7 @@ const TeamManagementDrawer = (function() {
             </div>
             
             <!-- Logo Section -->
-            <div class="drawer-row flex flex-col items-center gap-3">
-                <div class="w-32 h-32 bg-muted border border-border rounded-lg flex items-center justify-center">
-                    <span class="text-2xl font-bold text-muted-foreground">${_teamData.teamTag}</span>
-                </div>
-                <button 
-                    id="manage-logo-btn"
-                    class="px-3 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors"
-                >
-                    Manage Logo
-                </button>
-            </div>
+            ${_renderLogoSection()}
             
             <!-- Spacer to push action buttons to bottom -->
             <div class="flex-1"></div>
@@ -623,10 +613,49 @@ const TeamManagementDrawer = (function() {
         }
     }
     
-    // Handle manage logo (placeholder)
+    // Render logo section based on whether team has a logo
+    function _renderLogoSection() {
+        const logoUrl = _teamData.activeLogo?.urls?.medium;
+
+        if (logoUrl) {
+            return `
+                <div class="drawer-row flex flex-col items-center gap-3">
+                    <img src="${logoUrl}" alt="${_teamData.teamName} logo"
+                         class="w-32 h-32 rounded-lg object-cover border border-border">
+                    <button id="manage-logo-btn" class="px-3 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors">
+                        Change Logo
+                    </button>
+                </div>
+            `;
+        } else {
+            return `
+                <div class="drawer-row flex flex-col items-center gap-3">
+                    <div class="w-32 h-32 bg-muted border border-border rounded-lg flex items-center justify-center">
+                        <span class="text-2xl font-bold text-muted-foreground">${_teamData.teamTag}</span>
+                    </div>
+                    <button id="manage-logo-btn" class="px-3 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors">
+                        Manage Logo
+                    </button>
+                </div>
+            `;
+        }
+    }
+
+    // Handle manage logo - opens LogoUploadModal
     function _handleManageLogo() {
-        if (typeof ToastService !== 'undefined') {
-            ToastService.showInfo('Manage logo - Not implemented yet');
+        if (typeof LogoUploadModal !== 'undefined') {
+            // Get current user ID from AuthService
+            const currentUser = AuthService.getCurrentUser();
+            if (!currentUser) {
+                ToastService.showError('Please log in to manage logo');
+                return;
+            }
+            LogoUploadModal.show(_teamData.id, currentUser.uid);
+        } else {
+            console.error('LogoUploadModal not loaded');
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showError('Logo upload not available');
+            }
         }
     }
     
