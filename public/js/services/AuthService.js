@@ -35,6 +35,7 @@ const AuthService = (function() {
     let _auth = null;
     let _initRetryCount = 0;
     let _isDevMode = false;
+    let _pendingForceNew = false;  // Flag for forceNew during Discord sign-in
 
     /**
      * Check if we should use dev mode (localhost + DEV_MODE enabled)
@@ -144,11 +145,12 @@ const AuthService = (function() {
             await new Promise(resolve => setTimeout(resolve, 100));
 
             if (_currentUser) {
-                // Check if user profile exists
-                const hasProfile = await _checkUserProfile(_currentUser.uid);
+                // Check if user has complete profile (with initials)
+                const profileCheck = await _checkUserProfile(_currentUser.uid);
                 return {
                     user: _currentUser,
-                    isNewUser: !hasProfile
+                    isNewUser: !profileCheck.hasProfile,
+                    profile: profileCheck.profile
                 };
             }
             throw new Error('Dev mode sign-in failed');
@@ -162,18 +164,317 @@ const AuthService = (function() {
 
             console.log('✅ Google sign-in successful:', result.user.email);
 
-            // Check if user profile exists
-            const hasProfile = await _checkUserProfile(result.user.uid);
+            // Call backend to ensure user doc exists (creates if new, updates lastLogin if existing)
+            const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+            const functions = window.firebase.functions;
+            const googleSignIn = httpsCallable(functions, 'googleSignIn');
+            const backendResult = await googleSignIn({});
+
+            console.log('✅ Backend user check complete, isNewUser:', backendResult.data.isNewUser);
+
+            // Check if user has completed profile setup (has initials)
+            const hasPlayerProfile = backendResult.data.profile?.initials;
 
             return {
                 user: result.user,
-                isNewUser: !hasProfile
+                isNewUser: !hasPlayerProfile,
+                profile: backendResult.data.profile
             };
 
         } catch (error) {
             console.error('❌ Google sign-in failed:', error);
             throw new Error(_getAuthErrorMessage(error));
         }
+    }
+
+    // Discord OAuth configuration
+    // Client ID is public, can be in frontend code
+    // Client Secret is in Cloud Functions config (never exposed to frontend)
+    // Note: Read at runtime to avoid race condition with APP_CONFIG initialization
+    function _getDiscordConfig() {
+        return {
+            clientId: window.APP_CONFIG?.DISCORD_CLIENT_ID || '',
+            redirectUri: window.location.origin + '/auth/discord/callback.html'
+        };
+    }
+
+    /**
+     * Sign in with Discord OAuth
+     * Opens Discord OAuth popup, receives code, exchanges for Firebase custom token
+     * @param {Object} options - Optional parameters
+     * @param {boolean} options.forceNew - Force creating new account even if email matches
+     */
+    async function signInWithDiscord(options = {}) {
+        const { forceNew = false } = options;
+
+        // Dev mode - use standard dev sign-in instead
+        if (_isDevMode) {
+            console.log('🔧 DEV MODE: Discord OAuth bypassed, using dev sign-in');
+            await _devModeAutoSignIn();
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            if (_currentUser) {
+                const profileCheck = await _checkUserProfile(_currentUser.uid);
+                return {
+                    user: _currentUser,
+                    isNewUser: !profileCheck.hasProfile,
+                    profile: profileCheck.profile
+                };
+            }
+            throw new Error('Dev mode sign-in failed');
+        }
+
+        // Store forceNew flag for the callback handler
+        _pendingForceNew = forceNew;
+
+        // Get Discord config at runtime
+        const { clientId, redirectUri } = _getDiscordConfig();
+
+        // Validate Discord client ID is configured
+        if (!clientId) {
+            console.error('Discord Client ID not configured. APP_CONFIG:', window.APP_CONFIG);
+            throw new Error('Discord sign-in is not configured');
+        }
+
+        // Build Discord OAuth URL
+        const params = new URLSearchParams({
+            client_id: clientId,
+            redirect_uri: redirectUri,
+            response_type: 'code',
+            scope: 'identify email',  // Include email for account unification
+            prompt: 'consent'
+        });
+
+        const discordAuthUrl = `https://discord.com/api/oauth2/authorize?${params}`;
+
+        // Open popup
+        const popup = window.open(
+            discordAuthUrl,
+            'discord-oauth',
+            'width=500,height=700,menubar=no,toolbar=no,location=no,status=no'
+        );
+
+        if (!popup) {
+            throw new Error('Popup was blocked. Please allow popups for this site.');
+        }
+
+        // Wait for callback via postMessage
+        return new Promise((resolve, reject) => {
+            const handleMessage = async (event) => {
+                // Only accept messages from same origin
+                if (event.origin !== window.location.origin) return;
+                if (event.data.type !== 'discord-oauth-callback') return;
+
+                window.removeEventListener('message', handleMessage);
+
+                try {
+                    popup.close();
+                } catch (e) {
+                    // Popup may already be closed
+                }
+
+                if (event.data.error) {
+                    reject(new Error(event.data.error));
+                    return;
+                }
+
+                if (!event.data.code) {
+                    reject(new Error('No authorization code received'));
+                    return;
+                }
+
+                try {
+                    const result = await _handleDiscordCallback(event.data.code);
+                    resolve(result);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+
+            window.addEventListener('message', handleMessage);
+
+            // Timeout after 5 minutes
+            setTimeout(() => {
+                window.removeEventListener('message', handleMessage);
+                try {
+                    popup.close();
+                } catch (e) {}
+                reject(new Error('Discord sign-in timed out'));
+            }, 300000);
+
+            // Check if popup was closed without completing auth
+            const checkClosed = setInterval(() => {
+                if (popup.closed) {
+                    clearInterval(checkClosed);
+                    window.removeEventListener('message', handleMessage);
+                    // Only reject if we haven't already resolved
+                    // The message handler may have already processed
+                }
+            }, 1000);
+        });
+    }
+
+    /**
+     * Handle Discord OAuth callback - exchange code for Firebase custom token
+     * @param {string} code - Authorization code from Discord
+     */
+    async function _handleDiscordCallback(code) {
+        try {
+            const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+            const { signInWithCustomToken } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js');
+            const functions = window.firebase.functions;
+            const { redirectUri } = _getDiscordConfig();
+
+            // Get and reset the forceNew flag
+            const forceNew = _pendingForceNew;
+            _pendingForceNew = false;
+
+            console.log('Exchanging Discord code for custom token...');
+
+            const discordOAuthExchange = httpsCallable(functions, 'discordOAuthExchange');
+            const result = await discordOAuthExchange({
+                code: code,
+                redirectUri: redirectUri,
+                forceNew: forceNew  // Pass forceNew flag to skip email check
+            });
+
+            // Handle account unification prompt
+            if (result.data.requiresLinking) {
+                console.log('Account unification required');
+                return {
+                    requiresLinking: true,
+                    existingEmail: result.data.existingEmail,
+                    discordUser: result.data.discordUser
+                };
+            }
+
+            if (!result.data.success) {
+                throw new Error(result.data.error || 'Discord authentication failed');
+            }
+
+            console.log('Got custom token, signing in to Firebase...');
+
+            // Sign in with the custom token
+            await signInWithCustomToken(_auth, result.data.customToken);
+
+            console.log('✅ Discord sign-in successful');
+
+            return {
+                isNewUser: result.data.isNewUser,
+                user: result.data.user
+            };
+
+        } catch (error) {
+            console.error('❌ Discord callback error:', error);
+            throw new Error(error.message || 'Discord sign-in failed');
+        }
+    }
+
+    /**
+     * Link Discord account to existing authenticated user (Google users)
+     * Reuses OAuth popup flow but doesn't sign in - just gets Discord data
+     */
+    async function linkDiscordAccount() {
+        // Dev mode - simulate linking
+        if (_isDevMode) {
+            console.log('🔧 DEV MODE: Simulating Discord link');
+            return {
+                success: true,
+                user: {
+                    discordUsername: 'dev-discord-user',
+                    discordUserId: '123456789012345678',
+                    discordAvatarHash: null
+                }
+            };
+        }
+
+        // Get Discord config
+        const { clientId, redirectUri } = _getDiscordConfig();
+
+        if (!clientId) {
+            throw new Error('Discord linking is not configured');
+        }
+
+        // Build Discord OAuth URL (same as sign-in but for linking)
+        const params = new URLSearchParams({
+            client_id: clientId,
+            redirect_uri: redirectUri,
+            response_type: 'code',
+            scope: 'identify',  // Only need identify for linking (not email)
+            prompt: 'consent'
+        });
+
+        const discordAuthUrl = `https://discord.com/api/oauth2/authorize?${params}`;
+
+        // Open popup
+        const popup = window.open(
+            discordAuthUrl,
+            'discord-oauth',
+            'width=500,height=700,menubar=no,toolbar=no,location=no,status=no'
+        );
+
+        if (!popup) {
+            throw new Error('Popup was blocked. Please allow popups for this site.');
+        }
+
+        // Wait for callback
+        return new Promise((resolve, reject) => {
+            const handleMessage = async (event) => {
+                if (event.origin !== window.location.origin) return;
+                if (event.data.type !== 'discord-oauth-callback') return;
+
+                window.removeEventListener('message', handleMessage);
+
+                try { popup.close(); } catch (e) {}
+
+                if (event.data.error) {
+                    reject(new Error(event.data.error));
+                    return;
+                }
+
+                if (!event.data.code) {
+                    reject(new Error('No authorization code received'));
+                    return;
+                }
+
+                try {
+                    // Exchange code for Discord user data
+                    const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+                    const functions = window.firebase.functions;
+
+                    const discordOAuthExchange = httpsCallable(functions, 'discordOAuthExchange');
+                    const result = await discordOAuthExchange({
+                        code: event.data.code,
+                        redirectUri: redirectUri,
+                        linkOnly: true  // Flag to indicate this is a linking operation
+                    });
+
+                    if (!result.data.success) {
+                        throw new Error(result.data.error || 'Discord linking failed');
+                    }
+
+                    console.log('✅ Discord account linked successfully');
+
+                    resolve({
+                        success: true,
+                        user: result.data.user
+                    });
+
+                } catch (error) {
+                    console.error('❌ Discord linking error:', error);
+                    reject(new Error(error.message || 'Failed to link Discord account'));
+                }
+            };
+
+            window.addEventListener('message', handleMessage);
+
+            // Timeout after 5 minutes
+            setTimeout(() => {
+                window.removeEventListener('message', handleMessage);
+                try { popup.close(); } catch (e) {}
+                reject(new Error('Discord linking timed out'));
+            }, 300000);
+        });
     }
 
     // Sign out
@@ -255,16 +556,27 @@ const AuthService = (function() {
     }
     
     // Check if user profile exists in Firestore
+    /**
+     * Check if user has a complete player profile (with initials set)
+     * Returns { exists: boolean, hasProfile: boolean, profile: object|null }
+     */
     async function _checkUserProfile(uid) {
         try {
             const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
             const db = window.firebase.db;
-            
+
             const userDoc = await getDoc(doc(db, 'users', uid));
-            return userDoc.exists();
+            if (!userDoc.exists()) {
+                return { exists: false, hasProfile: false, profile: null };
+            }
+
+            const profile = userDoc.data();
+            // User has a complete profile if initials are set
+            const hasProfile = !!profile.initials;
+            return { exists: true, hasProfile, profile };
         } catch (error) {
             console.error('❌ Error checking user profile:', error);
-            return false;
+            return { exists: false, hasProfile: false, profile: null };
         }
     }
     
@@ -295,26 +607,52 @@ const AuthService = (function() {
         if (!_currentUser) {
             throw new Error('No authenticated user');
         }
-        
+
         try {
             const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
             const functions = window.firebase.functions;
-            
+
             const updateProfileFunction = httpsCallable(functions, 'updateProfile');
             const result = await updateProfileFunction(profileData);
-            
+
             console.log('✅ User profile updated');
-            
+
             // Show success toast
             if (typeof ToastService !== 'undefined') {
                 ToastService.showSuccess('Profile updated successfully!');
             }
-            
+
             return result.data.updates;
-            
+
         } catch (error) {
             console.error('❌ Error updating user profile:', error);
             throw new Error(error.message || 'Failed to update user profile');
+        }
+    }
+
+    // Delete user account permanently
+    async function deleteAccount() {
+        if (!_currentUser) {
+            throw new Error('No authenticated user');
+        }
+
+        try {
+            const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+            const functions = window.firebase.functions;
+
+            const deleteAccountFunction = httpsCallable(functions, 'deleteAccount');
+            const result = await deleteAccountFunction({});
+
+            console.log('✅ Account deleted successfully');
+
+            // Clear any local storage
+            localStorage.removeItem('devSelectedUser');
+
+            return result.data;
+
+        } catch (error) {
+            console.error('❌ Error deleting account:', error);
+            throw new Error(error.message || 'Failed to delete account');
         }
     }
     
@@ -374,9 +712,12 @@ const AuthService = (function() {
     return {
         init,
         signInWithGoogle,
+        signInWithDiscord,
+        linkDiscordAccount,
         signOutUser,
         createProfile,
         updateProfile,
+        deleteAccount,
         getCurrentUser,
         isAuthenticated,
         onAuthStateChange,

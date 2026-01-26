@@ -30,7 +30,7 @@ const TeamInfo = (function() {
         _render();
         
         // Set up event listeners for coordination
-        window.addEventListener('profile-created', _handleProfileCreated);
+        window.addEventListener('profile-setup-complete', _handleProfileSetupComplete);
         window.addEventListener('team-joined', _handleTeamJoined);
         window.addEventListener('team-created', _handleTeamCreated);
         
@@ -41,14 +41,16 @@ const TeamInfo = (function() {
     function updateUser(user, userProfile) {
         const userChanged = _currentUser !== user;
         const profileChanged = JSON.stringify(_userProfile) !== JSON.stringify(userProfile);
-        
+
         _currentUser = user;
         _userProfile = userProfile;
-        
+
         if (user && userProfile) {
             // Only setup listener if user actually changed
             if (userChanged) {
                 _setupUserProfileListener();
+                // Render immediately to show correct state while listener loads
+                _render();
             } else if (profileChanged) {
                 // Just reload teams if profile changed but user didn't
                 _loadUserTeams();
@@ -129,21 +131,27 @@ const TeamInfo = (function() {
             
             const teams = await TeamService.getUserTeams(_currentUser.uid);
             
-            // Only update if teams actually changed
-            if (JSON.stringify(_userTeams) !== JSON.stringify(teams)) {
-                _userTeams = teams;
-                
-                // Select first team if available and no team currently selected
-                if (teams.length > 0 && !_selectedTeam) {
-                    _selectTeam(teams[0]);
-                } else if (teams.length === 0) {
-                    _selectedTeam = null;
-                }
-                
+            // Check if teams actually changed (handle first-load case where both are empty)
+            const teamsChanged = JSON.stringify(_userTeams) !== JSON.stringify(teams);
+            const isFirstLoad = _userTeams.length === 0 && teams.length === 0;
+
+            // Update teams
+            _userTeams = teams;
+
+            // Select first team if available and no team currently selected
+            if (teams.length > 0 && !_selectedTeam) {
+                _selectTeam(teams[0]);
+            } else if (teams.length === 0) {
+                _selectedTeam = null;
+                // Always render when user has no teams (to show "Join or Create Team" UI)
+                _render();
+            }
+
+            if (teamsChanged) {
                 _render();
                 console.log('🔄 User teams updated:', teams.length, 'teams');
             } else {
-                console.log('📦 User teams unchanged, skipping update');
+                console.log('📦 User teams unchanged');
             }
             
         } catch (error) {
@@ -515,13 +523,13 @@ const TeamInfo = (function() {
             return;
         }
         
-        // 2-step flow: Check if user has profile first
-        if (!_userProfile) {
-            // Step 1: Show profile creation modal first
-            console.log('User has no profile - showing profile creation modal first');
+        // 2-step flow: Check if user has completed profile setup (has initials)
+        if (!_userProfile?.initials) {
+            // Step 1: Show profile setup modal first
+            console.log('User needs to set up profile - showing profile setup modal first');
             if (typeof ProfileModal !== 'undefined') {
-                ProfileModal.show(_currentUser, 'create');
-                // Step 2 will be triggered by profile-created event listener
+                ProfileModal.show(_currentUser, _userProfile);
+                // Step 2 will be triggered by profile-setup-complete event listener
             } else {
                 console.error('❌ ProfileModal not available');
             }
@@ -531,26 +539,29 @@ const TeamInfo = (function() {
         }
     }
     
-    // Handle profile creation event for 2-step flow
-    async function _handleProfileCreated(event) {
-        console.log('Profile created event received - refreshing profile and showing onboarding modal');
+    // Handle profile setup complete event for 2-step flow
+    async function _handleProfileSetupComplete(event) {
+        console.log('Profile setup complete - refreshing profile and showing onboarding modal');
         const { user } = event.detail;
-        
+
         try {
             // Refresh user profile from Firebase to get latest data
-            if (typeof AuthService !== 'undefined') {
-                const refreshedProfile = await AuthService.getUserProfile(user.uid);
-                
+            const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+            const userDoc = await getDoc(doc(window.firebase.db, 'users', user.uid));
+
+            if (userDoc.exists()) {
+                const refreshedProfile = userDoc.data();
+
                 // Update the component with the new profile data (this will set up listeners)
                 updateUser(user, refreshedProfile);
-                
+
                 // Show onboarding modal with refreshed profile
                 if (typeof OnboardingModal !== 'undefined') {
                     OnboardingModal.show(user, refreshedProfile);
                 }
             }
         } catch (error) {
-            console.error('❌ Failed to refresh profile after creation:', error);
+            console.error('❌ Failed to refresh profile after setup:', error);
         }
     }
     

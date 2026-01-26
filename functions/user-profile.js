@@ -5,9 +5,71 @@ const { getAuth } = require('firebase-admin/auth');
 const db = getFirestore();
 
 /**
+ * Cloud Function: googleSignIn
+ * Called after Google OAuth sign-in to ensure user document exists.
+ * Creates minimal user doc for new users, updates lastLogin for existing users.
+ * User doc is created WITHOUT displayName/initials - those are set via profile setup.
+ */
+exports.googleSignIn = onCall(async (request) => {
+    const { auth } = request;
+
+    // Verify user is authenticated
+    if (!auth) {
+        throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { uid } = auth;
+
+    try {
+        const userRef = db.collection('users').doc(uid);
+        const userDoc = await userRef.get();
+
+        if (userDoc.exists) {
+            // Existing user - update lastLogin and return profile
+            await userRef.update({ lastLogin: FieldValue.serverTimestamp() });
+            console.log(`✅ Existing user signed in: ${uid}`);
+            return {
+                success: true,
+                isNewUser: false,
+                profile: userDoc.data()
+            };
+        }
+
+        // New user - create minimal doc (no displayName/initials yet)
+        const userRecord = await getAuth().getUser(uid);
+        const newProfile = {
+            email: userRecord.email || null,
+            photoURL: userRecord.photoURL || null,
+            authProvider: 'google',
+            teams: {},
+            favoriteTeams: [],
+            // displayName and initials intentionally NOT set - user sets via profile setup
+            createdAt: FieldValue.serverTimestamp(),
+            lastLogin: FieldValue.serverTimestamp()
+        };
+
+        await userRef.set(newProfile);
+        console.log(`✅ New Google user created: ${uid} (${userRecord.email})`);
+
+        // Log user creation event
+        await _logUserCreationEvent(uid, userRecord.email, 'google');
+
+        return {
+            success: true,
+            isNewUser: true,
+            profile: newProfile
+        };
+
+    } catch (error) {
+        console.error('❌ Error in googleSignIn:', error);
+        throw new HttpsError('internal', 'Failed to process sign-in');
+    }
+});
+
+/**
  * Cloud Function: createProfile
- * Creates a user profile in Firestore after authentication
- * Following PRD v2 gaming community patterns
+ * @deprecated Use updateProfile instead. This function now redirects to updateProfile logic.
+ * Kept for backwards compatibility during transition.
  */
 exports.createProfile = onCall(async (request) => {
     const { auth, data } = request;
@@ -18,11 +80,11 @@ exports.createProfile = onCall(async (request) => {
     }
     
     const { uid } = auth;
-    
+
     // Get user info from Auth to get email
     const userRecord = await getAuth().getUser(uid);
     const email = userRecord.email;
-    const { displayName, initials, discordUsername, discordUserId } = data;
+    const { displayName, initials, discordUsername, discordUserId, authProvider } = data;
     
     // Validate input
     if (!displayName || !initials) {
@@ -71,12 +133,17 @@ exports.createProfile = onCall(async (request) => {
             userProfile.discordUsername = discordUsername.trim();
             userProfile.discordUserId = discordUserId.trim();
         }
+
+        // Track auth provider (discord or google)
+        if (authProvider && (authProvider === 'discord' || authProvider === 'google')) {
+            userProfile.authProvider = authProvider;
+        }
         
         // Save to Firestore
         await db.collection('users').doc(uid).set(userProfile);
         
         // Log profile creation event
-        await _logProfileCreationEvent(uid, displayName, initials);
+        await _logProfileCreationEvent(uid, displayName, initials, authProvider || 'google');
         
         console.log(`✅ Profile created for user: ${email}`);
         
@@ -144,9 +211,11 @@ exports.updateProfile = onCall(async (request) => {
     if (discordUsername !== undefined || discordUserId !== undefined) {
         // If either is being updated, validate both
         if (discordUsername === '' && discordUserId === '') {
-            // Clear Discord data
+            // Clear Discord data (including avatar hash and linked timestamp)
             updates.discordUsername = FieldValue.delete();
             updates.discordUserId = FieldValue.delete();
+            updates.discordAvatarHash = FieldValue.delete();
+            updates.discordLinkedAt = FieldValue.delete();
         } else if (discordUsername && discordUserId) {
             // Update Discord data
             if (discordUsername.length > 50) {
@@ -169,9 +238,10 @@ exports.updateProfile = onCall(async (request) => {
             // Get user's current profile to find their teams
             const userRef = db.collection('users').doc(uid);
             const userDoc = await transaction.get(userRef);
-            
+
             if (!userDoc.exists) {
-                throw new Error('User profile not found');
+                // User doc should exist (created during sign-in), but handle edge case
+                throw new Error('User not found. Please sign out and sign in again.');
             }
             
             const userData = userDoc.data();
@@ -290,10 +360,154 @@ exports.getProfile = onCall(async (request) => {
 });
 
 /**
+ * Cloud Function: deleteAccount
+ * Permanently deletes user's account from both Firestore and Firebase Auth.
+ * Also removes user from any team rosters they were on.
+ */
+exports.deleteAccount = onCall(async (request) => {
+    const { auth } = request;
+
+    // Verify user is authenticated
+    if (!auth) {
+        throw new HttpsError('unauthenticated', 'User must be authenticated to delete account');
+    }
+
+    const { uid } = auth;
+
+    try {
+        // Get user profile to find their teams
+        const userRef = db.collection('users').doc(uid);
+        const userDoc = await userRef.get();
+
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            const userTeams = userData.teams || {};
+
+            // Remove user from all team rosters
+            const batch = db.batch();
+
+            for (const teamId of Object.keys(userTeams)) {
+                const teamRef = db.collection('teams').doc(teamId);
+                const teamDoc = await teamRef.get();
+
+                if (teamDoc.exists) {
+                    const teamData = teamDoc.data();
+                    const playerRoster = teamData.playerRoster || [];
+
+                    // Check if user is the leader
+                    if (teamData.leaderId === uid) {
+                        // If user is leader and there are other members, we need to handle this
+                        // For now, just remove them - team becomes leaderless
+                        // In a production app, you might want to transfer leadership first
+                        console.log(`⚠️ User ${uid} is leader of team ${teamId} - removing anyway`);
+                    }
+
+                    // Remove user from roster
+                    const updatedRoster = playerRoster.filter(p => p.userId !== uid);
+
+                    batch.update(teamRef, {
+                        playerRoster: updatedRoster,
+                        lastActivityAt: FieldValue.serverTimestamp()
+                    });
+
+                    console.log(`📋 Removed user ${uid} from team ${teamId} roster`);
+                }
+            }
+
+            // Delete user document
+            batch.delete(userRef);
+
+            // Commit all Firestore changes
+            await batch.commit();
+            console.log(`✅ Deleted user document and removed from ${Object.keys(userTeams).length} teams`);
+        }
+
+        // Log account deletion event
+        await _logAccountDeletionEvent(uid);
+
+        // Delete from Firebase Auth
+        await getAuth().deleteUser(uid);
+        console.log(`✅ Deleted user from Firebase Auth: ${uid}`);
+
+        return {
+            success: true,
+            message: 'Account deleted successfully'
+        };
+
+    } catch (error) {
+        console.error('❌ Error deleting account:', error);
+        throw new HttpsError('internal', 'Failed to delete account: ' + error.message);
+    }
+});
+
+/**
+ * Helper function to log account deletion event
+ * @param {string} userId - The user's UID
+ */
+async function _logAccountDeletionEvent(userId) {
+    try {
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const eventId = `${dateStr}-${timeStr}-account-deleted_${randomSuffix}`;
+
+        await db.collection('eventLog').doc(eventId).set({
+            eventId,
+            type: 'ACCOUNT_DELETED',
+            category: 'USER_LIFECYCLE',
+            timestamp: FieldValue.serverTimestamp(),
+            userId,
+            details: {
+                reason: 'user_requested'
+            }
+        });
+    } catch (error) {
+        console.error('❌ Error logging account deletion event:', error);
+        // Don't throw - event logging shouldn't fail the main operation
+    }
+}
+
+/**
+ * Helper function to log user creation event (when user doc is first created)
+ * @param {string} userId - The user's UID
+ * @param {string} email - User's email
+ * @param {string} authMethod - Authentication method (discord or google)
+ */
+async function _logUserCreationEvent(userId, email, authMethod) {
+    try {
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const eventId = `${dateStr}-${timeStr}-user-created_${randomSuffix}`;
+
+        await db.collection('eventLog').doc(eventId).set({
+            eventId,
+            type: 'USER_CREATED',
+            category: 'USER_LIFECYCLE',
+            timestamp: FieldValue.serverTimestamp(),
+            userId,
+            details: {
+                email: email || 'not provided',
+                method: authMethod === 'discord' ? 'discord_oauth' : 'google_oauth'
+            }
+        });
+    } catch (error) {
+        console.error('❌ Error logging user creation event:', error);
+        // Don't throw - event logging shouldn't fail the main operation
+    }
+}
+
+/**
  * Helper function to log profile creation event
  * Following PRD v2 event logging system
+ * @param {string} userId - The user's UID
+ * @param {string} displayName - User's display name
+ * @param {string} initials - User's initials
+ * @param {string} authMethod - Authentication method (discord or google)
  */
-async function _logProfileCreationEvent(userId, displayName, initials) {
+async function _logProfileCreationEvent(userId, displayName, initials, authMethod = 'google') {
     try {
         // PRD format: YYYYMMDD-HHMM-eventtype_XXXX (no team name for user events)
         const now = new Date();
@@ -301,7 +515,7 @@ async function _logProfileCreationEvent(userId, displayName, initials) {
         const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
         const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
         const eventId = `${dateStr}-${timeStr}-profile-created_${randomSuffix}`;
-        
+
         const eventData = {
             eventId,
             type: 'PROFILE_CREATED',
@@ -311,12 +525,12 @@ async function _logProfileCreationEvent(userId, displayName, initials) {
             details: {
                 displayName,
                 initials,
-                method: 'google_oauth'
+                method: authMethod === 'discord' ? 'discord_oauth' : 'google_oauth'
             }
         };
-        
+
         await db.collection('eventLog').doc(eventId).set(eventData);
-        
+
     } catch (error) {
         console.error('❌ Error logging profile creation event:', error);
         // Don't throw - event logging shouldn't fail the main operation

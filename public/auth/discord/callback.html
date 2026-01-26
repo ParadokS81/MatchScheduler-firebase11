@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Sign-In - MatchScheduler</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #1a1a2e;
+            color: #e4e4e7;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+        }
+        .spinner {
+            width: 2rem;
+            height: 2rem;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #5865F2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .error {
+            color: #f87171;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner" id="spinner"></div>
+        <p id="status">Completing sign-in...</p>
+    </div>
+    <script>
+        (function() {
+            // Extract code or error from URL
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('code');
+            const error = params.get('error');
+            const errorDescription = params.get('error_description');
+
+            const statusEl = document.getElementById('status');
+            const spinnerEl = document.getElementById('spinner');
+
+            function showError(message) {
+                spinnerEl.style.display = 'none';
+                statusEl.className = 'error';
+                statusEl.textContent = message;
+            }
+
+            // Handle error from Discord
+            if (error) {
+                const errorMessage = errorDescription || error || 'Discord authorization failed';
+
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'discord-oauth-callback',
+                        error: errorMessage
+                    }, window.location.origin);
+                    setTimeout(() => window.close(), 1500);
+                } else {
+                    showError(errorMessage);
+                }
+                return;
+            }
+
+            // Handle missing code
+            if (!code) {
+                showError('No authorization code received');
+                return;
+            }
+
+            // Send code back to parent window
+            if (window.opener) {
+                window.opener.postMessage({
+                    type: 'discord-oauth-callback',
+                    code: code
+                }, window.location.origin);
+
+                statusEl.textContent = 'Redirecting...';
+                // Close popup after a short delay
+                setTimeout(() => window.close(), 500);
+            } else {
+                // Fallback: redirect to main app with code in URL
+                // This handles the case where popup was blocked or user navigated directly
+                window.location.href = '/?discord_code=' + encodeURIComponent(code);
+            }
+        })();
+    </script>
+</body>
+</html>

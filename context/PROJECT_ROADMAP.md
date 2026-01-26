@@ -179,26 +179,49 @@ Detailed specifications in `/context/slices/[slice-name].md`
 **Scope:** Side-by-side VS layout, team logos in cards, green/grey player availability dots, opponent selector tabs in header, Discord contact for leaders
 **Note:** Clean header with "Match Details — Day at Time" format. Opponent tabs on right side for multi-match slots. Logos also display in TeamInfo panel.
 
-### 📅 Slice 4.3: Discord OAuth & Account Linking
-**Status:** Not Started
-**User Value:** Users can link Discord accounts for easy contact
-**PRD Sections:** 1.4, 4.4.1
-**Components:** DiscordLinkButton, DiscordOAuthCallback
+### ✅ Slice 4.3.1: Discord OAuth Foundation
+**Status:** Complete
+**User Value:** Users can sign in with Discord (primary) or Google, enabling gaming identity and future integrations
+**PRD Sections:** 1.2, 4.4.1
+**Components:** SignInScreen (new), AuthService (modify), discordOAuthExchange Cloud Function
+**Spec:** `context/slices/slice-4.3.1-discord-oauth-foundation.md`
 **Scope:**
-- Add "Link Discord" button to profile settings
-- Discord OAuth flow (identify scope only - no messages/server access)
-- Store `discordUsername` and `discordUserId` in user profile
-- Support both Google Auth + Discord linking, or Discord-only auth (future)
-- Show linked status in profile with option to unlink
+- Sign-in screen with Discord as primary, Google as secondary
+- Discord OAuth popup flow with Cloud Function token exchange
+- Create Firebase user + Firestore document from Discord data
+- Store discordUsername, discordUserId, discordAvatarHash
+- Dev mode continues to work
 
-**Schema:** (already prepared in SCHEMA.md)
-```
-discordUsername: string | null   // "username" display name
-discordUserId: string | null     // "123456789" for DM deep links
-discordLinkedAt: Timestamp | null
-```
+**Note:** Completed with account unification - existing Google users with matching email prompted to sign in with Google instead of creating duplicate account.
 
-**Note:** ComparisonModal already supports both DM links (when userId available) and copy fallback (username only). This slice just needs to populate the data.
+### ✅ Slice 4.3.2: Discord Linking for Google Users
+**Status:** Complete
+**User Value:** Google users can link Discord account for avatars and DMs
+**PRD Sections:** 1.2, 4.4.1
+**Components:** ProfileModal (enhance), AuthService (link method), googleSignIn Cloud Function
+**Scope:**
+- "Link Discord" button in Edit Profile modal
+- OAuth flow that links to existing account (not creates new)
+- Unlink option
+- Show linked status with Discord username
+- Simplified auth flow: googleSignIn creates user doc automatically
+
+**Additional work completed:**
+- Delete Account feature (GDPR compliance) - removes user from Firebase Auth + Firestore + team rosters
+- ProfileModal UI cleanup - compact layout with nick+initials on one row, Discord in single line, cleaner buttons
+
+### 📅 Slice 4.3.3: Avatar Manager
+**Status:** Not Started
+**User Value:** Users can customize their avatar (Discord, custom upload, or default)
+**PRD Sections:** 4.4.1
+**Components:** AvatarManager (new), ProfileModal (enhance)
+**Scope:**
+- Avatar section in Edit Profile modal
+- Priority: Custom upload → Discord → Default → Initials
+- Upload custom avatar (reuse logo upload pattern)
+- "Use Discord Avatar" toggle (if linked)
+- Default Quake-style placeholder (community-designed)
+- Integrates with existing grid avatar toggle
 
 ### 📅 Slice 4.4: Discord Contact Enhancement
 **Status:** Partially Complete (via Slice 3.5)
@@ -230,10 +253,10 @@ discordLinkedAt: Timestamp | null
 ---
 
 ## Progress Summary
-**Slices Complete:** 19 / 23 (3.6 and 3.7 bundled)
+**Slices Complete:** 21 / 25 (3.6 and 3.7 bundled, 4.3 expanded to 4.3.1-4.3.3)
 
 ## Current Focus
-Part 4 in progress! Next up: Slice 4.3 Discord OAuth or Slice 4.5 Error States
+Part 4 in progress! Next up: Slice 4.3.3 Avatar Manager or Slice 4.5 Error States
 
 ---
 

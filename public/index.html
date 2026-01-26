@@ -82,6 +82,14 @@
 
         // Make globally available
         window.firebase = { app, db, auth, storage, functions, isLocalDev };
+
+        // Application configuration
+        // Discord Client ID is public (safe to expose in frontend)
+        // Discord Client Secret is in Cloud Functions config (never exposed)
+        window.APP_CONFIG = {
+            DISCORD_CLIENT_ID: '1465332663152808031',
+            DEV_MODE: isLocalDev
+        };
     </script>
 </head>
 <body>

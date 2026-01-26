@@ -1,23 +1,25 @@
-// ProfileModal Component - First-time user profile creation
+// ProfileModal Component - User profile setup and editing
 // Following PRD v2 Architecture with Revealing Module Pattern
 
 const ProfileModal = (function() {
     'use strict';
-    
+
     // Private variables
     let _isVisible = false;
     let _currentUser = null;
     let _userProfile = null;
-    let _mode = 'create';
+    let _isSetupMode = false;  // true if user needs to set up profile (no initials)
     let _keydownHandler = null;
-    
-    // Show profile modal (create or edit mode)
-    function show(user, mode = 'create', userProfile = null) {
+
+    // Show profile modal
+    // Setup mode is auto-detected based on whether profile has initials
+    function show(user, userProfile = null) {
         if (_isVisible) return;
-        
+
         _currentUser = user;
         _userProfile = userProfile;
-        _mode = mode;
+        // Setup mode = user exists but hasn't set their player profile (no initials)
+        _isSetupMode = !userProfile?.initials;
         _isVisible = true;
         
         const modalHTML = `
@@ -25,187 +27,120 @@ const ProfileModal = (function() {
                 <div class="bg-slate-800 border border-slate-700 rounded-lg shadow-xl w-full max-w-md">
                     <!-- Header -->
                     <div class="flex items-center justify-between p-4 border-b border-slate-700">
-                        <h2 class="text-xl font-bold text-sky-400">${_mode === 'create' ? 'Complete Your Profile' : 'Edit Profile'}</h2>
-                        <div class="w-6 h-6"></div> <!-- Spacer to center title -->
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+                                ${_userProfile?.photoURL || user.photoURL ?
+                                    `<img src="${_userProfile?.photoURL || user.photoURL}" alt="Profile" class="w-full h-full rounded-full object-cover">` :
+                                    `<svg class="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                                    </svg>`
+                                }
+                            </div>
+                            <h2 class="text-xl font-bold text-sky-400">${_isSetupMode ? 'Set Up Profile' : 'Edit Profile'}</h2>
+                        </div>
                     </div>
-                    
+
                     <!-- Body -->
                     <div class="p-4">
-                        <div class="space-y-4">
-                            <!-- Welcome Message -->
-                            <div class="text-center">
-                                <div class="w-16 h-16 rounded-full bg-primary flex items-center justify-center mx-auto mb-3">
-                                    ${user.photoURL ? 
-                                        `<img src="${user.photoURL}" alt="Profile" class="w-full h-full rounded-full object-cover">` :
-                                        `<svg class="w-8 h-8 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                                        </svg>`
-                                    }
-                                </div>
-                                <p class="text-sm text-muted-foreground">
-                                    ${_mode === 'create' ? 'Welcome to MatchScheduler! Let\'s set up your gaming profile.' : 'Update your profile information below.'}
-                                </p>
-                            </div>
-                            
-                            <!-- Profile Form -->
-                            <form id="profile-form" class="space-y-4">
-                                <!-- Player Nick -->
-                                <div>
+                        <form id="profile-form" class="space-y-4">
+                            ${_isSetupMode ? `
+                            <p class="text-sm text-muted-foreground">
+                                Welcome! Set your player nick and initials to get started.
+                            </p>
+                            ` : ''}
+
+                            <!-- Player Nick + Initials Row -->
+                            <div class="flex gap-3">
+                                <div class="flex-1">
                                     <label for="displayName" class="block text-sm font-medium text-foreground mb-1">
                                         Player Nick
                                     </label>
-                                    <input 
-                                        type="text" 
-                                        id="displayName" 
+                                    <input
+                                        type="text"
+                                        id="displayName"
                                         name="displayName"
                                         value="${_userProfile?.displayName || user.displayName || ''}"
-                                        placeholder="Enter your gaming name"
+                                        placeholder="Your gaming name"
                                         class="w-full px-3 py-2 bg-input border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                                         required
                                         minlength="2"
                                         maxlength="30"
                                     >
-                                    <p class="text-xs text-muted-foreground mt-1">
-                                        This will be shown to your teammates
-                                    </p>
                                 </div>
-                                
-                                <!-- Initials -->
-                                <div>
+                                <div class="w-24">
                                     <label for="initials" class="block text-sm font-medium text-foreground mb-1">
-                                        Initials (3 characters)
+                                        Initials
                                     </label>
-                                    <input 
-                                        type="text" 
-                                        id="initials" 
+                                    <input
+                                        type="text"
+                                        id="initials"
                                         name="initials"
                                         value="${_userProfile?.initials || ''}"
                                         placeholder="ABC"
-                                        class="w-full px-3 py-2 bg-input border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary uppercase"
+                                        class="w-full px-3 py-2 bg-input border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary uppercase text-center"
                                         required
                                         minlength="3"
                                         maxlength="3"
                                         pattern="[A-Z]{3}"
                                         style="text-transform: uppercase;"
                                     >
-                                    <p class="text-xs text-muted-foreground mt-1">
-                                        Used in availability grids (must be unique per team)
-                                    </p>
                                 </div>
-                                
-                                <!-- Error Display -->
-                                <div id="profile-error" class="hidden bg-red-900/50 border border-red-600 rounded-md p-3">
-                                    <div class="flex items-center gap-2">
-                                        <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        <span class="text-red-400 text-sm" id="profile-error-text"></span>
-                                    </div>
+                            </div>
+
+                            <!-- Error Display -->
+                            <div id="profile-error" class="hidden bg-red-900/50 border border-red-600 rounded-md p-3">
+                                <div class="flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <span class="text-red-400 text-sm" id="profile-error-text"></span>
                                 </div>
-                                
-                                <!-- Discord Account Section -->
-                                <div class="border-t border-border pt-4">
-                                    <h4 class="text-sm font-medium text-foreground mb-3">Discord Account (Optional)</h4>
-                                    <div class="space-y-3">
-                                        <!-- Discord Username -->
-                                        <div>
-                                            <label for="discordUsername" class="block text-sm font-medium text-foreground mb-1">
-                                                Discord Username
-                                            </label>
-                                            <input 
-                                                type="text" 
-                                                id="discordUsername" 
-                                                name="discordUsername"
-                                                value="${_userProfile?.discordUsername || ''}"
-                                                placeholder="Username#1234"
-                                                class="w-full px-3 py-2 bg-input border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                                maxlength="50"
-                                            >
-                                            <p class="text-xs text-muted-foreground mt-1">
-                                                Your Discord username with tag (e.g., Player#1234)
-                                            </p>
-                                        </div>
-                                        
-                                        <!-- Discord User ID -->
-                                        <div>
-                                            <label for="discordUserId" class="block text-sm font-medium text-foreground mb-1">
-                                                Discord User ID
-                                            </label>
-                                            <input 
-                                                type="text" 
-                                                id="discordUserId" 
-                                                name="discordUserId"
-                                                value="${_userProfile?.discordUserId || ''}"
-                                                placeholder="123456789012345678"
-                                                class="w-full px-3 py-2 bg-input border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                                pattern="[0-9]*"
-                                                maxlength="20"
-                                            >
-                                            <p class="text-xs text-muted-foreground mt-1">
-                                                Your Discord user ID (18-digit number)
-                                            </p>
-                                        </div>
-                                        
-                                        <!-- Helper Info -->
-                                        <div class="bg-muted rounded-md p-3">
-                                            <div class="flex items-center gap-2 mb-2">
-                                                <svg class="w-4 h-4 text-[#5865F2]" fill="currentColor" viewBox="0 0 24 24">
-                                                    <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.211.375-.445.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 2.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.010c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.188.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-2.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
-                                                </svg>
-                                                <span class="text-sm font-medium text-foreground">How to find your Discord ID:</span>
-                                            </div>
-                                            <ol class="text-xs text-muted-foreground space-y-1">
-                                                <li>1. Open Discord and go to User Settings</li>
-                                                <li>2. Go to Advanced → Enable Developer Mode</li>
-                                                <li>3. Right-click your username → Copy User ID</li>
-                                            </ol>
-                                            ${_mode === 'edit' && _userProfile?.discordUserId ? `
-                                            <div class="mt-2 pt-2 border-t border-border">
-                                                <button 
-                                                    type="button" 
-                                                    id="discord-clear-btn"
-                                                    class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                                >
-                                                    Clear Discord Info
-                                                </button>
-                                            </div>
-                                            ` : ''}
-                                        </div>
-                                    </div>
-                                </div>
-                            </form>
-                            
-                            <!-- Gaming Context Info -->
-                            ${_mode === 'create' ? `
-                            <div class="bg-muted rounded-md p-3">
-                                <h4 class="text-sm font-medium text-foreground mb-2">Next Steps:</h4>
-                                <ul class="text-xs text-muted-foreground space-y-1">
-                                    <li>• Join your team with a join code</li>
-                                    <li>• Create a new team for tournaments</li>
-                                    <li>• Set your availability for matches</li>
-                                    <li>• Schedule matches with opponents</li>
-                                </ul>
-                            </div>` : ''}
-                        </div>
+                            </div>
+
+                            <!-- Discord Account Section -->
+                            <div class="border-t border-border pt-4" id="discord-section-container">
+                                ${_renderDiscordSection()}
+                            </div>
+                        </form>
                     </div>
-                    
+
                     <!-- Footer -->
-                    <div class="flex items-center justify-end p-4 border-t border-slate-700 gap-3">
-                        <button 
-                            type="button" 
-                            id="profile-cancel-btn"
-                            class="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            type="submit" 
-                            id="profile-save-btn"
-                            form="profile-form"
-                            class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-md transition-colors"
-                        >
-                            ${_mode === 'create' ? 'Create Profile' : 'Save Changes'}
-                        </button>
+                    <div class="flex items-center justify-between p-4 border-t border-slate-700">
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                id="profile-logout-btn"
+                                class="px-3 py-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded-md transition-colors"
+                            >
+                                Sign Out
+                            </button>
+                            ${!_isSetupMode ? `
+                            <button
+                                type="button"
+                                id="profile-delete-btn"
+                                class="px-3 py-2 text-sm text-muted-foreground hover:text-red-500 hover:border-red-500 border border-border rounded-md transition-colors"
+                            >
+                                Delete
+                            </button>
+                            ` : ''}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                id="profile-cancel-btn"
+                                class="px-4 py-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded-md transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                id="profile-save-btn"
+                                form="profile-form"
+                                class="px-4 py-2 text-sm bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-md transition-colors"
+                            >
+                                Save
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -240,25 +175,38 @@ const ProfileModal = (function() {
     function _attachEventListeners() {
         const form = document.getElementById('profile-form');
         const cancelBtn = document.getElementById('profile-cancel-btn');
+        const logoutBtn = document.getElementById('profile-logout-btn');
         const initialsInput = document.getElementById('initials');
         const discordClearBtn = document.getElementById('discord-clear-btn');
-        
+
         if (form) {
             form.addEventListener('submit', _handleSubmit);
         }
-        
+
         if (cancelBtn) {
             cancelBtn.addEventListener('click', _handleCancel);
         }
-        
+
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', _handleLogout);
+        }
+
+        const deleteBtn = document.getElementById('profile-delete-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', _handleDeleteAccount);
+        }
+
         if (initialsInput) {
             initialsInput.addEventListener('input', _handleInitialsInput);
         }
-        
+
         if (discordClearBtn) {
             discordClearBtn.addEventListener('click', _handleDiscordClear);
         }
-        
+
+        // Attach Discord link/unlink event listeners
+        _attachDiscordEventListeners();
+
         // Close on backdrop click
         const modalContainer = document.getElementById('modal-container');
         modalContainer.addEventListener('click', (e) => {
@@ -266,7 +214,7 @@ const ProfileModal = (function() {
                 _handleCancel();
             }
         });
-        
+
         // Close on escape key
         _keydownHandler = _handleKeyDown;
         document.addEventListener('keydown', _keydownHandler);
@@ -310,26 +258,26 @@ const ProfileModal = (function() {
                 profileData.discordUserId = discordUserId;
             }
             
-            if (_mode === 'create') {
-                await AuthService.createProfile(profileData);
-                console.log('✅ Profile created successfully');
-            } else {
-                await AuthService.updateProfile(profileData);
-                console.log('✅ Profile updated successfully');
-            }
-            
+            // Always use updateProfile (user doc already exists from sign-in)
+            await AuthService.updateProfile(profileData);
+            console.log('✅ Profile saved successfully');
+
             hide();
-            
-            // Emit profile creation event for coordination
-            if (_mode === 'create') {
-                // Use simple event coordination as per architecture
-                window.dispatchEvent(new CustomEvent('profile-created', {
+
+            // Always emit profile-updated event so components can refresh
+            window.dispatchEvent(new CustomEvent('profile-updated', {
+                detail: { user: _currentUser, profileData, isSetupMode: _isSetupMode }
+            }));
+
+            // Emit profile-setup event if this was initial setup (for TeamInfo to show onboarding)
+            if (_isSetupMode) {
+                window.dispatchEvent(new CustomEvent('profile-setup-complete', {
                     detail: { user: _currentUser, profileData }
                 }));
             }
             
         } catch (error) {
-            console.error(`❌ Profile ${_mode === 'create' ? 'creation' : 'update'} failed:`, error);
+            console.error('❌ Profile save failed:', error);
             _showError(error.message);
             _setButtonLoading(saveBtn, false);
         }
@@ -341,6 +289,73 @@ const ProfileModal = (function() {
         // They can create their profile later when they want to join/create a team
         console.log('📋 Profile creation cancelled - user remains signed in');
         hide();
+    }
+
+    // Handle logout
+    async function _handleLogout() {
+        hide();
+        try {
+            if (typeof AuthService !== 'undefined') {
+                await AuthService.signOutUser();
+                console.log('👋 User signed out from profile modal');
+            }
+        } catch (error) {
+            console.error('❌ Sign out failed:', error);
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showError('Failed to sign out');
+            }
+        }
+    }
+
+    // Handle delete account
+    async function _handleDeleteAccount() {
+        // Show confirmation dialog
+        const confirmed = confirm(
+            'Are you sure you want to delete your account?\n\n' +
+            'This will permanently remove:\n' +
+            '• Your profile and all data\n' +
+            '• Your membership from all teams\n\n' +
+            'This action cannot be undone!'
+        );
+
+        if (!confirmed) return;
+
+        // Double-check with a second confirmation
+        const doubleConfirmed = confirm(
+            'This is your final warning!\n\n' +
+            'Click OK to permanently delete your account.'
+        );
+
+        if (!doubleConfirmed) return;
+
+        const deleteBtn = document.getElementById('profile-delete-btn');
+        if (deleteBtn) {
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = 'Deleting...';
+        }
+
+        try {
+            if (typeof AuthService !== 'undefined') {
+                await AuthService.deleteAccount();
+                console.log('🗑️ Account deleted successfully');
+
+                hide();
+
+                // Show success message
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showSuccess('Account deleted successfully');
+                }
+            }
+        } catch (error) {
+            console.error('❌ Account deletion failed:', error);
+            _showError(error.message || 'Failed to delete account');
+
+            // Reset button
+            if (deleteBtn) {
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = 'Delete';
+            }
+        }
     }
     
     // Handle initials input (force uppercase)
@@ -359,7 +374,7 @@ const ProfileModal = (function() {
     function _handleDiscordClear() {
         const discordUsernameInput = document.getElementById('discordUsername');
         const discordUserIdInput = document.getElementById('discordUserId');
-        
+
         if (discordUsernameInput) {
             discordUsernameInput.value = '';
         }
@@ -367,7 +382,192 @@ const ProfileModal = (function() {
             discordUserIdInput.value = '';
         }
     }
-    
+
+    // Discord icon SVG path (reused across sections)
+    const DISCORD_ICON_PATH = 'M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z';
+
+    // Render Discord section based on auth state
+    function _renderDiscordSection() {
+        const isDiscordAuth = _userProfile?.authProvider === 'discord';
+        const hasLinkedDiscord = _userProfile?.discordUserId && !isDiscordAuth;
+
+        // Case 1: User signed in with Discord - read-only display (compact)
+        if (isDiscordAuth) {
+            return `
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-[#5865F2]" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="${DISCORD_ICON_PATH}"/>
+                        </svg>
+                        <span class="text-sm text-foreground">${_userProfile?.discordUsername || 'Discord User'}</span>
+                        <span class="text-xs text-muted-foreground">(${_userProfile?.discordUserId})</span>
+                        <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </div>
+                </div>
+                <input type="hidden" name="discordUsername" value="${_userProfile?.discordUsername || ''}">
+                <input type="hidden" name="discordUserId" value="${_userProfile?.discordUserId || ''}">
+            `;
+        }
+
+        // Case 2: Google user with linked Discord - compact single line with unlink
+        if (hasLinkedDiscord) {
+            return `
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-[#5865F2]" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="${DISCORD_ICON_PATH}"/>
+                        </svg>
+                        <span class="text-sm text-foreground">${_userProfile?.discordUsername || 'Discord User'}</span>
+                        <span class="text-xs text-muted-foreground">(${_userProfile?.discordUserId})</span>
+                        <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </div>
+                    <button type="button" id="unlink-discord-btn"
+                        class="text-xs text-muted-foreground hover:text-destructive transition-colors">
+                        Unlink
+                    </button>
+                </div>
+                <input type="hidden" name="discordUsername" id="discordUsername" value="${_userProfile?.discordUsername || ''}">
+                <input type="hidden" name="discordUserId" id="discordUserId" value="${_userProfile?.discordUserId || ''}">
+            `;
+        }
+
+        // Case 3: Google user without Discord - show Link button
+        return `
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-[#5865F2]" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="${DISCORD_ICON_PATH}"/>
+                    </svg>
+                    <span class="text-sm text-muted-foreground">Discord</span>
+                    <span class="text-xs text-muted-foreground">(Optional)</span>
+                </div>
+                <button type="button" id="link-discord-btn"
+                    class="text-xs px-3 py-1 rounded transition-colors hover:opacity-90"
+                    style="background-color: #5865F2; color: white;">
+                    Link
+                </button>
+            </div>
+            <input type="hidden" name="discordUsername" id="discordUsername" value="">
+            <input type="hidden" name="discordUserId" id="discordUserId" value="">
+        `;
+    }
+
+    // Re-render Discord section after link/unlink
+    function _rerenderDiscordSection() {
+        const container = document.getElementById('discord-section-container');
+        if (container) {
+            container.innerHTML = _renderDiscordSection();
+            _attachDiscordEventListeners();
+        }
+    }
+
+    // Attach Discord-specific event listeners
+    function _attachDiscordEventListeners() {
+        const linkBtn = document.getElementById('link-discord-btn');
+        const unlinkBtn = document.getElementById('unlink-discord-btn');
+
+        if (linkBtn) {
+            linkBtn.addEventListener('click', _handleLinkDiscord);
+        }
+
+        if (unlinkBtn) {
+            unlinkBtn.addEventListener('click', _handleUnlinkDiscord);
+        }
+    }
+
+    // Handle link Discord click
+    async function _handleLinkDiscord() {
+        const btn = document.getElementById('link-discord-btn');
+        if (!btn) return;
+
+        const originalContent = btn.innerHTML;
+
+        // Show loading state
+        btn.disabled = true;
+        btn.innerHTML = `
+            <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+            <span>Linking...</span>
+        `;
+
+        try {
+            const result = await AuthService.linkDiscordAccount();
+
+            if (result.success) {
+                // Update cached profile with Discord data (including photoURL for avatar)
+                _userProfile = {
+                    ..._userProfile,
+                    discordUsername: result.user.discordUsername,
+                    discordUserId: result.user.discordUserId,
+                    discordAvatarHash: result.user.discordAvatarHash,
+                    photoURL: result.user.photoURL
+                };
+
+                // Re-render Discord section to show linked status
+                _rerenderDiscordSection();
+
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showSuccess('Discord account linked!');
+                }
+            }
+        } catch (error) {
+            console.error('Discord linking failed:', error);
+            _showError(error.message);
+
+            // Reset button
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+        }
+    }
+
+    // Handle unlink Discord click
+    async function _handleUnlinkDiscord() {
+        if (!confirm('Unlink your Discord account? You can re-link it anytime.')) {
+            return;
+        }
+
+        const btn = document.getElementById('unlink-discord-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Unlinking...';
+        }
+
+        try {
+            // Clear Discord fields
+            await AuthService.updateProfile({
+                discordUsername: '',
+                discordUserId: '',
+                discordAvatarHash: null
+            });
+
+            // Update cached profile
+            _userProfile = {
+                ..._userProfile,
+                discordUsername: null,
+                discordUserId: null,
+                discordAvatarHash: null
+            };
+
+            // Re-render to show "Link Discord" button
+            _rerenderDiscordSection();
+
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showSuccess('Discord account unlinked');
+            }
+        } catch (error) {
+            console.error('Discord unlinking failed:', error);
+            _showError('Failed to unlink Discord account');
+
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Unlink';
+            }
+        }
+    }
+
     // Validate input
     function _validateInput(displayName, initials, discordUsername, discordUserId) {
         if (!displayName || displayName.length < 2) {
@@ -438,16 +638,16 @@ const ProfileModal = (function() {
     // Set button loading state
     function _setButtonLoading(button, isLoading) {
         if (!button) return;
-        
+
         if (isLoading) {
             button.disabled = true;
             button.innerHTML = `
                 <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground"></div>
-                <span>${_mode === 'create' ? 'Creating...' : 'Saving...'}</span>
+                <span>Saving...</span>
             `;
         } else {
             button.disabled = false;
-            button.innerHTML = _mode === 'create' ? 'Create Profile' : 'Save Changes';
+            button.innerHTML = _isSetupMode ? 'Save Profile' : 'Save Changes';
         }
     }
     
