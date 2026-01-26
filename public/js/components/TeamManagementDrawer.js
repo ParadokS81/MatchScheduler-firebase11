@@ -630,18 +630,22 @@ const TeamManagementDrawer = (function() {
         }
     }
     
-    // Handle remove player (placeholder)
+    // Handle remove player
     function _handleRemovePlayer() {
-        if (typeof ToastService !== 'undefined') {
-            ToastService.showInfo('Remove player - Not implemented yet');
+        if (!_teamData?.id) {
+            console.error('No team data available');
+            return;
         }
+        KickPlayerModal.show(_teamData.id);
     }
-    
-    // Handle transfer leadership (placeholder)
+
+    // Handle transfer leadership
     function _handleTransferLeadership() {
-        if (typeof ToastService !== 'undefined') {
-            ToastService.showInfo('Transfer leadership - Not implemented yet');
+        if (!_teamData?.id) {
+            console.error('No team data available');
+            return;
         }
+        TransferLeadershipModal.show(_teamData.id);
     }
     
     // Handle leave team

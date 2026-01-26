@@ -7,7 +7,7 @@ initializeApp();
 // Import Cloud Functions
 const { processLogoUpload } = require('./logo-processing');
 const { createProfile, updateProfile, getProfile } = require('./user-profile');
-const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings } = require('./team-operations');
+const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings, kickPlayer, transferLeadership } = require('./team-operations');
 const { updateAvailability } = require('./availability');
 const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 const { updateFavorites } = require('./favorites');
@@ -24,6 +24,8 @@ exports.joinTeam = joinTeam;
 exports.regenerateJoinCode = regenerateJoinCode;
 exports.leaveTeam = leaveTeam;
 exports.updateTeamSettings = updateTeamSettings;
+exports.kickPlayer = kickPlayer;
+exports.transferLeadership = transferLeadership;
 
 // Availability functions
 exports.updateAvailability = updateAvailability;

@@ -171,6 +171,11 @@ body {
   color: var(--accent-foreground);
 }
 
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
 /* Gaming-specific styles */
 .availability-grid {
   display: grid;
@@ -770,6 +775,25 @@ body {
   @apply bg-primary text-primary-foreground;
 }
 
+/* Thin scrollbar utility - reusable across components */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 2px;
+}
+
 /* Team List Container */
 .team-list {
   scrollbar-width: thin;
@@ -1059,8 +1083,9 @@ body {
   background-color: var(--warning);
 }
 
-/* Grid cell needs relative positioning for badge */
+/* Grid cell needs relative positioning for badge and clickable cursor */
 .grid-cell.comparison-match-full,
 .grid-cell.comparison-match-partial {
   position: relative;
+  cursor: pointer;
 }

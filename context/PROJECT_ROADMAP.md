@@ -143,27 +143,21 @@ Detailed specifications in `/context/slices/[slice-name].md`
 **Scope:** Compare button, calculate matches, visual highlights, hover tooltip with rosters
 **Note:** Green borders for full match (4v4), amber for partial. Side-by-side tooltip shows user team vs opponents. Filter changes trigger live recalculation.
 
-### 📅 Slice 3.5: Comparison Details
-**Status:** Not Started
-**User Value:** Users can see who's available in matching slots
+### ✅ Slice 3.5: Comparison Details Modal
+**Status:** Complete
+**User Value:** Users can see who's available in matching slots and contact leaders
 **PRD Sections:** 4.2.4, 4.2.6
-**Components:** ComparisonModal
-**Scope:** Click match slot for detailed view, contact info
-**Note:** Most tooltip functionality already in 3.4, this slice for enhanced modal view
+**Components:** ComparisonModal, AvailabilityGrid (click handler), ComparisonEngine (leaderId)
+**Scope:** Click match slot for detailed roster view, Discord contact section for leaders
+**Note:** Contact UI ready for Discord OAuth (Slice 4.3). Shows "Open DM" when discordUserId available, "Copy Username" as fallback, or "Not linked" message.
 
-### 📅 Slice 3.6: Leader Management
-**Status:** Not Started  
-**User Value:** Leaders can remove players  
-**PRD Sections:** 4.3.3  
-**Components:** KickPlayerModal  
-**Scope:** Select players, confirm removal
-
-### 📅 Slice 3.7: Leadership Transfer
-**Status:** Not Started  
-**User Value:** Leaders can pass leadership to others  
-**PRD Sections:** 4.3.3  
-**Components:** TransferLeadershipModal  
-**Scope:** Select new leader, confirm transfer
+### ✅ Slice 3.6-3.7: Leader Management (Bundled)
+**Status:** Complete
+**User Value:** Leaders can remove players and transfer leadership
+**PRD Sections:** 4.3.3, 5.6
+**Components:** KickPlayerModal, TransferLeadershipModal, kickPlayer/transferLeadership Cloud Functions
+**Scope:** Select player modal, confirm removal, transfer leadership to member, event logging
+**Note:** Kicked players have availability cleared. Transaction-safe with proper read-before-write ordering.
 
 ---
 
@@ -183,19 +177,39 @@ Detailed specifications in `/context/slices/[slice-name].md`
 **Components:** TeamLogo component  
 **Scope:** Display in drawer, comparison view, team cards
 
-### 📅 Slice 4.3: Discord OAuth
-**Status:** Not Started  
-**User Value:** Users can link Discord accounts  
-**PRD Sections:** 1.4, 4.4.1  
-**Components:** DiscordAuth  
-**Scope:** OAuth flow, store Discord data
+### 📅 Slice 4.3: Discord OAuth & Account Linking
+**Status:** Not Started
+**User Value:** Users can link Discord accounts for easy contact
+**PRD Sections:** 1.4, 4.4.1
+**Components:** DiscordLinkButton, DiscordOAuthCallback
+**Scope:**
+- Add "Link Discord" button to profile settings
+- Discord OAuth flow (identify scope only - no messages/server access)
+- Store `discordUsername` and `discordUserId` in user profile
+- Support both Google Auth + Discord linking, or Discord-only auth (future)
+- Show linked status in profile with option to unlink
 
-### 📅 Slice 4.4: Discord Contact
-**Status:** Not Started  
-**User Value:** Leaders can contact each other  
-**PRD Sections:** 4.2.4, 4.3.5  
-**Components:** ContactButton  
-**Scope:** Show Discord username, generate DM links
+**Schema:** (already prepared in SCHEMA.md)
+```
+discordUsername: string | null   // "username" display name
+discordUserId: string | null     // "123456789" for DM deep links
+discordLinkedAt: Timestamp | null
+```
+
+**Note:** ComparisonModal already supports both DM links (when userId available) and copy fallback (username only). This slice just needs to populate the data.
+
+### 📅 Slice 4.4: Discord Contact Enhancement
+**Status:** Partially Complete (via Slice 3.5)
+**User Value:** Leaders can contact each other directly via Discord
+**PRD Sections:** 4.2.4, 4.3.5
+**Components:** ComparisonModal (already has contact UI)
+**Scope:**
+- ✅ Contact section in ComparisonModal (done in 3.5)
+- ✅ "Open Discord DM" button with deep link (done in 3.5)
+- ✅ "Copy Username" fallback button (done in 3.5)
+- ⏳ Depends on 4.3 to populate Discord data via OAuth
+
+**Note:** UI is ready, just needs Discord OAuth (4.3) to populate the data fields.
 
 ### 📅 Slice 4.5: Error States
 **Status:** Not Started  
@@ -214,10 +228,10 @@ Detailed specifications in `/context/slices/[slice-name].md`
 ---
 
 ## Progress Summary
-**Slices Complete:** 16 / 24
+**Slices Complete:** 17 / 23 (3.6 and 3.7 bundled)
 
 ## Current Focus
-Ready for Slice 3.5 - Comparison Details (or skip to 3.6 Leader Management)
+Part 3 complete! Moving to Part 4 - Polish & Enhancement (4.1/4.2 Logo in progress)
 
 ---
 

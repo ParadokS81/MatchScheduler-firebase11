@@ -663,6 +663,217 @@ exports.leaveTeam = onCall(async (request) => {
     }
 });
 
+// Kick player function - removes a player from the team
+exports.kickPlayer = onCall(async (request) => {
+    const { teamId, playerToKickId } = request.data;
+    const callerId = request.auth?.uid;
+
+    if (!callerId) {
+        return { success: false, error: 'Authentication required' };
+    }
+
+    if (!teamId || !playerToKickId) {
+        return { success: false, error: 'Missing required parameters' };
+    }
+
+    if (callerId === playerToKickId) {
+        return { success: false, error: 'Cannot remove yourself. Use "Leave Team" instead.' };
+    }
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const teamRef = db.collection('teams').doc(teamId);
+            const userRef = db.collection('users').doc(playerToKickId);
+
+            // ALL READS FIRST (Firestore transaction requirement)
+            const teamDoc = await transaction.get(teamRef);
+            const userDoc = await transaction.get(userRef);
+
+            if (!teamDoc.exists) {
+                throw new Error('Team not found');
+            }
+
+            const team = teamDoc.data();
+
+            // Verify caller is leader
+            if (team.leaderId !== callerId) {
+                throw new Error('Only team leaders can remove players');
+            }
+
+            // Find player to kick
+            const playerToKick = team.playerRoster.find(p => p.userId === playerToKickId);
+            if (!playerToKick) {
+                throw new Error('Player not found on team roster');
+            }
+
+            // ALL WRITES AFTER READS
+            // Remove from roster
+            const updatedRoster = team.playerRoster.filter(p => p.userId !== playerToKickId);
+            transaction.update(teamRef, { playerRoster: updatedRoster });
+
+            // Update kicked player's user document
+            if (userDoc.exists) {
+                const userData = userDoc.data();
+                const updatedTeams = { ...userData.teams };
+                delete updatedTeams[teamId];
+                transaction.update(userRef, { teams: updatedTeams });
+            }
+
+            // Create event log
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
+            const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '').slice(0, 4);
+            const teamNameClean = team.teamName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
+            const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+            const eventId = `${dateStr}-${timeStr}-${teamNameClean}-kicked_${randomSuffix}`;
+
+            const caller = team.playerRoster.find(p => p.userId === callerId);
+
+            transaction.set(db.collection('eventLog').doc(eventId), {
+                eventId,
+                teamId,
+                teamName: team.teamName,
+                type: 'KICKED',
+                category: 'PLAYER_MOVEMENT',
+                timestamp: FieldValue.serverTimestamp(),
+                userId: playerToKickId,
+                player: {
+                    displayName: playerToKick.displayName,
+                    initials: playerToKick.initials
+                },
+                details: {
+                    kickedBy: callerId,
+                    kickedByName: caller?.displayName || 'Unknown'
+                }
+            });
+        });
+
+        // After transaction: clean up availability (outside transaction for query)
+        const availabilitySnap = await db.collection('availability')
+            .where('teamId', '==', teamId)
+            .get();
+
+        const batch = db.batch();
+        availabilitySnap.docs.forEach(doc => {
+            const data = doc.data();
+            const slots = data.slots || {};
+            let hasChanges = false;
+
+            Object.keys(slots).forEach(slotKey => {
+                if (Array.isArray(slots[slotKey]) && slots[slotKey].includes(playerToKickId)) {
+                    slots[slotKey] = slots[slotKey].filter(uid => uid !== playerToKickId);
+                    hasChanges = true;
+                }
+            });
+
+            if (hasChanges) {
+                batch.update(doc.ref, { slots });
+            }
+        });
+
+        await batch.commit();
+
+        console.log('✅ Player kicked successfully:', { teamId, playerToKickId });
+        return { success: true };
+    } catch (error) {
+        console.error('❌ kickPlayer error:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// Transfer leadership function
+exports.transferLeadership = onCall(async (request) => {
+    const { teamId, newLeaderId } = request.data;
+    const callerId = request.auth?.uid;
+
+    if (!callerId) {
+        return { success: false, error: 'Authentication required' };
+    }
+
+    if (!teamId || !newLeaderId) {
+        return { success: false, error: 'Missing required parameters' };
+    }
+
+    if (callerId === newLeaderId) {
+        return { success: false, error: 'You are already the leader' };
+    }
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const teamRef = db.collection('teams').doc(teamId);
+            const teamDoc = await transaction.get(teamRef);
+
+            if (!teamDoc.exists) {
+                throw new Error('Team not found');
+            }
+
+            const team = teamDoc.data();
+
+            // Verify caller is current leader
+            if (team.leaderId !== callerId) {
+                throw new Error('Only the current leader can transfer leadership');
+            }
+
+            // Verify new leader is on roster
+            const newLeader = team.playerRoster.find(p => p.userId === newLeaderId);
+            if (!newLeader) {
+                throw new Error('Selected player is not on the team');
+            }
+
+            // Update roster roles
+            const updatedRoster = team.playerRoster.map(p => {
+                if (p.userId === callerId) {
+                    return { ...p, role: 'member' };
+                }
+                if (p.userId === newLeaderId) {
+                    return { ...p, role: 'leader' };
+                }
+                return p;
+            });
+
+            // Update team
+            transaction.update(teamRef, {
+                leaderId: newLeaderId,
+                playerRoster: updatedRoster
+            });
+
+            // Create event log
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
+            const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '').slice(0, 4);
+            const teamNameClean = team.teamName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
+            const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+            const eventId = `${dateStr}-${timeStr}-${teamNameClean}-transferred_leadership_${randomSuffix}`;
+
+            const oldLeader = team.playerRoster.find(p => p.userId === callerId);
+
+            transaction.set(db.collection('eventLog').doc(eventId), {
+                eventId,
+                teamId,
+                teamName: team.teamName,
+                type: 'TRANSFERRED_LEADERSHIP',
+                category: 'PLAYER_MOVEMENT',
+                timestamp: FieldValue.serverTimestamp(),
+                userId: newLeaderId,
+                player: {
+                    displayName: newLeader.displayName,
+                    initials: newLeader.initials
+                },
+                details: {
+                    fromUserId: callerId,
+                    fromUserName: oldLeader?.displayName || 'Unknown'
+                }
+            });
+        });
+
+        console.log('✅ Leadership transferred successfully:', { teamId, newLeaderId });
+        return { success: true };
+    } catch (error) {
+        console.error('❌ transferLeadership error:', error);
+        return { success: false, error: error.message };
+    }
+});
+
 // Update team settings function
 exports.updateTeamSettings = onCall(async (request) => {
     try {
