@@ -253,6 +253,10 @@ body {
   gap: 1rem;
 }
 
+.divider-content-centered {
+  justify-content: center;
+}
+
 /* Panel Styles */
 .panel {
   background-color: var(--card);
