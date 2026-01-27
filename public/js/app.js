@@ -34,19 +34,15 @@ const MatchSchedulerApp = (function() {
 
     // Initialize components
     function _initializeComponents() {
-        // Initialize UserProfile component in top-left panel
-        UserProfile.init('panel-top-left');
+        // EXPERIMENT: Top row panels removed - skip UserProfile, FilterPanel
+        // UserProfile.init('panel-top-left');  // Moved to center divider
+        // FilterPanel.init('panel-top-right'); // Moved to favorites panel
 
         // Initialize TeamInfo component in middle-left panel
         TeamInfo.init('panel-middle-left');
 
         // Initialize ToastService for notifications
         ToastService.init();
-
-        // Initialize FilterPanel in top-right panel (Slice 3.3)
-        if (typeof FilterPanel !== 'undefined') {
-            FilterPanel.init('panel-top-right');
-        }
 
         // Initialize Availability Grid components
         _initializeAvailabilityGrid();
@@ -83,8 +79,12 @@ const MatchSchedulerApp = (function() {
 
     // Initialize availability grid components
     function _initializeAvailabilityGrid() {
-        // Initialize week navigation in top-center panel
-        WeekNavigation.init('panel-top-center');
+        // EXPERIMENT: WeekNavigation moved to center divider - skip for now
+        // WeekNavigation.init('panel-top-center');
+        // For experiment, just use a hardcoded week number
+        if (document.getElementById('panel-top-center')) {
+            WeekNavigation.init('panel-top-center');
+        }
 
         // Get current week number
         const currentWeek = WeekNavigation.getCurrentWeekNumber();

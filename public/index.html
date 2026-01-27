@@ -94,45 +94,16 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Main Content Area with Sacred 3x3 Grid -->
-        <!-- Title removed to maximize vertical space for 1080p optimization -->
-        <main class="main-grid">
-            <!-- Top Row -->
-            <div id="panel-top-left" class="panel">
-                <div class="panel-content">
-                    <h3 class="text-lg font-semibold mb-2">User Profile</h3>
-                    <p class="text-muted-foreground">User profile component will be here</p>
-                </div>
-            </div>
-            
-            <div id="panel-top-center" class="panel">
-                <!-- WeekNavigation renders here -->
-            </div>
-            
-            <div id="panel-top-right" class="panel">
-                <!-- FilterPanel (Slice 3.3) renders here -->
-            </div>
-
-            <!-- Middle Row -->
+        <!-- Main Content Area - 2x3 Grid with Center Spanning Both Rows -->
+        <main class="main-grid-v2">
+            <!-- Left Column -->
             <div id="panel-middle-left" class="panel">
                 <div class="panel-content">
                     <h3 class="text-lg font-semibold mb-2">Team Info</h3>
                     <p class="text-muted-foreground">Team information component will be here</p>
                 </div>
             </div>
-            
-            <div id="panel-middle-center" class="panel">
-                <!-- WeekDisplay (Week 1) renders here -->
-            </div>
-            
-            <div id="panel-middle-right" class="panel">
-                <div class="panel-content">
-                    <h3 class="text-lg font-semibold mb-2">Favorites List</h3>
-                    <p class="text-muted-foreground">Favorite teams will be here</p>
-                </div>
-            </div>
 
-            <!-- Bottom Row -->
             <div id="panel-bottom-left" class="panel">
                 <div class="panel-content">
                     <h3 class="text-lg font-semibold mb-2">Grid Tools</h3>
@@ -140,11 +111,51 @@
                     <p class="text-muted-foreground text-sm mt-2">More tools coming soon</p>
                 </div>
             </div>
-            
-            <div id="panel-bottom-center" class="panel">
-                <!-- WeekDisplay (Week 2) renders here -->
+
+            <!-- Center Column - Spans Both Rows -->
+            <div id="panel-center" class="panel panel-center-stack">
+                <!-- Top Week Grid -->
+                <div id="panel-middle-center" class="center-section-top">
+                    <!-- WeekDisplay (Week 1) renders here -->
+                </div>
+
+                <!-- Center Divider Bar -->
+                <div id="center-divider" class="center-divider">
+                    <div class="divider-left">
+                        <div id="divider-profile" class="divider-profile">
+                            <!-- Compact profile indicator -->
+                            <span class="text-sm font-medium">👤 PDX</span>
+                        </div>
+                    </div>
+                    <div class="divider-tabs">
+                        <button class="divider-tab active" data-tab="calendar">📅 Calendar</button>
+                        <button class="divider-tab" data-tab="teams">👥 Teams</button>
+                        <button class="divider-tab" data-tab="tournament">🏆 Tournament</button>
+                    </div>
+                    <div class="divider-right">
+                        <div id="divider-nav" class="divider-nav">
+                            <!-- Week navigation for calendar tab -->
+                            <button class="nav-btn">◀</button>
+                            <span class="text-sm">Week 6</span>
+                            <button class="nav-btn">▶</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Content Area (switchable) -->
+                <div id="panel-bottom-center" class="center-section-bottom">
+                    <!-- WeekDisplay (Week 2) renders here -->
+                </div>
             </div>
-            
+
+            <!-- Right Column -->
+            <div id="panel-middle-right" class="panel">
+                <div class="panel-content">
+                    <h3 class="text-lg font-semibold mb-2">Favorites List</h3>
+                    <p class="text-muted-foreground">Favorite teams will be here</p>
+                </div>
+            </div>
+
             <div id="panel-bottom-right" class="panel">
                 <div id="team-browser-container" class="panel-content">
                     <!-- TeamBrowser component renders here -->
