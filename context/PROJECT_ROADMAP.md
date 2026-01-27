@@ -246,19 +246,62 @@ Detailed specifications in `/context/slices/[slice-name].md`
 **Scope:** Error handling, toast notifications, empty states
 
 ### 📅 Slice 4.6: Performance Audit
-**Status:** Not Started  
-**User Value:** Everything feels instant  
-**PRD Sections:** 5.1-5.6  
-**Components:** All  
+**Status:** Not Started
+**User Value:** Everything feels instant
+**PRD Sections:** 5.1-5.6
+**Components:** All
 **Scope:** Measure hot paths, optimize where needed
 
 ---
 
+## Part 5: Layout Evolution & Integrations
+
+### 🚧 Slice 5.0: Layout Restructure - Dynamic Bottom Section
+**Status:** In Progress (experimental branch)
+**User Value:** More vertical space for grids, tabbed interface for additional features
+**Spec:** `context/slices/slice-5.0-layout-restructure.md`
+**Components:** All layout components, WeekDisplay, WeekNavigation, new BottomPanelController
+**Scope:**
+- Restructure grid: middle row becomes divider/tab bar
+- Move week navigation to grid headers
+- Tab switching: Calendar | Teams | Tournament
+- Relocate profile indicator and min players filter
+- Clean up Grid Tools panel
+- Floating action button for Add/Remove selection
+
+**Phases:**
+- 5.0.1: HTML/CSS layout foundation
+- 5.0.2: Week navigation in grid headers
+- 5.0.3: Tab switching infrastructure
+- 5.0.4: Profile & MinPlayers relocation
+- 5.0.5: Grid Tools cleanup
+- 5.0.6: Floating action button for selection
+
+### 📅 Slice 5.1: Teams Browser Tab
+**Status:** Not Started
+**User Value:** Browse all teams and their rosters in dedicated view
+**Components:** TeamsBrowserPanel (new)
+**Scope:** Full team cards with rosters, player search, division filters
+
+### 📅 Slice 5.2: Tournament Hub Tab
+**Status:** Not Started
+**User Value:** See tournament deadlines and quick-compare against opponents
+**Components:** TournamentHubPanel (new)
+**Scope:** Tournament list, deadline warnings, preset comparison groups
+
+### 📅 Slice 5.3: Big4 Integration
+**Status:** Pending API access
+**User Value:** Automatic sync with thebig4.se tournament data
+**Components:** Big4Service (new), tournament sync functions
+**Scope:** Pull standings/fixtures, push scheduled matches
+
+---
+
 ## Progress Summary
-**Slices Complete:** 22 / 25 (3.6 and 3.7 bundled, 4.3 expanded to 4.3.1-4.3.3)
+**Slices Complete:** 22 / ~28 (Part 5 adds new slices)
 
 ## Current Focus
-Part 4 in progress! Next up: Slice 4.4 (already mostly done), Slice 4.5 Error States, or Slice 4.6 Performance Audit
+**Part 5.0 - Layout Restructure** is the current priority. This is foundational for future features.
 
 ---
 
