@@ -216,6 +216,43 @@ body {
   background-color: var(--accent);
 }
 
+/* EXPERIMENTAL V3: True 3x3 Grid with Middle Row as Divider */
+.main-grid-v3 {
+  margin-left: auto;
+  margin-right: auto;
+  display: grid;
+  width: 100%;
+  flex-grow: 1;
+  gap: 0.5rem;
+  max-width: 100rem;
+  grid-template-columns: clamp(200px, 15vw, 300px) 1fr clamp(200px, 15vw, 300px);
+  grid-template-rows: 1fr 3rem 1fr; /* Week grid, compact divider, week grid */
+}
+
+/* Divider row panels */
+.panel-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel-content-compact {
+  padding: 0 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.divider-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 1rem;
+  gap: 1rem;
+}
+
 /* Panel Styles */
 .panel {
   background-color: var(--card);
