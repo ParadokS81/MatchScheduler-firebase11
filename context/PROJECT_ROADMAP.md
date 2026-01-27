@@ -256,26 +256,27 @@ Detailed specifications in `/context/slices/[slice-name].md`
 
 ## Part 5: Layout Evolution & Integrations
 
-### 🚧 Slice 5.0: Layout Restructure - Dynamic Bottom Section
-**Status:** In Progress (experimental branch)
+### 🚧 Slice 5.0a: Layout Foundation
+**Status:** In Progress (experimental branch: `experiment/center-divider-layout`)
 **User Value:** More vertical space for grids, tabbed interface for additional features
-**Spec:** `context/slices/slice-5.0-layout-restructure.md`
-**Components:** All layout components, WeekDisplay, WeekNavigation, new BottomPanelController
+**Spec:** `context/slices/slice-5.0a-layout-foundation.md`
+**Components:** All layout components, WeekDisplay, WeekNavigation, BottomPanelController (new)
 **Scope:**
 - Restructure grid: middle row becomes divider/tab bar
 - Move week navigation to grid headers
 - Tab switching: Calendar | Teams | Tournament
 - Relocate profile indicator and min players filter
-- Clean up Grid Tools panel
-- Floating action button for Add/Remove selection
 
-**Phases:**
-- 5.0.1: HTML/CSS layout foundation
-- 5.0.2: Week navigation in grid headers
-- 5.0.3: Tab switching infrastructure
-- 5.0.4: Profile & MinPlayers relocation
-- 5.0.5: Grid Tools cleanup
-- 5.0.6: Floating action button for selection
+### 📅 Slice 5.0b: Grid Tools Enhancement
+**Status:** Not Started (depends on 5.0a)
+**User Value:** Intuitive selection actions, cleaner tools panel
+**Spec:** `context/slices/slice-5.0b-grid-tools-enhancement.md`
+**Components:** GridActionButtons (refactor), SelectionActionButton (new)
+**Scope:**
+- Condense Grid Tools panel to 2 rows
+- Remove Add/Remove buttons (replaced by floating action)
+- Add floating action button near selection
+- Add Upcoming Matches placeholder section
 
 ### 📅 Slice 5.1: Teams Browser Tab
 **Status:** Not Started
