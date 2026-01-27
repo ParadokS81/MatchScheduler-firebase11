@@ -155,6 +155,26 @@ exports.discordOAuthExchange = onCall({
                 lastUpdatedAt: FieldValue.serverTimestamp()
             });
 
+            // Also update any teams where this user is leader
+            const teamsRef = db.collection('teams');
+            const leaderTeamsQuery = await teamsRef
+                .where('leaderId', '==', callerUid)
+                .get();
+
+            if (!leaderTeamsQuery.empty) {
+                const batch = db.batch();
+                leaderTeamsQuery.docs.forEach(teamDoc => {
+                    batch.update(teamDoc.ref, {
+                        leaderDiscord: {
+                            username: discordUser.username,
+                            userId: discordUser.id
+                        }
+                    });
+                });
+                await batch.commit();
+                console.log(`Updated leaderDiscord on ${leaderTeamsQuery.size} team(s)`);
+            }
+
             console.log('Discord account linked successfully');
             return {
                 success: true,

@@ -42,13 +42,16 @@ const WeekDisplay = (function() {
      * Creates a new WeekDisplay instance
      * @param {string} panelId - The ID of the panel element
      * @param {number} weekNumber - The week number to display
+     * @param {Object} options - Optional configuration
+     * @param {boolean} options.showNavigation - Whether to show navigation arrows (default: true)
      * @returns {Object} WeekDisplay instance with public methods
      */
-    function create(panelId, weekNumber) {
+    function create(panelId, weekNumber, options = {}) {
         let _panel = null;
         let _weekNumber = weekNumber;
         let _weekLabel = getWeekLabel(weekNumber);
         let _grid = null;
+        let _showNavigation = options.showNavigation !== false; // Default true
 
         function _render() {
             if (!_panel) return;
@@ -56,12 +59,58 @@ const WeekDisplay = (function() {
             // Generate unique grid container ID
             const gridContainerId = `availability-grid-week-${_weekNumber}`;
 
+            // Navigation arrows (only show if navigation enabled)
+            const navHtml = _showNavigation ? `
+                <button class="nav-btn week-nav-prev" data-dir="prev" title="Previous week" ${!WeekNavigation.canNavigatePrev() ? 'disabled' : ''}>
+                    <span>&#9664;</span>
+                </button>
+            ` : '';
+
+            const navNextHtml = _showNavigation ? `
+                <button class="nav-btn week-nav-next" data-dir="next" title="Next week" ${!WeekNavigation.canNavigateNext() ? 'disabled' : ''}>
+                    <span>&#9654;</span>
+                </button>
+            ` : '';
+
             _panel.innerHTML = `
                 <div class="week-display">
-                    <h3 class="week-header">${_weekLabel}</h3>
+                    <div class="week-header-nav">
+                        ${navHtml}
+                        <h3 class="week-header">${_weekLabel}</h3>
+                        ${navNextHtml}
+                    </div>
                     <div id="${gridContainerId}" class="week-grid-container"></div>
                 </div>
             `;
+
+            // Attach navigation handlers
+            if (_showNavigation) {
+                _attachNavHandlers();
+            }
+        }
+
+        function _attachNavHandlers() {
+            const prevBtn = _panel?.querySelector('.week-nav-prev');
+            const nextBtn = _panel?.querySelector('.week-nav-next');
+
+            if (prevBtn) {
+                prevBtn.addEventListener('click', () => WeekNavigation.navigatePrev());
+            }
+            if (nextBtn) {
+                nextBtn.addEventListener('click', () => WeekNavigation.navigateNext());
+            }
+        }
+
+        function _updateNavButtons() {
+            const prevBtn = _panel?.querySelector('.week-nav-prev');
+            const nextBtn = _panel?.querySelector('.week-nav-next');
+
+            if (prevBtn) {
+                prevBtn.disabled = !WeekNavigation.canNavigatePrev();
+            }
+            if (nextBtn) {
+                nextBtn.disabled = !WeekNavigation.canNavigateNext();
+            }
         }
 
         function init() {
@@ -79,6 +128,38 @@ const WeekDisplay = (function() {
             _grid.init();
 
             return instance;
+        }
+
+        /**
+         * Update the displayed week number (called when navigation changes)
+         * @param {number} newWeekNumber - New week number to display
+         */
+        function setWeekNumber(newWeekNumber) {
+            if (_weekNumber === newWeekNumber) return;
+
+            _weekNumber = newWeekNumber;
+            _weekLabel = getWeekLabel(newWeekNumber);
+
+            // Update header label
+            const headerEl = _panel?.querySelector('.week-header');
+            if (headerEl) {
+                headerEl.textContent = _weekLabel;
+            }
+
+            // Update navigation button states
+            _updateNavButtons();
+
+            // Reinitialize grid with new week
+            if (_grid) {
+                _grid.cleanup();
+            }
+            const gridContainerId = `availability-grid-week-${_weekNumber}`;
+            const gridContainer = _panel?.querySelector('.week-grid-container');
+            if (gridContainer) {
+                gridContainer.id = gridContainerId;
+            }
+            _grid = AvailabilityGrid.create(gridContainerId, _weekNumber);
+            _grid.init();
         }
 
         function getGrid() {
@@ -258,6 +339,7 @@ const WeekDisplay = (function() {
             init,
             getGrid,
             getWeekNumber,
+            setWeekNumber,
             getWeekId,
             getSelectedCellsWithWeekId,
             clearSelection,

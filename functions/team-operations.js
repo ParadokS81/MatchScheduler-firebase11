@@ -114,7 +114,18 @@ exports.createTeam = onCall(async (request) => {
         if (Object.keys(userTeams).length >= 2) {
             throw new HttpsError('failed-precondition', 'You can only be on a maximum of 2 teams');
         }
-        
+
+        // Check if team name already exists (case-insensitive)
+        const normalizedName = teamData.teamName.trim().toLowerCase();
+        const existingTeamByName = await db.collection('teams')
+            .where('teamNameLower', '==', normalizedName)
+            .limit(1)
+            .get();
+
+        if (!existingTeamByName.empty) {
+            throw new HttpsError('already-exists', `A team named "${teamData.teamName.trim()}" already exists. Please choose a different name.`);
+        }
+
         // Generate unique join code
         let joinCode;
         let isUnique = false;
@@ -144,6 +155,7 @@ exports.createTeam = onCall(async (request) => {
         
         const team = {
             teamName: teamData.teamName.trim(),
+            teamNameLower: teamData.teamName.trim().toLowerCase(), // For case-insensitive uniqueness
             teamTag: teamData.teamTag.trim().toUpperCase(),
             leaderId: userId,
             divisions: teamData.divisions,
@@ -160,6 +172,14 @@ exports.createTeam = onCall(async (request) => {
             lastActivityAt: now,
             createdAt: now
         };
+
+        // If leader has Discord linked, store on team for contact feature
+        if (userProfile.discordUserId) {
+            team.leaderDiscord = {
+                username: userProfile.discordUsername,
+                userId: userProfile.discordUserId
+            };
+        }
         
         // Use transaction to ensure consistency
         await db.runTransaction(async (transaction) => {
@@ -313,13 +333,21 @@ exports.joinTeam = onCall(async (request) => {
             throw new HttpsError('failed-precondition', `Team is full (${team.playerRoster.length}/${team.maxPlayers} players)`);
         }
         
-        // Check if initials are unique on this team
-        const existingInitials = team.playerRoster.map(player => player.initials);
-        if (existingInitials.includes(userProfile.initials)) {
-            throw new HttpsError('failed-precondition', 
-                `Initials "${userProfile.initials}" are already taken on this team. Please update your profile with different initials.`);
+        // Check if initials are unique on this team (only if roster is not empty)
+        if (team.playerRoster.length > 0) {
+            const existingInitials = team.playerRoster.map(player => player.initials);
+            if (existingInitials.includes(userProfile.initials)) {
+                throw new HttpsError('failed-precondition',
+                    `Initials "${userProfile.initials}" are already taken on this team. Please update your profile with different initials.`);
+            }
         }
-        
+
+        // Determine if this user should become leader
+        // Team is "unclaimed" if: empty roster OR leaderId is null/placeholder
+        const isUnclaimedTeam = team.playerRoster.length === 0 ||
+                                !team.leaderId ||
+                                team.leaderId === 'UNCLAIMED';
+
         // Add player to team
         const now = FieldValue.serverTimestamp();
         const nowDate = new Date(); // Use regular Date for array fields
@@ -328,34 +356,50 @@ exports.joinTeam = onCall(async (request) => {
             displayName: userProfile.displayName,
             initials: userProfile.initials,
             joinedAt: nowDate,
-            role: 'member'
+            role: isUnclaimedTeam ? 'leader' : 'member'
         };
         
         // Use transaction to ensure consistency
         await db.runTransaction(async (transaction) => {
-            // Add player to team roster
-            transaction.update(db.collection('teams').doc(teamId), {
+            // Build team update object
+            const teamUpdate = {
                 playerRoster: FieldValue.arrayUnion(newPlayer),
                 lastActivityAt: now
-            });
-            
+            };
+
+            // If claiming unclaimed team, also set leaderId and Discord info
+            if (isUnclaimedTeam) {
+                teamUpdate.leaderId = userId;
+
+                // Copy leader's Discord info to team if available
+                if (userProfile.discordUserId) {
+                    teamUpdate.leaderDiscord = {
+                        username: userProfile.discordUsername,
+                        userId: userProfile.discordUserId
+                    };
+                }
+            }
+
+            // Add player to team roster (and optionally set leader)
+            transaction.update(db.collection('teams').doc(teamId), teamUpdate);
+
             // Update user's teams
             transaction.update(db.collection('users').doc(userId), {
                 [`teams.${teamId}`]: true
             });
-            
+
             // Log join event
             const eventId = `${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${
                 new Date().toTimeString().slice(0, 5).replace(':', '')
             }-${team.teamName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20)}-joined_${
                 Math.random().toString(36).substr(2, 4).toUpperCase()
             }`;
-            
+
             transaction.set(db.collection('eventLog').doc(eventId), {
                 eventId,
                 teamId,
                 teamName: team.teamName,
-                type: 'JOINED',
+                type: isUnclaimedTeam ? 'CLAIMED_LEADERSHIP' : 'JOINED',
                 category: 'PLAYER_MOVEMENT',
                 timestamp: nowDate,
                 userId,
@@ -364,22 +408,25 @@ exports.joinTeam = onCall(async (request) => {
                     initials: userProfile.initials
                 },
                 details: {
-                    role: 'member',
+                    role: isUnclaimedTeam ? 'leader' : 'member',
                     isFounder: false,
-                    joinMethod: 'joinCode'
+                    joinMethod: 'joinCode',
+                    claimedLeadership: isUnclaimedTeam
                 }
             });
         });
         
-        console.log('✅ User joined team successfully:', team.teamName);
-        
+        console.log(`✅ User ${isUnclaimedTeam ? 'claimed leadership of' : 'joined'} team successfully:`, team.teamName);
+
         return {
             success: true,
             team: {
                 id: teamId,
                 ...team,
+                leaderId: isUnclaimedTeam ? userId : team.leaderId,
                 playerRoster: [...team.playerRoster, newPlayer]
-            }
+            },
+            claimedLeadership: isUnclaimedTeam
         };
         
     } catch (error) {
@@ -831,11 +878,28 @@ exports.transferLeadership = onCall(async (request) => {
                 return p;
             });
 
-            // Update team
-            transaction.update(teamRef, {
+            // Get new leader's user profile to update leaderDiscord
+            const newLeaderUserDoc = await transaction.get(db.collection('users').doc(newLeaderId));
+            const newLeaderProfile = newLeaderUserDoc.exists ? newLeaderUserDoc.data() : null;
+
+            // Build team update
+            const teamUpdate = {
                 leaderId: newLeaderId,
                 playerRoster: updatedRoster
-            });
+            };
+
+            // Update leaderDiscord with new leader's info (or clear if not linked)
+            if (newLeaderProfile?.discordUserId) {
+                teamUpdate.leaderDiscord = {
+                    username: newLeaderProfile.discordUsername,
+                    userId: newLeaderProfile.discordUserId
+                };
+            } else {
+                teamUpdate.leaderDiscord = FieldValue.delete();
+            }
+
+            // Update team
+            transaction.update(teamRef, teamUpdate);
 
             // Create event log
             const now = new Date();

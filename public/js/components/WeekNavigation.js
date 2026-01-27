@@ -1,16 +1,18 @@
-// WeekNavigation.js - Shows current bi-weekly block navigation
-// Singleton pattern - only one navigation needed
+// WeekNavigation.js - Anchor week state manager for bi-weekly navigation
+// Singleton pattern - manages which weeks are displayed across all grids
+// Slice 5.0a: Converted from panel renderer to state manager
 
 const WeekNavigation = (function() {
     'use strict';
 
-    let _panel = null;
+    let _anchorWeek = null; // The "first" week being displayed (top grid)
+    let _callbacks = [];    // Listeners for week changes
 
     /**
      * Get current ISO week number
      * @returns {number} Current week number (1-52)
      */
-    function _getCurrentWeekNumber() {
+    function _calculateCurrentWeekNumber() {
         const now = new Date();
         const year = now.getFullYear();
 
@@ -33,56 +35,125 @@ const WeekNavigation = (function() {
         return Math.max(1, Math.floor(daysSinceFirstMonday / 7) + 1);
     }
 
-    function _render() {
-        if (!_panel) return;
-
-        const currentWeek = _getCurrentWeekNumber();
-        const week1 = currentWeek;
-        const week2 = currentWeek + 1;
-
-        _panel.innerHTML = `
-            <div class="week-navigation">
-                <div class="week-nav-content">
-                    <!-- Prev button placeholder (disabled for now) -->
-                    <button class="week-nav-btn" disabled title="Coming soon">
-                        <span class="nav-arrow">&#9664;</span>
-                    </button>
-
-                    <div class="week-nav-info">
-                        <span class="week-nav-title">Weeks ${week1} - ${week2}</span>
-                        <span class="week-nav-subtitle">(Current + Next)</span>
-                    </div>
-
-                    <!-- Next button placeholder (disabled for now) -->
-                    <button class="week-nav-btn" disabled title="Coming soon">
-                        <span class="nav-arrow">&#9654;</span>
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-
-    function init(panelId) {
-        _panel = document.getElementById(panelId);
-        if (!_panel) {
-            console.error(`WeekNavigation: Panel #${panelId} not found`);
-            return;
+    /**
+     * Initialize anchor week to current week (no panel needed anymore)
+     */
+    function init() {
+        if (_anchorWeek === null) {
+            _anchorWeek = _calculateCurrentWeekNumber();
         }
-        _render();
+        console.log('📅 WeekNavigation initialized, anchor week:', _anchorWeek);
     }
 
+    /**
+     * Get current anchor week number (the week shown in top grid)
+     * @returns {number} Anchor week number
+     */
     function getCurrentWeekNumber() {
-        return _getCurrentWeekNumber();
+        if (_anchorWeek === null) {
+            _anchorWeek = _calculateCurrentWeekNumber();
+        }
+        return _anchorWeek;
+    }
+
+    /**
+     * Get the second week number (anchor + 1, shown in bottom grid)
+     * @returns {number} Second week number
+     */
+    function getSecondWeekNumber() {
+        return getCurrentWeekNumber() + 1;
+    }
+
+    /**
+     * Navigate to previous week pair
+     */
+    function navigatePrev() {
+        if (_anchorWeek > 1) {
+            _anchorWeek--;
+            _notifyListeners();
+            console.log('📅 Navigated to week:', _anchorWeek);
+        }
+    }
+
+    /**
+     * Navigate to next week pair
+     */
+    function navigateNext() {
+        if (_anchorWeek < 52) {
+            _anchorWeek++;
+            _notifyListeners();
+            console.log('📅 Navigated to week:', _anchorWeek);
+        }
+    }
+
+    /**
+     * Navigate by direction string
+     * @param {string} direction - 'prev' or 'next'
+     */
+    function navigate(direction) {
+        if (direction === 'prev') {
+            navigatePrev();
+        } else if (direction === 'next') {
+            navigateNext();
+        }
+    }
+
+    /**
+     * Register callback for week changes
+     * @param {Function} callback - Called with (anchorWeek, secondWeek) when navigation changes
+     * @returns {Function} Unsubscribe function
+     */
+    function onWeekChange(callback) {
+        _callbacks.push(callback);
+        return () => {
+            _callbacks = _callbacks.filter(cb => cb !== callback);
+        };
+    }
+
+    /**
+     * Notify all listeners of week change
+     */
+    function _notifyListeners() {
+        const anchorWeek = getCurrentWeekNumber();
+        const secondWeek = getSecondWeekNumber();
+        _callbacks.forEach(cb => cb(anchorWeek, secondWeek));
+
+        // Also dispatch a global event for components that prefer events
+        window.dispatchEvent(new CustomEvent('week-navigation-changed', {
+            detail: { anchorWeek, secondWeek }
+        }));
+    }
+
+    /**
+     * Check if we can navigate prev
+     * @returns {boolean}
+     */
+    function canNavigatePrev() {
+        return _anchorWeek > 1;
+    }
+
+    /**
+     * Check if we can navigate next
+     * @returns {boolean}
+     */
+    function canNavigateNext() {
+        return _anchorWeek < 52;
     }
 
     function cleanup() {
-        if (_panel) _panel.innerHTML = '';
-        _panel = null;
+        _callbacks = [];
     }
 
     return {
         init,
         getCurrentWeekNumber,
+        getSecondWeekNumber,
+        navigate,
+        navigatePrev,
+        navigateNext,
+        onWeekChange,
+        canNavigatePrev,
+        canNavigateNext,
         cleanup
     };
 })();

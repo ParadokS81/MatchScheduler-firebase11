@@ -133,7 +133,7 @@ const FavoritesPanel = (function() {
     // ========================================
 
     async function init() {
-        _container = document.getElementById('panel-middle-right');
+        _container = document.getElementById('panel-top-right');
         if (!_container) {
             console.error('FavoritesPanel: Container not found');
             return;

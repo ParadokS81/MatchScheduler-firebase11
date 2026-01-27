@@ -40,6 +40,87 @@ const ComparisonModal = (function() {
     }
 
     /**
+     * Format slot ID for message (e.g., "mon_1900" → "Mon 19:00")
+     * Shorter format for compact message display
+     */
+    function _formatSlotForMessage(slotId) {
+        const [day, time] = slotId.split('_');
+        const dayNames = {
+            mon: 'Mon', tue: 'Tue', wed: 'Wed',
+            thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun'
+        };
+        const formattedDay = dayNames[day] || day;
+        const formattedTime = `${time.slice(0, 2)}:${time.slice(2)}`;
+        return `${formattedDay} ${formattedTime}`;
+    }
+
+    /**
+     * Generate a formatted match request message for Discord
+     * @param {string} selectedSlotId - The slot user clicked (e.g., 'mon_1900')
+     * @param {string} selectedWeekId - The week of the clicked slot
+     * @param {Object} userTeamInfo - User's team info from ComparisonEngine
+     * @param {Object} selectedMatch - The opponent team being contacted
+     * @returns {string} Formatted message ready to paste
+     */
+    function _generateContactMessage(selectedSlotId, selectedWeekId, userTeamInfo, selectedMatch) {
+        const comparisonState = ComparisonEngine.getComparisonState();
+        const allMatches = comparisonState.matches;
+
+        // Find all slots where this specific opponent matches
+        const opponentSlots = [];
+        for (const [fullSlotId, matches] of Object.entries(allMatches)) {
+            const opponentMatch = matches.find(m => m.teamId === selectedMatch.teamId);
+            if (opponentMatch) {
+                // fullSlotId format: "2024-W01_mon_1900"
+                const parts = fullSlotId.split('_');
+                const weekId = parts[0];
+                const slotId = parts.slice(1).join('_'); // Handle 'mon_1900' format
+
+                // Get user team count for this slot
+                const userInfo = ComparisonEngine.getUserTeamInfo(weekId, slotId);
+                const userCount = userInfo?.availablePlayers?.length || 0;
+                const opponentCount = opponentMatch.availablePlayers.length;
+
+                opponentSlots.push({
+                    weekId,
+                    slotId,
+                    fullSlotId,
+                    userCount,
+                    opponentCount,
+                    isPriority: slotId === selectedSlotId && weekId === selectedWeekId
+                });
+            }
+        }
+
+        // Sort: priority first, then by total player count (highest first)
+        opponentSlots.sort((a, b) => {
+            if (a.isPriority && !b.isPriority) return -1;
+            if (!a.isPriority && b.isPriority) return 1;
+            const aTotal = a.userCount + a.opponentCount;
+            const bTotal = b.userCount + b.opponentCount;
+            return bTotal - aTotal;
+        });
+
+        // Format the message
+        const lines = [
+            `Match request: [${userTeamInfo.teamTag}] vs [${selectedMatch.teamTag}]`,
+            ''
+        ];
+
+        opponentSlots.forEach((slot) => {
+            const formatted = _formatSlotForMessage(slot.slotId);
+            const marker = slot.isPriority ? '> ' : '  ';
+            const counts = `${slot.userCount}v${slot.opponentCount}`;
+            lines.push(`${marker}${formatted} (${counts})`);
+        });
+
+        lines.push('');
+        lines.push('Let me know what works!');
+
+        return lines.join('\n');
+    }
+
+    /**
      * Fetch Discord info for multiple leaders
      */
     async function _fetchLeaderDiscordInfo(leaderIds) {
@@ -147,9 +228,14 @@ const ComparisonModal = (function() {
     }
 
     /**
-     * Render contact section for opponent
+     * Render contact section for opponent with message preview and action buttons
+     * @param {Object} discordInfo - Leader's Discord info
+     * @param {string} selectedSlotId - The slot user clicked
+     * @param {string} selectedWeekId - The week of the clicked slot
+     * @param {Object} userTeamInfo - User's team info
+     * @param {Object} selectedMatch - The opponent team being contacted
      */
-    function _renderContactSection(discordInfo) {
+    function _renderContactSection(discordInfo, selectedSlotId, selectedWeekId, userTeamInfo, selectedMatch) {
         if (!discordInfo || !discordInfo.discordUsername) {
             return `
                 <div class="mt-3 pt-3 border-t border-border">
@@ -158,35 +244,37 @@ const ComparisonModal = (function() {
             `;
         }
 
+        // Generate message for preview
+        const message = _generateContactMessage(selectedSlotId, selectedWeekId, userTeamInfo, selectedMatch);
+
+        // Store message in data attribute for click handler (escape newlines for HTML attribute)
+        const escapedMessage = _escapeHtml(message).replace(/\n/g, '&#10;');
+
         const discordIcon = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
             <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
         </svg>`;
 
-        let buttonsHtml = '';
-
-        if (discordInfo.discordUserId) {
-            buttonsHtml += `
-                <a href="discord://users/${discordInfo.discordUserId}"
-                   class="btn btn-sm bg-[#5865F2] hover:bg-[#4752C4] text-white">
-                    ${discordIcon}
-                    <span class="ml-1">Open DM</span>
-                </a>
-            `;
-        }
-
-        buttonsHtml += `
-            <button class="btn btn-sm ${discordInfo.discordUserId ? 'btn-secondary' : 'bg-[#5865F2] hover:bg-[#4752C4] text-white'} copy-discord-btn"
-                    data-username="${_escapeHtml(discordInfo.discordUsername)}">
-                ${discordInfo.discordUserId ? '' : discordIcon}
-                <span class="${discordInfo.discordUserId ? '' : 'ml-1'}">@${_escapeHtml(discordInfo.discordUsername)}</span>
-            </button>
-        `;
-
         return `
             <div class="mt-3 pt-3 border-t border-border">
                 <p class="text-xs text-muted-foreground mb-2">Contact Leader</p>
+
+                <!-- Message Preview -->
+                <div class="bg-muted/30 rounded p-2 mb-3 text-xs font-mono text-muted-foreground whitespace-pre-wrap max-h-24 overflow-y-auto">${_escapeHtml(message)}</div>
+
+                <!-- Action Buttons -->
                 <div class="flex items-center gap-2 flex-wrap">
-                    ${buttonsHtml}
+                    ${discordInfo.discordUserId ? `
+                        <button class="btn btn-sm bg-[#5865F2] hover:bg-[#4752C4] text-white contact-discord-btn"
+                                data-discord-id="${discordInfo.discordUserId}"
+                                data-message="${escapedMessage}">
+                            ${discordIcon}
+                            <span class="ml-1">Contact on Discord</span>
+                        </button>
+                    ` : ''}
+                    <button class="btn btn-sm btn-secondary copy-message-btn"
+                            data-message="${escapedMessage}">
+                        Copy Message Only
+                    </button>
                 </div>
             </div>
         `;
@@ -194,9 +282,23 @@ const ComparisonModal = (function() {
 
     /**
      * Render a team card (used for both user team and opponent)
+     * @param {string} teamId - Team ID
+     * @param {string} teamTag - Team tag
+     * @param {string} teamName - Team name
+     * @param {Array} availablePlayers - Players available for this slot
+     * @param {Array} unavailablePlayers - Players not available
+     * @param {boolean} isUserTeam - Is this the user's team?
+     * @param {Object} discordInfo - Leader's Discord info (for opponent)
+     * @param {boolean} showContact - Should show contact section?
+     * @param {string} selectedSlotId - The slot user clicked (for contact message)
+     * @param {string} selectedWeekId - The week of the clicked slot
+     * @param {Object} userTeamInfo - User's team info (for contact message)
+     * @param {Object} matchData - The opponent match data (for contact message)
      */
-    function _renderTeamCard(teamId, teamTag, teamName, availablePlayers, unavailablePlayers, isUserTeam, discordInfo, showContact) {
-        const contactSection = (!isUserTeam && showContact) ? _renderContactSection(discordInfo) : '';
+    function _renderTeamCard(teamId, teamTag, teamName, availablePlayers, unavailablePlayers, isUserTeam, discordInfo, showContact, selectedSlotId, selectedWeekId, userTeamInfo, matchData) {
+        const contactSection = (!isUserTeam && showContact)
+            ? _renderContactSection(discordInfo, selectedSlotId, selectedWeekId, userTeamInfo, matchData)
+            : '';
 
         return `
             <div class="vs-team-card">
@@ -293,7 +395,8 @@ const ComparisonModal = (function() {
                                 userTeamInfo.unavailablePlayers,
                                 true,
                                 null,
-                                false
+                                false,
+                                null, null, null, null
                             )}
 
                             <!-- VS Divider -->
@@ -310,7 +413,11 @@ const ComparisonModal = (function() {
                                 selectedMatch.unavailablePlayers,
                                 false,
                                 isLeader ? leaderDiscordInfo[selectedMatch.leaderId] : null,
-                                isLeader
+                                isLeader,
+                                slotId,
+                                weekId,
+                                userTeamInfo,
+                                selectedMatch
                             )}
                         </div>
                     </div>
@@ -369,12 +476,47 @@ const ComparisonModal = (function() {
             });
         });
 
-        // Copy buttons
-        document.querySelectorAll('.copy-discord-btn').forEach(btn => {
+        // Contact on Discord button (copy + open DM)
+        document.querySelectorAll('.contact-discord-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
-                const username = btn.dataset.username;
+                const discordId = btn.dataset.discordId;
+                const message = btn.dataset.message.replace(/&#10;/g, '\n');
+
                 try {
-                    await navigator.clipboard.writeText(username);
+                    // 1. Copy message to clipboard
+                    await navigator.clipboard.writeText(message);
+
+                    // 2. Show success toast
+                    if (typeof ToastService !== 'undefined') {
+                        ToastService.showSuccess('Message copied! Paste in Discord');
+                    }
+
+                    // 3. Open Discord DM (slight delay to ensure toast shows)
+                    setTimeout(() => {
+                        window.open(`discord://-/users/${discordId}`, '_blank');
+                    }, 100);
+
+                } catch (err) {
+                    console.error('Failed to copy message:', err);
+                    // Fallback: just open Discord
+                    window.open(`discord://-/users/${discordId}`, '_blank');
+                    if (typeof ToastService !== 'undefined') {
+                        ToastService.showInfo('Opening Discord... (copy failed)');
+                    }
+                }
+            });
+        });
+
+        // Copy message only button
+        document.querySelectorAll('.copy-message-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const message = btn.dataset.message.replace(/&#10;/g, '\n');
+                try {
+                    await navigator.clipboard.writeText(message);
+                    if (typeof ToastService !== 'undefined') {
+                        ToastService.showSuccess('Message copied to clipboard!');
+                    }
+                    // Visual feedback on button
                     const originalHtml = btn.innerHTML;
                     btn.innerHTML = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
@@ -384,6 +526,9 @@ const ComparisonModal = (function() {
                     }, 2000);
                 } catch (err) {
                     console.error('Failed to copy:', err);
+                    if (typeof ToastService !== 'undefined') {
+                        ToastService.showError('Failed to copy message');
+                    }
                 }
             });
         });

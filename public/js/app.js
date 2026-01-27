@@ -34,15 +34,22 @@ const MatchSchedulerApp = (function() {
 
     // Initialize components
     function _initializeComponents() {
-        // EXPERIMENT: Top row panels removed - skip UserProfile, FilterPanel
-        // UserProfile.init('panel-top-left');  // Moved to center divider
-        // FilterPanel.init('panel-top-right'); // Moved to favorites panel
-
-        // Initialize TeamInfo component in middle-left panel
-        TeamInfo.init('panel-middle-left');
+        // Initialize TeamInfo component in top-left panel
+        TeamInfo.init('panel-top-left');
 
         // Initialize ToastService for notifications
         ToastService.init();
+
+        // Initialize compact profile in divider (Slice 5.0a)
+        // Note: renderCompact updates automatically when auth state changes
+        if (typeof UserProfile !== 'undefined') {
+            UserProfile.renderCompact('profile-compact-container');
+        }
+
+        // Initialize compact filter in divider (Slice 5.0a)
+        if (typeof FilterPanel !== 'undefined') {
+            FilterPanel.init('filter-compact-container');
+        }
 
         // Initialize Availability Grid components
         _initializeAvailabilityGrid();
@@ -79,23 +86,33 @@ const MatchSchedulerApp = (function() {
 
     // Initialize availability grid components
     function _initializeAvailabilityGrid() {
-        // EXPERIMENT: WeekNavigation moved to center divider - skip for now
-        // WeekNavigation.init('panel-top-center');
-        // For experiment, just use a hardcoded week number
-        if (document.getElementById('panel-top-center')) {
-            WeekNavigation.init('panel-top-center');
-        }
+        // Initialize WeekNavigation state manager
+        WeekNavigation.init();
 
         // Get current week number
         const currentWeek = WeekNavigation.getCurrentWeekNumber();
 
-        // Initialize Week 1 display in middle-center panel
-        _weekDisplay1 = WeekDisplay.create('panel-middle-center', currentWeek);
+        // Initialize Week 1 display in top-center panel (navigation arrows visible)
+        _weekDisplay1 = WeekDisplay.create('panel-top-center', currentWeek, { showNavigation: true });
         _weekDisplay1.init();
 
-        // Initialize Week 2 display in bottom-center panel
-        _weekDisplay2 = WeekDisplay.create('panel-bottom-center', currentWeek + 1);
+        // Initialize Week 2 display in bottom-center panel (navigation arrows visible)
+        _weekDisplay2 = WeekDisplay.create('panel-bottom-center', currentWeek + 1, { showNavigation: true });
         _weekDisplay2.init();
+
+        // Listen for week navigation changes and update both grids
+        WeekNavigation.onWeekChange((anchorWeek, secondWeek) => {
+            console.log('📅 Week navigation changed:', anchorWeek, secondWeek);
+
+            // Update week displays
+            _weekDisplay1.setWeekNumber(anchorWeek);
+            _weekDisplay2.setWeekNumber(secondWeek);
+
+            // Re-setup availability listeners for the new weeks if a team is selected
+            if (_selectedTeam) {
+                _setupAvailabilityListeners(_selectedTeam.id);
+            }
+        });
 
         // Set up overflow click handlers for both grids (Slice 2.5)
         _setupOverflowHandlers();
@@ -115,6 +132,11 @@ const MatchSchedulerApp = (function() {
         // Register selection change handlers
         _weekDisplay1.onSelectionChange(() => GridActionButtons.onSelectionChange());
         _weekDisplay2.onSelectionChange(() => GridActionButtons.onSelectionChange());
+
+        // Initialize BottomPanelController for tab switching (Slice 5.0a)
+        if (typeof BottomPanelController !== 'undefined') {
+            BottomPanelController.init(_weekDisplay2);
+        }
 
         console.log(`📅 Availability grids initialized for weeks ${currentWeek} and ${currentWeek + 1}`);
     }
@@ -493,6 +515,10 @@ const MatchSchedulerApp = (function() {
         // Slice 3.4: End any active comparison
         if (typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isActive()) {
             ComparisonEngine.endComparison();
+        }
+        // Slice 5.0a: Clean up BottomPanelController
+        if (typeof BottomPanelController !== 'undefined') {
+            BottomPanelController.cleanup();
         }
     }
 

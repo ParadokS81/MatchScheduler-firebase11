@@ -36,7 +36,8 @@ const FilterPanel = (function() {
 
     /**
      * Render the filter panel UI
-     * Compact single row: Minimum Players [x] vs [x]
+     * Compact single row: Min [x] vs [x]
+     * Slice 5.0a: Updated for divider row placement
      */
     function _render() {
         if (!_container) return;
@@ -45,25 +46,23 @@ const FilterPanel = (function() {
         const opponentMin = FilterService.getOpponentMinimum();
 
         _container.innerHTML = `
-            <div class="panel-content p-3 h-full flex items-center justify-center">
-                <div class="flex items-center gap-2">
-                    <span class="text-xs text-muted-foreground whitespace-nowrap">Minimum Players</span>
-                    <select id="your-team-min"
-                            class="bg-muted text-foreground text-sm rounded px-2 py-1
-                                   border border-border focus:border-primary focus:outline-none
-                                   cursor-pointer"
-                            title="Your team minimum players">
-                        ${_renderNumberOptions(yourTeamMin)}
-                    </select>
-                    <span class="text-xs text-muted-foreground">vs</span>
-                    <select id="opponent-min"
-                            class="bg-muted text-foreground text-sm rounded px-2 py-1
-                                   border border-border focus:border-primary focus:outline-none
-                                   cursor-pointer"
-                            title="Opponent minimum players">
-                        ${_renderNumberOptions(opponentMin)}
-                    </select>
-                </div>
+            <div class="flex items-center gap-2">
+                <span class="text-xs text-muted-foreground whitespace-nowrap">Min</span>
+                <select id="your-team-min"
+                        class="bg-muted text-foreground text-xs rounded px-2 py-1
+                               border border-border focus:border-primary focus:outline-none
+                               cursor-pointer"
+                        title="Your team minimum players">
+                    ${_renderNumberOptions(yourTeamMin)}
+                </select>
+                <span class="text-xs text-muted-foreground">vs</span>
+                <select id="opponent-min"
+                        class="bg-muted text-foreground text-xs rounded px-2 py-1
+                               border border-border focus:border-primary focus:outline-none
+                               cursor-pointer"
+                        title="Opponent minimum players">
+                    ${_renderNumberOptions(opponentMin)}
+                </select>
             </div>
         `;
 

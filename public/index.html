@@ -104,7 +104,7 @@
                 </div>
             </div>
 
-            <div id="panel-middle-center" class="panel">
+            <div id="panel-top-center" class="panel">
                 <!-- WeekDisplay (Week 1) renders here -->
             </div>
 
@@ -117,11 +117,8 @@
 
             <!-- Middle Row (Divider - Profile | Tabs | MinPlayers) -->
             <div id="panel-mid-left" class="panel panel-divider">
-                <div class="panel-content-compact">
-                    <div class="flex items-center gap-2">
-                        <span class="text-lg">👤</span>
-                        <span class="text-sm font-medium">PDX</span>
-                    </div>
+                <div id="profile-compact-container" class="panel-content-compact">
+                    <!-- UserProfile.renderCompact() renders here -->
                 </div>
             </div>
 
@@ -136,17 +133,8 @@
             </div>
 
             <div id="panel-mid-right" class="panel panel-divider">
-                <div class="panel-content-compact">
-                    <div class="flex items-center gap-2 text-sm">
-                        <span>Min</span>
-                        <select class="bg-secondary text-secondary-foreground px-2 py-1 rounded text-xs">
-                            <option>1</option><option>2</option><option>3</option><option>4</option>
-                        </select>
-                        <span>vs</span>
-                        <select class="bg-secondary text-secondary-foreground px-2 py-1 rounded text-xs">
-                            <option>1</option><option>2</option><option>3</option><option>4</option>
-                        </select>
-                    </div>
+                <div id="filter-compact-container" class="panel-content-compact">
+                    <!-- FilterPanel.renderCompact() renders here -->
                 </div>
             </div>
 
@@ -250,6 +238,7 @@
     <script src="js/services/AvatarUploadService.js"></script>
     <script src="js/components/AvatarUploadModal.js"></script>
     <script src="js/components/AvatarManagerModal.js"></script>
+    <script src="js/components/BottomPanelController.js"></script>
     <script src="js/app.js" type="module"></script>
 </body>
 </html>

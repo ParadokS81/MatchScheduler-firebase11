@@ -256,8 +256,8 @@ Detailed specifications in `/context/slices/[slice-name].md`
 
 ## Part 5: Layout Evolution & Integrations
 
-### 🚧 Slice 5.0a: Layout Foundation
-**Status:** In Progress (experimental branch: `experiment/center-divider-layout`)
+### ✅ Slice 5.0a: Layout Foundation
+**Status:** Complete
 **User Value:** More vertical space for grids, tabbed interface for additional features
 **Spec:** `context/slices/slice-5.0a-layout-foundation.md`
 **Components:** All layout components, WeekDisplay, WeekNavigation, BottomPanelController (new)
@@ -266,6 +266,8 @@ Detailed specifications in `/context/slices/[slice-name].md`
 - Move week navigation to grid headers
 - Tab switching: Calendar | Teams | Tournament
 - Relocate profile indicator and min players filter
+
+**Note:** Fixed auth state propagation for compact-only panels, container ID alignment after grid restructure. Reseed script enhanced with all 24 Big4 teams, logos, and Discord contact info.
 
 ### 📅 Slice 5.0b: Grid Tools Enhancement
 **Status:** Not Started (depends on 5.0a)
@@ -299,10 +301,10 @@ Detailed specifications in `/context/slices/[slice-name].md`
 ---
 
 ## Progress Summary
-**Slices Complete:** 22 / ~28 (Part 5 adds new slices)
+**Slices Complete:** 23 / ~28 (Part 5 adds new slices)
 
 ## Current Focus
-**Part 5.0 - Layout Restructure** is the current priority. This is foundational for future features.
+**Slice 5.0b - Grid Tools Enhancement** is next. Layout foundation (5.0a) is complete.
 
 ---
 
