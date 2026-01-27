@@ -12,5 +12,17 @@ service firebase.storage {
       allow read: if true;
       allow write: if false; // Only Cloud Function writes
     }
+
+    // Avatar temp uploads - authenticated users can write to their own path
+    match /avatar-uploads/{userId}/{fileName} {
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read: if false; // Only Cloud Function reads
+    }
+
+    // Processed avatars - public read
+    match /user-avatars/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if false; // Only Cloud Function writes
+    }
   }
 }

@@ -175,20 +175,24 @@ exports.createProfile = onCall(async (request) => {
  */
 exports.updateProfile = onCall(async (request) => {
     const { auth, data } = request;
-    
+
     // Verify user is authenticated
     if (!auth) {
         throw new HttpsError('unauthenticated', 'User must be authenticated to update profile');
     }
-    
+
     const { uid } = auth;
-    const { displayName, initials, discordUsername, discordUserId } = data;
-    
-    // Validate input
-    if (!displayName && !initials && discordUsername === undefined && discordUserId === undefined) {
+    const { displayName, initials, discordUsername, discordUserId, avatarSource, photoURL } = data;
+
+    // Validate input - at least one field must be provided
+    const hasAnyField = displayName || initials ||
+        discordUsername !== undefined || discordUserId !== undefined ||
+        avatarSource !== undefined || photoURL !== undefined;
+
+    if (!hasAnyField) {
         throw new HttpsError('invalid-argument', 'At least one field must be provided');
     }
-    
+
     const updates = {};
     
     // Validate and add display name
@@ -230,7 +234,21 @@ exports.updateProfile = onCall(async (request) => {
             throw new HttpsError('invalid-argument', 'Both Discord username and user ID must be provided together');
         }
     }
-    
+
+    // Handle avatar source preference
+    if (avatarSource !== undefined) {
+        const validSources = ['custom', 'discord', 'google', 'default', 'initials'];
+        if (!validSources.includes(avatarSource)) {
+            throw new HttpsError('invalid-argument', 'Invalid avatar source');
+        }
+        updates.avatarSource = avatarSource;
+    }
+
+    // Handle photoURL update
+    if (photoURL !== undefined) {
+        updates.photoURL = photoURL || null;
+    }
+
     try {
         // Update profile and propagate changes to team rosters if needed
         await db.runTransaction(async (transaction) => {

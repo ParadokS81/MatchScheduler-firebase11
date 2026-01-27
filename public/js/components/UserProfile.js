@@ -185,48 +185,36 @@ const UserProfile = (function() {
     // Render authenticated mode UI
     function _renderAuthenticatedMode() {
         if (!_currentUser) return;
-        
+
         const displayName = _userProfile?.displayName || _currentUser.displayName || 'User';
+        const initials = _userProfile?.initials || '';
         console.log('🎯 Displaying authenticated user:', displayName);
-        
+
         _panel.innerHTML = `
             <div class="panel-content">
-                <div class="flex items-center justify-between h-full">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
-                            ${_userProfile?.photoURL || _currentUser.photoURL ?
-                                `<img src="${_userProfile?.photoURL || _currentUser.photoURL}" alt="Profile" class="w-full h-full rounded-full object-cover">` :
-                                `<svg class="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                                </svg>`
-                            }
-                        </div>
-                        <div class="flex-1">
-                            <div class="text-sm font-medium text-foreground">
-                                ${displayName}
-                            </div>
-                            <div class="text-xs text-muted-foreground">
-                                ${_userProfile ? _userProfile.initials : 'Setting up...'}
-                            </div>
-                        </div>
+                <button
+                    id="edit-profile-btn"
+                    class="flex items-center gap-3 h-full w-full hover:bg-muted/50 rounded-md transition-colors cursor-pointer"
+                    type="button"
+                    title="Edit Profile"
+                >
+                    <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+                        ${_userProfile?.photoURL || _currentUser.photoURL ?
+                            `<img src="${_userProfile?.photoURL || _currentUser.photoURL}" alt="Profile" class="w-full h-full rounded-full object-cover">` :
+                            `<svg class="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                            </svg>`
+                        }
                     </div>
-                    
-                    <button 
-                        id="edit-profile-btn"
-                        class="text-muted-foreground hover:text-foreground transition-colors"
-                        type="button"
-                        title="Edit Profile"
-                    >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                        </svg>
-                    </button>
-                </div>
+                    <div class="text-sm font-medium text-foreground">
+                        ${displayName}${initials ? ` · ${initials}` : ''}
+                    </div>
+                </button>
             </div>
         `;
-        
+
         _attachAuthenticatedEventListeners();
-        
+
         // Update TeamInfo component with user data
         if (typeof TeamInfo !== 'undefined') {
             TeamInfo.updateUser(_currentUser, _userProfile);

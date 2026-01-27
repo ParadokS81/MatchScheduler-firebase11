@@ -10,6 +10,7 @@ const ProfileModal = (function() {
     let _userProfile = null;
     let _isSetupMode = false;  // true if user needs to set up profile (no initials)
     let _keydownHandler = null;
+    let _pendingCustomAvatarUrl = null; // Temp preview URL after upload, before save
 
     // Show profile modal
     // Setup mode is auto-detected based on whether profile has initials
@@ -22,20 +23,28 @@ const ProfileModal = (function() {
         _isSetupMode = !userProfile?.initials;
         _isVisible = true;
         
+        const avatarUrl = _getCurrentAvatarUrl();
+
         const modalHTML = `
             <div class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                 <div class="bg-slate-800 border border-slate-700 rounded-lg shadow-xl w-full max-w-md">
-                    <!-- Header -->
+                    <!-- Header with clickable avatar -->
                     <div class="flex items-center justify-between p-4 border-b border-slate-700">
                         <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                                ${_userProfile?.photoURL || user.photoURL ?
-                                    `<img src="${_userProfile?.photoURL || user.photoURL}" alt="Profile" class="w-full h-full rounded-full object-cover">` :
-                                    `<svg class="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                                    </svg>`
-                                }
-                            </div>
+                            <button type="button" id="avatar-change-btn" class="group relative flex-shrink-0">
+                                <div id="avatar-preview" class="w-12 h-12 rounded-full bg-muted border-2 border-border flex items-center justify-center overflow-hidden transition-all group-hover:border-primary">
+                                    ${avatarUrl ?
+                                        `<img src="${avatarUrl}" alt="Avatar" class="w-full h-full object-cover">` :
+                                        `<span class="text-lg font-bold text-muted-foreground">${_userProfile?.initials || '?'}</span>`
+                                    }
+                                </div>
+                                <div class="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    </svg>
+                                </div>
+                            </button>
                             <h2 class="text-xl font-bold text-sky-400">${_isSetupMode ? 'Set Up Profile' : 'Edit Profile'}</h2>
                         </div>
                     </div>
@@ -43,6 +52,10 @@ const ProfileModal = (function() {
                     <!-- Body -->
                     <div class="p-4">
                         <form id="profile-form" class="space-y-4">
+                            <!-- Hidden inputs for avatar data -->
+                            <input type="hidden" name="avatarSource" id="avatarSource" value="${_detectDefaultSource()}">
+                            <input type="hidden" name="photoURL" id="photoURL" value="${avatarUrl || ''}">
+
                             ${_isSetupMode ? `
                             <p class="text-sm text-muted-foreground">
                                 Welcome! Set your player nick and initials to get started.
@@ -157,15 +170,18 @@ const ProfileModal = (function() {
     // Hide modal
     function hide() {
         if (!_isVisible) return;
-        
+
         _isVisible = false;
-        
+
         // Clean up event listeners
         if (_keydownHandler) {
             document.removeEventListener('keydown', _keydownHandler);
             _keydownHandler = null;
         }
-        
+
+        // Reset pending avatar URL
+        _pendingCustomAvatarUrl = null;
+
         const modalContainer = document.getElementById('modal-container');
         modalContainer.classList.add('hidden');
         modalContainer.innerHTML = '';
@@ -206,6 +222,9 @@ const ProfileModal = (function() {
 
         // Attach Discord link/unlink event listeners
         _attachDiscordEventListeners();
+
+        // Attach avatar source selection listeners
+        _attachAvatarListeners();
 
         // Close on backdrop click
         const modalContainer = document.getElementById('modal-container');
@@ -251,11 +270,23 @@ const ProfileModal = (function() {
                 displayName,
                 initials
             };
-            
+
             // Add Discord data if provided
             if (discordUsername || discordUserId) {
                 profileData.discordUsername = discordUsername;
                 profileData.discordUserId = discordUserId;
+            }
+
+            // Add avatar source preference
+            const avatarSource = formData.get('avatarSource');
+            const photoURL = formData.get('photoURL');
+            if (avatarSource) {
+                profileData.avatarSource = avatarSource;
+                // For custom with pending upload, Cloud Function will set photoURL
+                // Otherwise use the value from the form
+                if (avatarSource !== 'custom' || _userProfile?.customAvatarUrl) {
+                    profileData.photoURL = photoURL || null;
+                }
             }
             
             // Always use updateProfile (user doc already exists from sign-in)
@@ -385,6 +416,93 @@ const ProfileModal = (function() {
 
     // Discord icon SVG path (reused across sections)
     const DISCORD_ICON_PATH = 'M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z';
+
+    // ============================================
+    // AVATAR SECTION HELPERS
+    // ============================================
+
+    // Detect current avatar source based on existing data
+    function _detectDefaultSource() {
+        if (_userProfile?.avatarSource) return _userProfile.avatarSource;
+        if (_userProfile?.customAvatarUrl) return 'custom';
+        if (_userProfile?.discordAvatarHash) return 'discord';
+        if (_userProfile?.authProvider === 'google' && _currentUser?.photoURL) return 'google';
+        return 'default';
+    }
+
+    // Resolve avatar URL based on source
+    function _resolveAvatarUrl(source) {
+        switch (source) {
+            case 'custom':
+                return _pendingCustomAvatarUrl || _userProfile?.customAvatarUrl;
+            case 'discord':
+                if (_userProfile?.discordUserId && _userProfile?.discordAvatarHash) {
+                    const hash = _userProfile.discordAvatarHash;
+                    const ext = hash.startsWith('a_') ? 'gif' : 'png';
+                    return `https://cdn.discordapp.com/avatars/${_userProfile.discordUserId}/${hash}.${ext}?size=128`;
+                }
+                return null;
+            case 'google':
+                return _currentUser?.photoURL;
+            case 'default':
+                return '/img/default-avatar.png';
+            case 'initials':
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    // Get current avatar URL for display
+    function _getCurrentAvatarUrl() {
+        const source = _detectDefaultSource();
+        return _resolveAvatarUrl(source);
+    }
+
+    // Avatar section is now integrated into the header - this function is no longer needed
+    // but kept for reference in case we need to restore it
+
+    // Handle avatar change button click - opens AvatarManagerModal
+    function _handleAvatarChangeClick() {
+        if (typeof AvatarManagerModal !== 'undefined' && _currentUser) {
+            AvatarManagerModal.show(
+                _currentUser.uid,
+                _userProfile,
+                _currentUser,
+                (result) => {
+                    // Callback when avatar selection is saved
+                    _pendingCustomAvatarUrl = result.pendingCustomUpload ? result.photoURL : null;
+
+                    // Update hidden inputs
+                    const sourceInput = document.getElementById('avatarSource');
+                    const photoUrlInput = document.getElementById('photoURL');
+                    if (sourceInput) sourceInput.value = result.avatarSource;
+                    if (photoUrlInput) photoUrlInput.value = result.photoURL || '';
+
+                    // Update preview in ProfileModal
+                    const preview = document.getElementById('avatar-preview');
+                    if (preview) {
+                        preview.innerHTML = result.photoURL ?
+                            `<img src="${result.photoURL}" alt="Avatar" class="w-full h-full object-cover">` :
+                            `<span class="text-2xl font-bold text-muted-foreground">${_userProfile?.initials || '?'}</span>`;
+                    }
+                }
+            );
+        } else {
+            console.error('AvatarManagerModal not available');
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showError('Avatar manager not available');
+            }
+        }
+    }
+
+    // Attach avatar event listeners
+    function _attachAvatarListeners() {
+        const avatarBtn = document.getElementById('avatar-change-btn');
+        if (avatarBtn) {
+            avatarBtn.addEventListener('click', _handleAvatarChangeClick);
+        }
+    }
 
     // Render Discord section based on auth state
     function _renderDiscordSection() {

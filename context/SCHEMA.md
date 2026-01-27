@@ -26,7 +26,12 @@ interface UserDocument {
   displayName: string;        // 3-20 chars, user's display name
   initials: string;           // 2-4 chars, uppercase, unique per team
   email: string;              // From Google Auth
-  photoURL: string | null;    // From Google Auth or custom
+  photoURL: string | null;    // Computed URL for grid display, based on avatarSource
+
+  // Avatar customization (Slice 4.3.3)
+  avatarSource: 'custom' | 'discord' | 'google' | 'default' | 'initials';  // User's preferred avatar source
+  customAvatarUrl: string | null;  // URL to custom uploaded avatar (128px), set by Cloud Function
+  discordAvatarHash: string | null;  // Discord avatar hash for CDN URL construction
 
   // Discord integration (Slice 4.3/4.4)
   // Can be populated via: Discord OAuth linking, or manual entry (legacy)
@@ -333,3 +338,4 @@ const docId = `${teamId}_${weekId}`;
 - **2026-01-23**: Initial schema documentation
 - Includes: users, teams, availability, eventLog collections
 - **2026-01-23**: Added templates subcollection under users (Slice 2.4)
+- **2026-01-26**: Added avatar customization fields (avatarSource, customAvatarUrl, discordAvatarHash) - Slice 4.3.3

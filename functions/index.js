@@ -6,6 +6,7 @@ initializeApp();
 
 // Import Cloud Functions
 const { processLogoUpload } = require('./logo-processing');
+const { processAvatarUpload } = require('./avatar-processing');
 const { googleSignIn, createProfile, updateProfile, getProfile, deleteAccount } = require('./user-profile');
 const { discordOAuthExchange } = require('./discord-auth');
 const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings, kickPlayer, transferLeadership } = require('./team-operations');
@@ -15,6 +16,7 @@ const { updateFavorites } = require('./favorites');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
+exports.processAvatarUpload = processAvatarUpload;
 exports.googleSignIn = googleSignIn;
 exports.createProfile = createProfile;
 exports.updateProfile = updateProfile;

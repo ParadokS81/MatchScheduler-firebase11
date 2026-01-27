@@ -158,6 +158,11 @@
         <!-- Modals will be dynamically inserted here -->
     </div>
 
+    <!-- Avatar Modal Container (separate to avoid conflict with ProfileModal) -->
+    <div id="avatar-modal-container" class="fixed inset-0 z-[60] hidden">
+        <!-- Avatar upload modal inserted here -->
+    </div>
+
     <!-- Team Operation Status -->
     <div id="team-operation-container" class="fixed bottom-0 left-0 right-0 z-40">
         <!-- Loading Status -->
@@ -224,6 +229,9 @@
     <script src="js/components/ComparisonModal.js"></script>
     <script src="js/services/LogoUploadService.js"></script>
     <script src="js/components/LogoUploadModal.js"></script>
+    <script src="js/services/AvatarUploadService.js"></script>
+    <script src="js/components/AvatarUploadModal.js"></script>
+    <script src="js/components/AvatarManagerModal.js"></script>
     <script src="js/app.js" type="module"></script>
 </body>
 </html>
