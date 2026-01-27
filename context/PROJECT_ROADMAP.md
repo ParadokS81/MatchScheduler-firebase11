@@ -210,18 +210,20 @@ Detailed specifications in `/context/slices/[slice-name].md`
 - Delete Account feature (GDPR compliance) - removes user from Firebase Auth + Firestore + team rosters
 - ProfileModal UI cleanup - compact layout with nick+initials on one row, Discord in single line, cleaner buttons
 
-### 📅 Slice 4.3.3: Avatar Manager
-**Status:** Not Started
+### ✅ Slice 4.3.3: Avatar Manager
+**Status:** Complete
 **User Value:** Users can customize their avatar (Discord, custom upload, or default)
 **PRD Sections:** 4.4.1
-**Components:** AvatarManager (new), ProfileModal (enhance)
+**Components:** AvatarManagerModal (new), AvatarUploadModal (new), AvatarUploadService (new), processAvatarUpload Cloud Function, ProfileModal (enhance), UserProfile (enhance)
 **Scope:**
-- Avatar section in Edit Profile modal
-- Priority: Custom upload → Discord → Default → Initials
-- Upload custom avatar (reuse logo upload pattern)
-- "Use Discord Avatar" toggle (if linked)
-- Default Quake-style placeholder (community-designed)
-- Integrates with existing grid avatar toggle
+- Clickable avatar in ProfileModal header opens AvatarManagerModal
+- Source options: Custom upload, Discord, Google, Default, Initials
+- Upload custom avatar with Cropper.js (reuses logo upload pattern)
+- Cloud Function processes uploads to 128/64/32px sizes
+- UserProfile simplified to single-row clickable layout
+- Storage rules for avatar-uploads and user-avatars paths
+
+**Note:** Clean UX flow - click avatar to manage, save to persist. Schema updated with avatarSource, customAvatarUrl, discordAvatarHash fields.
 
 ### 📅 Slice 4.4: Discord Contact Enhancement
 **Status:** Partially Complete (via Slice 3.5)
@@ -253,11 +255,11 @@ Detailed specifications in `/context/slices/[slice-name].md`
 ---
 
 ## Progress Summary
-**Slices Complete:** 21 / 25 (3.6 and 3.7 bundled, 4.3 expanded to 4.3.1-4.3.3)
+**Slices Complete:** 22 / 25 (3.6 and 3.7 bundled, 4.3 expanded to 4.3.1-4.3.3)
 
 ## Current Focus
-Part 4 in progress! Next up: Slice 4.3.3 Avatar Manager or Slice 4.5 Error States
+Part 4 in progress! Next up: Slice 4.4 (already mostly done), Slice 4.5 Error States, or Slice 4.6 Performance Audit
 
 ---
 
-*Last Updated: 2026-01-26*
+*Last Updated: 2026-01-27*
