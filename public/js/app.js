@@ -117,17 +117,21 @@ const MatchSchedulerApp = (function() {
         // Set up overflow click handlers for both grids (Slice 2.5)
         _setupOverflowHandlers();
 
-        // Initialize GridActionButtons with callbacks
+        // Initialize GridActionButtons with callbacks (Slice 5.0b: removed selectAll)
         GridActionButtons.init('grid-action-buttons-container', {
             getSelectedCells: _getAllSelectedCells,
             clearSelections: _clearAllSelections,
             onSyncStart: _handleSyncStart,
             onSyncEnd: _handleSyncEnd,
-            selectAll: _handleSelectAll,
             clearAll: _handleClearAll,
             loadTemplate: _handleLoadTemplate,
             onDisplayModeChange: _handleDisplayModeChange
         });
+
+        // Initialize SelectionActionButton (Slice 5.0b: floating action button)
+        if (typeof SelectionActionButton !== 'undefined') {
+            SelectionActionButton.init();
+        }
 
         // Register selection change handlers
         _weekDisplay1.onSelectionChange(() => GridActionButtons.onSelectionChange());
@@ -293,14 +297,6 @@ const MatchSchedulerApp = (function() {
     function _handleSyncEnd() {
         if (_weekDisplay1) _weekDisplay1.clearSyncingCells();
         if (_weekDisplay2) _weekDisplay2.clearSyncingCells();
-    }
-
-    /**
-     * Handle Select All - select all cells in both visible weeks
-     */
-    function _handleSelectAll() {
-        if (_weekDisplay1) _weekDisplay1.selectAll();
-        if (_weekDisplay2) _weekDisplay2.selectAll();
     }
 
     /**
@@ -483,6 +479,10 @@ const MatchSchedulerApp = (function() {
         }
         if (typeof GridActionButtons !== 'undefined') {
             GridActionButtons.cleanup();
+        }
+        // Slice 5.0b: Clean up SelectionActionButton
+        if (typeof SelectionActionButton !== 'undefined') {
+            SelectionActionButton.cleanup();
         }
         if (typeof AvailabilityService !== 'undefined') {
             AvailabilityService.cleanup();

@@ -58,12 +58,52 @@ const AvailabilityGrid = (function() {
         let _comparisonMode = false;
 
         /**
+         * Get the bounding rectangle of selected cells in viewport coordinates
+         * @param {Array<string>} selectedCells - Array of cell IDs
+         * @returns {Object|null} Bounds { top, left, right, bottom } or null if empty
+         */
+        function _getSelectionBounds(selectedCells) {
+            if (selectedCells.length === 0) return null;
+
+            let minTop = Infinity, minLeft = Infinity;
+            let maxBottom = 0, maxRight = 0;
+
+            selectedCells.forEach(cellId => {
+                const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
+                if (cell) {
+                    const rect = cell.getBoundingClientRect();
+                    minTop = Math.min(minTop, rect.top);
+                    minLeft = Math.min(minLeft, rect.left);
+                    maxBottom = Math.max(maxBottom, rect.bottom);
+                    maxRight = Math.max(maxRight, rect.right);
+                }
+            });
+
+            // Return null if no valid cells found
+            if (minTop === Infinity) return null;
+
+            return { top: minTop, left: minLeft, right: maxRight, bottom: maxBottom };
+        }
+
+        /**
          * Notify listeners of selection change
          */
         function _notifySelectionChange() {
             if (_onSelectionChangeCallback) {
                 _onSelectionChangeCallback();
             }
+
+            // Dispatch custom event for floating action button (Slice 5.0b)
+            const selectedArray = Array.from(_selectedCells);
+            const bounds = _getSelectionBounds(selectedArray);
+
+            document.dispatchEvent(new CustomEvent('grid-selection-change', {
+                detail: {
+                    gridId: _weekId,
+                    selectedCells: selectedArray.map(slotId => ({ weekId: getWeekId(), slotId })),
+                    bounds: bounds
+                }
+            }));
         }
 
         /**

@@ -269,8 +269,8 @@ Detailed specifications in `/context/slices/[slice-name].md`
 
 **Note:** Fixed auth state propagation for compact-only panels, container ID alignment after grid restructure. Reseed script enhanced with all 24 Big4 teams, logos, and Discord contact info.
 
-### 📅 Slice 5.0b: Grid Tools Enhancement
-**Status:** Not Started (depends on 5.0a)
+### ✅ Slice 5.0b: Grid Tools Enhancement
+**Status:** Complete
 **User Value:** Intuitive selection actions, cleaner tools panel
 **Spec:** `context/slices/slice-5.0b-grid-tools-enhancement.md`
 **Components:** GridActionButtons (refactor), SelectionActionButton (new)
@@ -279,6 +279,8 @@ Detailed specifications in `/context/slices/[slice-name].md`
 - Remove Add/Remove buttons (replaced by floating action)
 - Add floating action button near selection
 - Add Upcoming Matches placeholder section
+
+**Note:** Floating button appears near selection with smart repositioning. Shows "+ Add Me" (primary) or "− Remove Me" (destructive) based on user's presence in all selected cells. Keyboard support: Enter to confirm, Escape to cancel/clear selection.
 
 ### 📅 Slice 5.1: Teams Browser Tab
 **Status:** Not Started
@@ -301,11 +303,11 @@ Detailed specifications in `/context/slices/[slice-name].md`
 ---
 
 ## Progress Summary
-**Slices Complete:** 23 / ~28 (Part 5 adds new slices)
+**Slices Complete:** 24 / ~28 (Part 5 adds new slices)
 
 ## Current Focus
-**Slice 5.0b - Grid Tools Enhancement** is next. Layout foundation (5.0a) is complete.
+**Slice 5.1 - Teams Browser Tab** is next. Grid tools enhancement (5.0b) is complete.
 
 ---
 
-*Last Updated: 2026-01-27*
+*Last Updated: 2026-01-28*

@@ -1479,3 +1479,35 @@ body {
 .avatar-source-btn[disabled] {
   @apply opacity-50 cursor-not-allowed;
 }
+
+/* ========================================
+   SLICE 5.0b: FLOATING SELECTION ACTION BUTTON
+   ======================================== */
+
+/* Floating Selection Action Button */
+.selection-action-btn {
+  min-width: 6rem;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+
+.selection-action-btn:hover {
+  transform: translateY(-1px);
+}
+
+.selection-action-btn:active {
+  transform: translateY(0);
+}
+
+.selection-action-btn.hidden {
+  display: none;
+}
+
+.selection-action-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Compact grid tools panel */
+.grid-tools-compact select {
+  max-width: 8rem;
+}
