@@ -96,9 +96,7 @@ const TeamBrowser = (function() {
         _container.innerHTML = `
             <div class="team-browser flex flex-col h-full">
                 <!-- Header with Search -->
-                <div class="browser-header mb-3">
-                    <h3 class="text-sm font-semibold text-foreground mb-2">Browse Teams</h3>
-
+                <div class="browser-header mb-2">
                     <!-- Search Input -->
                     <div class="relative mb-2">
                         <input type="text"
@@ -126,13 +124,6 @@ const TeamBrowser = (function() {
                 <!-- Team List -->
                 <div id="team-list-container" class="team-list flex-1 overflow-y-auto space-y-1.5">
                     <!-- Team cards and player results rendered here -->
-                </div>
-
-                <!-- Selection Info -->
-                <div id="selection-info" class="selection-info mt-2 pt-2 border-t border-border hidden">
-                    <span class="text-xs text-muted-foreground">
-                        <span id="selection-count">0</span> team(s) selected
-                    </span>
                 </div>
             </div>
         `;
@@ -175,8 +166,15 @@ const TeamBrowser = (function() {
             // Division filter (if any divisions selected, team must have at least one)
             if (divisionFilters.size > 0) {
                 const teamDivisions = team.divisions || [];
+                // Normalize divisions to "D1" format before comparison
+                // (handles "1", "D1", 1, etc.)
+                const normalizedTeamDivisions = teamDivisions.map(d => {
+                    if (typeof d === 'number') return `D${d}`;
+                    if (typeof d === 'string' && /^\d+$/.test(d)) return `D${d}`;
+                    return d;
+                });
                 // Check if team has ANY of the selected divisions
-                const hasMatchingDivision = teamDivisions.some(d => divisionFilters.has(d));
+                const hasMatchingDivision = normalizedTeamDivisions.some(d => divisionFilters.has(d));
                 if (!hasMatchingDivision) return false;
             }
             return true;
@@ -271,6 +269,11 @@ const TeamBrowser = (function() {
                 if (e.target.closest('.star-btn')) return;
                 const teamId = card.dataset.teamId;
                 TeamBrowserState.toggleTeamSelection(teamId);
+
+                // Dispatch detail-select event for TeamsBrowserPanel (Slice 5.1b)
+                window.dispatchEvent(new CustomEvent('team-browser-detail-select', {
+                    detail: { teamId }
+                }));
             });
 
             // Hover handlers for player roster tooltip

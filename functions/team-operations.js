@@ -37,19 +37,20 @@ function validateTeamData(teamData) {
         }
     }
     
-    // Team tag validation
+    // Team tag validation (case-sensitive, matches QW in-game tag)
     if (!teamData.teamTag || typeof teamData.teamTag !== 'string') {
         errors.push('Team tag is required');
     } else {
-        const trimmed = teamData.teamTag.trim().toUpperCase();
-        if (trimmed.length < 2) {
-            errors.push('Team tag must be at least 2 characters');
+        const trimmed = teamData.teamTag.trim();
+        if (trimmed.length < 1) {
+            errors.push('Team tag is required');
         }
         if (trimmed.length > 4) {
             errors.push('Team tag must be 4 characters or less');
         }
-        if (!/^[A-Z0-9]+$/.test(trimmed)) {
-            errors.push('Team tag can only contain uppercase letters and numbers');
+        // Allow letters, numbers, and QW-style special characters: [ ] ( ) { } - _ . , !
+        if (!/^[a-zA-Z0-9\[\]\(\)\{\}\-_.,!]+$/.test(trimmed)) {
+            errors.push('Team tag can only contain letters, numbers, and common QW characters');
         }
     }
     
@@ -156,7 +157,7 @@ exports.createTeam = onCall(async (request) => {
         const team = {
             teamName: teamData.teamName.trim(),
             teamNameLower: teamData.teamName.trim().toLowerCase(), // For case-insensitive uniqueness
-            teamTag: teamData.teamTag.trim().toUpperCase(),
+            teamTag: teamData.teamTag.trim(),
             leaderId: userId,
             divisions: teamData.divisions,
             maxPlayers: teamData.maxPlayers,

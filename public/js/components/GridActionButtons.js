@@ -1,6 +1,7 @@
 // GridActionButtons.js - Floating Add Me / Remove Me buttons with Template support
 // Following CLAUDE.md architecture: Revealing Module Pattern
 // Enhanced for Slice 2.5: Display mode toggle (Initials/Avatars)
+// Enhanced for Slice 5.0.1: 4-mode display toggle (initials, coloredInitials, coloredDots, avatars)
 
 const GridActionButtons = (function() {
     'use strict';
@@ -21,74 +22,50 @@ const GridActionButtons = (function() {
         const canSaveMore = typeof TemplateService !== 'undefined' ? TemplateService.canSaveMore() : false;
         const hasSelection = _getSelectedCells ? _getSelectedCells().length > 0 : false;
 
-        // Get current display mode
-        const currentMode = typeof PlayerDisplayService !== 'undefined'
-            ? PlayerDisplayService.getDisplayMode()
-            : 'initials';
-        const isInitials = currentMode === 'initials';
-
-        // Slice 5.0b: Condensed 2-row layout with floating action button replacing Add/Remove
+        // Display mode buttons are now inline in the TeamInfo drawer header.
+        // This component only renders templates section.
         _container.innerHTML = `
-            <div class="grid-tools-compact flex flex-col gap-2 p-2 bg-card border border-border rounded-lg">
-                <!-- Row 1: Display toggle + Clear All -->
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs text-muted-foreground">View:</span>
-                        <div class="flex gap-0.5">
-                            <button id="display-mode-initials"
-                                    class="px-1.5 py-0.5 text-xs rounded ${isInitials ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}"
-                                    title="Show initials">ABC</button>
-                            <button id="display-mode-avatars"
-                                    class="px-1.5 py-0.5 text-xs rounded ${!isInitials ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}"
-                                    title="Show avatars">
-                                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+            <div class="grid-tools-content-inner py-2">
+                <!-- Templates section -->
+                <div class="space-y-1.5">
+                    ${templates.map(t => `
+                        <div class="template-row group flex items-center gap-1.5 py-0.5 rounded hover:bg-muted/50" data-template-id="${t.id}">
+                            <span class="template-name flex-1 text-sm text-foreground truncate cursor-default">${_escapeHtml(t.name)}</span>
+                            <input type="text" class="template-name-input hidden flex-1 px-1 py-0.5 text-sm bg-input border border-primary rounded"
+                                   value="${_escapeHtml(t.name)}" maxlength="${TemplateService.MAX_NAME_LENGTH}">
+                            <button class="template-edit opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground p-0.5 transition-opacity"
+                                    title="Rename">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                                 </svg>
                             </button>
+                            <button class="template-delete opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-0.5 transition-opacity"
+                                    title="Delete">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                            </button>
+                            <button class="template-load-w1 px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground hover:bg-accent"
+                                    title="Load to Week 1">W1</button>
+                            <button class="template-load-w2 px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground hover:bg-accent"
+                                    title="Load to Week 2">W2</button>
                         </div>
-                    </div>
-                    <button id="clear-all-btn"
-                            class="px-2 py-0.5 text-xs rounded bg-muted text-muted-foreground hover:bg-accent">
-                        Clear All
-                    </button>
-                </div>
+                    `).join('')}
 
-                <!-- Row 2: Template dropdown + Load/Save -->
-                <div class="flex items-center gap-2">
-                    <select id="template-select" class="flex-1 px-2 py-1 text-xs bg-input border border-border rounded max-w-[8rem]">
-                        <option value="">Load template...</option>
-                        ${templates.map(t => `
-                            <option value="${t.id}">${_escapeHtml(t.name)}</option>
-                        `).join('')}
-                    </select>
-                    <button id="load-template-w1-btn"
-                            class="px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground hover:bg-accent disabled:opacity-50"
-                            title="Load to Week 1" disabled>W1</button>
-                    <button id="load-template-w2-btn"
-                            class="px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground hover:bg-accent disabled:opacity-50"
-                            title="Load to Week 2" disabled>W2</button>
-                    <button id="save-template-btn"
-                            class="px-2 py-0.5 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                            ${!hasSelection || !canSaveMore ? 'disabled' : ''}>
-                        Save
-                    </button>
-                    ${templates.length > 0 ? `
-                        <button id="template-menu-btn"
-                                class="text-muted-foreground hover:text-foreground p-0.5"
-                                title="Manage templates">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
-                            </svg>
+                    <!-- Save Template + Clear All row -->
+                    <div class="flex items-center justify-between pt-1 gap-2">
+                        ${canSaveMore ? `
+                            <button id="save-template-btn"
+                                    class="flex-1 px-2 py-1 text-xs rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-foreground disabled:opacity-50 disabled:hover:border-border disabled:hover:text-muted-foreground"
+                                    ${!hasSelection ? 'disabled' : ''}>
+                                + Save Template
+                            </button>
+                        ` : '<div class="flex-1"></div>'}
+                        <button id="clear-all-btn"
+                                class="px-2 py-1 text-xs rounded bg-muted text-muted-foreground hover:bg-accent">
+                            Clear All
                         </button>
-                    ` : ''}
-                </div>
-
-                <!-- Upcoming Matches Placeholder -->
-                <div class="border-t border-border pt-2 mt-1">
-                    <div class="flex items-center justify-between mb-1">
-                        <span class="text-xs font-medium text-muted-foreground">Upcoming Matches</span>
                     </div>
-                    <p class="text-xs text-muted-foreground italic">No scheduled matches</p>
                 </div>
             </div>
         `;
@@ -106,167 +83,137 @@ const GridActionButtons = (function() {
     }
 
     function _attachListeners() {
-        // Slice 5.0b: Condensed layout - no Add/Remove/SelectAll buttons in panel
+        // Clear All and Save Template buttons
         const clearAllBtn = document.getElementById('clear-all-btn');
         const saveTemplateBtn = document.getElementById('save-template-btn');
 
         clearAllBtn?.addEventListener('click', _handleClearAll);
         saveTemplateBtn?.addEventListener('click', _handleSaveTemplate);
 
-        // Display mode toggle (Slice 2.5)
-        const initialsBtn = document.getElementById('display-mode-initials');
-        const avatarsBtn = document.getElementById('display-mode-avatars');
-        initialsBtn?.addEventListener('click', () => _setDisplayMode('initials'));
-        avatarsBtn?.addEventListener('click', () => _setDisplayMode('avatars'));
-
-        // Template dropdown and W1/W2 buttons (Slice 5.0b)
-        const templateSelect = document.getElementById('template-select');
-        const loadW1Btn = document.getElementById('load-template-w1-btn');
-        const loadW2Btn = document.getElementById('load-template-w2-btn');
-        const templateMenuBtn = document.getElementById('template-menu-btn');
-
-        templateSelect?.addEventListener('change', () => {
-            const hasTemplate = templateSelect.value !== '';
-            if (loadW1Btn) loadW1Btn.disabled = !hasTemplate;
-            if (loadW2Btn) loadW2Btn.disabled = !hasTemplate;
+        // Display mode toggle (Slice 5.0.1: 4 modes)
+        document.querySelectorAll('.display-mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mode = btn.dataset.mode;
+                if (mode) _setDisplayMode(mode);
+            });
         });
 
-        loadW1Btn?.addEventListener('click', () => _handleLoadTemplateFromSelect(0));
-        loadW2Btn?.addEventListener('click', () => _handleLoadTemplateFromSelect(1));
+        // Template row listeners (Slice 5.1 - per-row buttons)
+        document.querySelectorAll('.template-row').forEach(row => {
+            const templateId = row.dataset.templateId;
 
-        templateMenuBtn?.addEventListener('click', _handleTemplateMenuDropdown);
+            // W1/W2 load buttons
+            row.querySelector('.template-load-w1')?.addEventListener('click', () => {
+                _handleLoadTemplate(templateId, 0);
+            });
+            row.querySelector('.template-load-w2')?.addEventListener('click', () => {
+                _handleLoadTemplate(templateId, 1);
+            });
+
+            // Edit button - start inline editing
+            row.querySelector('.template-edit')?.addEventListener('click', () => {
+                _startInlineEdit(row);
+            });
+
+            // Delete button
+            row.querySelector('.template-delete')?.addEventListener('click', () => {
+                _handleDeleteTemplate(templateId);
+            });
+
+            // Inline edit input handlers
+            const input = row.querySelector('.template-name-input');
+            input?.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    _finishInlineEdit(row, templateId, true);
+                } else if (e.key === 'Escape') {
+                    _finishInlineEdit(row, templateId, false);
+                }
+            });
+            input?.addEventListener('blur', () => {
+                _finishInlineEdit(row, templateId, true);
+            });
+        });
     }
 
     /**
-     * Handle loading template from dropdown select
+     * Handle loading a template to a week
+     * @param {string} templateId - The template ID
      * @param {number} weekIndex - 0 for Week 1, 1 for Week 2
      */
-    function _handleLoadTemplateFromSelect(weekIndex) {
-        const templateSelect = document.getElementById('template-select');
-        const templateId = templateSelect?.value;
-        if (!templateId) {
-            ToastService.showError('Please select a template first');
-            return;
-        }
-
+    function _handleLoadTemplate(templateId, weekIndex) {
         const template = TemplateService.getTemplate(templateId);
         if (!template) {
             ToastService.showError('Template not found');
             return;
         }
 
-        // Call the load callback with template slots and target week
         if (_loadTemplateCallback) {
             _loadTemplateCallback(template.slots, weekIndex);
             ToastService.showSuccess(`Loaded "${template.name}" to Week ${weekIndex + 1}`);
         }
-
-        // Reset dropdown after loading
-        if (templateSelect) {
-            templateSelect.value = '';
-            const loadW1Btn = document.getElementById('load-template-w1-btn');
-            const loadW2Btn = document.getElementById('load-template-w2-btn');
-            if (loadW1Btn) loadW1Btn.disabled = true;
-            if (loadW2Btn) loadW2Btn.disabled = true;
-        }
     }
 
     /**
-     * Show template management menu (rename/delete options)
+     * Start inline editing of template name
      */
-    function _handleTemplateMenuDropdown(e) {
-        const templates = typeof TemplateService !== 'undefined' ? TemplateService.getTemplates() : [];
-        if (templates.length === 0) return;
+    function _startInlineEdit(row) {
+        const nameSpan = row.querySelector('.template-name');
+        const input = row.querySelector('.template-name-input');
+        if (!nameSpan || !input) return;
 
-        // Remove any existing context menu
-        document.querySelector('.template-context-menu')?.remove();
+        nameSpan.classList.add('hidden');
+        input.classList.remove('hidden');
+        input.focus();
+        input.select();
+    }
 
-        const rect = e.currentTarget.getBoundingClientRect();
-        const menu = document.createElement('div');
-        menu.className = 'template-context-menu fixed bg-card border border-border rounded shadow-lg py-1 z-50';
-        menu.style.top = `${rect.bottom + 4}px`;
-        menu.style.left = `${rect.left - 100}px`;
+    /**
+     * Finish inline editing of template name
+     */
+    async function _finishInlineEdit(row, templateId, save) {
+        const nameSpan = row.querySelector('.template-name');
+        const input = row.querySelector('.template-name-input');
+        if (!nameSpan || !input) return;
 
-        // Build menu items for each template
-        menu.innerHTML = templates.map(t => `
-            <div class="template-menu-item px-3 py-1.5 text-xs hover:bg-accent cursor-default" data-template-id="${t.id}">
-                <div class="flex items-center justify-between gap-3">
-                    <span class="font-medium truncate max-w-[8rem]">${_escapeHtml(t.name)}</span>
-                    <div class="flex gap-1">
-                        <button class="template-rename-btn text-muted-foreground hover:text-foreground p-0.5" title="Rename">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                            </svg>
-                        </button>
-                        <button class="template-delete-btn text-muted-foreground hover:text-destructive p-0.5" title="Delete">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `).join('');
+        // Already hidden means edit already finished
+        if (input.classList.contains('hidden')) return;
 
-        document.body.appendChild(menu);
+        const newName = input.value.trim();
+        const template = TemplateService.getTemplate(templateId);
 
-        // Ensure menu stays on screen
-        const menuRect = menu.getBoundingClientRect();
-        if (menuRect.right > window.innerWidth) {
-            menu.style.left = `${window.innerWidth - menuRect.width - 8}px`;
-        }
-        if (menuRect.bottom > window.innerHeight) {
-            menu.style.top = `${rect.top - menuRect.height - 4}px`;
-        }
-
-        // Handle rename/delete clicks
-        menu.querySelectorAll('.template-rename-btn').forEach(btn => {
-            btn.addEventListener('click', async (clickEvent) => {
-                clickEvent.stopPropagation();
-                const templateId = btn.closest('.template-menu-item').dataset.templateId;
-                const template = TemplateService.getTemplate(templateId);
-                if (!template) return;
-                menu.remove();
-
-                _showTemplateNameModal(async (newName) => {
-                    if (!newName) return;
-                    const result = await TemplateService.renameTemplate(templateId, newName);
-                    if (result.success) {
-                        ToastService.showSuccess('Template renamed');
-                    } else {
-                        ToastService.showError(result.error || 'Failed to rename');
-                    }
-                }, template.name);
-            });
-        });
-
-        menu.querySelectorAll('.template-delete-btn').forEach(btn => {
-            btn.addEventListener('click', async (clickEvent) => {
-                clickEvent.stopPropagation();
-                const templateId = btn.closest('.template-menu-item').dataset.templateId;
-                const template = TemplateService.getTemplate(templateId);
-                if (!template) return;
-                menu.remove();
-
-                if (confirm(`Delete template "${template.name}"?`)) {
-                    const result = await TemplateService.deleteTemplate(templateId);
-                    if (result.success) {
-                        ToastService.showSuccess('Template deleted');
-                    } else {
-                        ToastService.showError(result.error || 'Failed to delete');
-                    }
-                }
-            });
-        });
-
-        // Close on click outside
-        const closeMenu = (clickEvent) => {
-            if (!menu.contains(clickEvent.target)) {
-                menu.remove();
-                document.removeEventListener('click', closeMenu);
+        if (save && newName && template && newName !== template.name) {
+            const result = await TemplateService.renameTemplate(templateId, newName);
+            if (result.success) {
+                nameSpan.textContent = newName;
+                ToastService.showSuccess('Template renamed');
+            } else {
+                ToastService.showError(result.error || 'Failed to rename');
+                input.value = template.name; // Reset to original
             }
-        };
-        setTimeout(() => document.addEventListener('click', closeMenu), 0);
+        } else if (template) {
+            input.value = template.name; // Reset to original
+        }
+
+        nameSpan.classList.remove('hidden');
+        input.classList.add('hidden');
+    }
+
+    /**
+     * Handle deleting a template
+     */
+    async function _handleDeleteTemplate(templateId) {
+        const template = TemplateService.getTemplate(templateId);
+        if (!template) return;
+
+        if (confirm(`Delete template "${template.name}"?`)) {
+            const result = await TemplateService.deleteTemplate(templateId);
+            if (result.success) {
+                ToastService.showSuccess('Template deleted');
+                // Re-render will happen via templates-updated event
+            } else {
+                ToastService.showError(result.error || 'Failed to delete');
+            }
+        }
     }
 
     /**
@@ -524,12 +471,20 @@ const GridActionButtons = (function() {
      * @param {Function} options.onDisplayModeChange - Called when display mode changes (Slice 2.5)
      */
     function init(containerId, options = {}) {
-        _container = document.getElementById(containerId);
-        if (!_container) {
+        const newContainer = document.getElementById(containerId);
+        if (!newContainer) {
             console.error(`GridActionButtons: Container #${containerId} not found`);
             return;
         }
 
+        // Slice 6.0b: Handle re-initialization (e.g., when TeamInfo re-renders drawer)
+        // Remove old event listeners if already initialized
+        if (_container) {
+            window.removeEventListener('templates-updated', _render);
+            window.removeEventListener('display-mode-changed', _render);
+        }
+
+        _container = newContainer;
         _getSelectedCells = options.getSelectedCells;
         _clearSelections = options.clearSelections;
         _onSyncStart = options.onSyncStart;
@@ -579,6 +534,7 @@ const GridActionButtons = (function() {
         // Slice 5.0b: Expose methods for SelectionActionButton
         addMe: _handleAddMe,
         removeMe: _handleRemoveMe,
-        clearAll: _handleClearAll
+        clearAll: _handleClearAll,
+        saveTemplate: _handleSaveTemplate
     };
 })();

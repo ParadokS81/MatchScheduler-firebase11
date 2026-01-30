@@ -598,13 +598,24 @@ const updateAvailability = onCall(async (request) => {
     const docId = `${teamId}_${weekId}`;
     const availRef = db.collection('availability').doc(docId);
 
+    // Check if document exists - create with proper structure if not
+    const existingDoc = await availRef.get();
+    if (!existingDoc.exists) {
+        await availRef.set({
+            teamId,
+            weekId,
+            slots: {},
+            lastUpdated: FieldValue.serverTimestamp()
+        });
+    }
+
+    // Build slot updates
+    // IMPORTANT: Use update() for nested paths, NOT set({ merge: true })
+    // set({ merge: true }) with dot-notation creates literal top-level fields!
     const updateData = {
-        teamId,
-        weekId,
         lastUpdated: FieldValue.serverTimestamp()
     };
 
-    // Use arrayUnion/arrayRemove for atomic slot updates
     slotIds.forEach(slotId => {
         if (action === 'add') {
             updateData[`slots.${slotId}`] = FieldValue.arrayUnion(userId);
@@ -613,8 +624,8 @@ const updateAvailability = onCall(async (request) => {
         }
     });
 
-    // Perform update (creates doc if doesn't exist)
-    await availRef.set(updateData, { merge: true });
+    // Use update() which correctly interprets dot notation as nested paths
+    await availRef.update(updateData);
 
     console.log(`Availability ${action}: ${userId} ${action === 'add' ? 'added to' : 'removed from'} ${slotIds.length} slots in ${docId}`);
 

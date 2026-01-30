@@ -203,11 +203,11 @@ const OnboardingModal = (function() {
                             required
                             minlength="2"
                             maxlength="4"
-                            pattern="[A-Z0-9]+"
+                            pattern="[A-Za-z0-9\[\]\(\)\{\}\-_.]+"
                             style="text-transform: uppercase;"
                         >
                         <p class="text-xs text-muted-foreground mt-1">
-                            2-4 characters, shown in grids and comparisons
+                            2-4 characters (letters, numbers, brackets, dashes)
                         </p>
                     </div>
                     

@@ -35,7 +35,27 @@ const WeekDisplay = (function() {
 
         const formatDate = (date) => `${months[date.getMonth()]} ${date.getDate()}`;
 
-        return `Week ${weekNumber}: ${formatDate(monday)} - ${formatDate(sunday)}`;
+        // Spaced out format: "2026    Week 6    Feb 9 - Feb 15"
+        return `${year} \u00A0\u00A0 Week ${weekNumber} \u00A0\u00A0 ${formatDate(monday)} - ${formatDate(sunday)}`;
+    }
+
+    /**
+     * Get the Monday date of a given week number
+     * @param {number} weekNumber - ISO week number
+     * @returns {Date} Monday of that week
+     */
+    function getMondayOfWeek(weekNumber) {
+        const now = new Date();
+        const year = now.getFullYear();
+
+        const jan1 = new Date(year, 0, 1);
+        const dayOfWeek = jan1.getDay();
+        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
+        const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
+
+        const monday = new Date(firstMonday);
+        monday.setDate(firstMonday.getDate() + (weekNumber - 1) * 7);
+        return monday;
     }
 
     /**

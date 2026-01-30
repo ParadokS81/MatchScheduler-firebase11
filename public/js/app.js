@@ -117,21 +117,39 @@ const MatchSchedulerApp = (function() {
         // Set up overflow click handlers for both grids (Slice 2.5)
         _setupOverflowHandlers();
 
-        // Initialize GridActionButtons with callbacks (Slice 5.0b: removed selectAll)
-        GridActionButtons.init('grid-action-buttons-container', {
-            getSelectedCells: _getAllSelectedCells,
-            clearSelections: _clearAllSelections,
-            onSyncStart: _handleSyncStart,
-            onSyncEnd: _handleSyncEnd,
-            clearAll: _handleClearAll,
-            loadTemplate: _handleLoadTemplate,
-            onDisplayModeChange: _handleDisplayModeChange
-        });
+        // Slice 6.0b: GridActionButtons now initializes into drawer container in TeamInfo
+        // Listen for drawer-ready event from TeamInfo (dispatched when drawer HTML is rendered)
+        const initGridActionButtons = () => {
+            const container = document.getElementById('grid-tools-drawer-content');
+            if (!container) return; // Container not ready yet
+
+            GridActionButtons.init('grid-tools-drawer-content', {
+                getSelectedCells: _getAllSelectedCells,
+                clearSelections: _clearAllSelections,
+                onSyncStart: _handleSyncStart,
+                onSyncEnd: _handleSyncEnd,
+                clearAll: _handleClearAll,
+                loadTemplate: _handleLoadTemplate,
+                onDisplayModeChange: _handleDisplayModeChange
+            });
+        };
+
+        // Listen for drawer-ready event (fires each time TeamInfo re-renders the drawer)
+        window.addEventListener('grid-tools-drawer-ready', initGridActionButtons);
+
+        // Try immediately in case drawer already exists
+        initGridActionButtons();
 
         // Initialize SelectionActionButton (Slice 5.0b: floating action button)
         if (typeof SelectionActionButton !== 'undefined') {
             SelectionActionButton.init();
         }
+
+        // Slice 5.0.1: Refresh grids when player colors change
+        window.addEventListener('player-colors-changed', () => {
+            if (_weekDisplay1) _weekDisplay1.refreshDisplay();
+            if (_weekDisplay2) _weekDisplay2.refreshDisplay();
+        });
 
         // Register selection change handlers
         _weekDisplay1.onSelectionChange(() => GridActionButtons.onSelectionChange());
@@ -441,6 +459,47 @@ const MatchSchedulerApp = (function() {
         if (saveBtn) {
             saveBtn.addEventListener('click', _handleSaveClick);
         }
+
+        // Listen for profile updates (avatar changes, etc.) to refresh grid display
+        window.addEventListener('profile-updated', _handleProfileUpdated);
+    }
+
+    /**
+     * Handle profile-updated event - refresh team data to get updated roster
+     * This ensures avatar changes propagate to the grid display
+     */
+    async function _handleProfileUpdated(event) {
+        if (!_selectedTeam) return;
+
+        console.log('👤 Profile updated, refreshing team roster...');
+
+        try {
+            // Re-fetch team to get updated playerRoster (with new photoURL)
+            // Force refresh to bypass cache and get fresh data from Firestore
+            const updatedTeam = await TeamService.getTeam(_selectedTeam.id, true);
+            if (updatedTeam) {
+                _selectedTeam = updatedTeam;
+
+                // Refresh both week displays with updated roster
+                const currentUserId = window.firebase?.auth?.currentUser?.uid;
+                if (currentUserId) {
+                    const week1Id = _weekDisplay1?.getWeekId();
+                    const week2Id = _weekDisplay2?.getWeekId();
+
+                    if (week1Id) {
+                        const data1 = AvailabilityService.getCachedData(_selectedTeam.id, week1Id);
+                        if (data1) _updateTeamDisplay(_weekDisplay1, data1, currentUserId);
+                    }
+                    if (week2Id) {
+                        const data2 = AvailabilityService.getCachedData(_selectedTeam.id, week2Id);
+                        if (data2) _updateTeamDisplay(_weekDisplay2, data2, currentUserId);
+                    }
+                }
+                console.log('✅ Grid refreshed with updated roster');
+            }
+        } catch (error) {
+            console.error('Failed to refresh team after profile update:', error);
+        }
     }
 
 
@@ -457,6 +516,9 @@ const MatchSchedulerApp = (function() {
 
     // Cleanup function
     function cleanup() {
+        // Remove profile-updated listener
+        window.removeEventListener('profile-updated', _handleProfileUpdated);
+
         if (typeof UserProfile !== 'undefined') {
             UserProfile.cleanup();
         }

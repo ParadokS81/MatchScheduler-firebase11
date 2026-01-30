@@ -1,9 +1,11 @@
 // TeamInfo Component - Team information display for middle-left panel
 // Following PRD v2 Architecture with Revealing Module Pattern
+// Enhanced for Slice 5.0.1: Roster display adapts to grid display mode
+// Enhanced for Slice 6.0b: Grid Tools drawer below roster
 
 const TeamInfo = (function() {
     'use strict';
-    
+
     // Private variables
     let _panel = null;
     let _currentUser = null;
@@ -14,7 +16,7 @@ const TeamInfo = (function() {
     let _teamListener = null; // Direct Firebase listener for selected team
     let _userProfileListener = null;
     let _initialized = false;
-    let _drawerInstance = null;
+    let _drawerExpanded = false; // Slice 6.0b: Track drawer state
     
     // Initialize component
     function init(panelId) {
@@ -33,7 +35,15 @@ const TeamInfo = (function() {
         window.addEventListener('profile-setup-complete', _handleProfileSetupComplete);
         window.addEventListener('team-joined', _handleTeamJoined);
         window.addEventListener('team-created', _handleTeamCreated);
-        
+        window.addEventListener('team-left', _handleTeamLeft);
+
+        // Slice 5.0.1: Re-render roster when display mode or player colors change
+        window.addEventListener('display-mode-changed', _render);
+        window.addEventListener('player-colors-changed', _render);
+
+        // Slice 6.0b: Update drawer height when templates change
+        window.addEventListener('templates-updated', _updateDrawerHeight);
+
         console.log('🏆 TeamInfo component initialized');
     }
     
@@ -266,6 +276,17 @@ const TeamInfo = (function() {
             console.log('⚡ Team switched instantly from cache:', team.teamName);
         }
     }
+
+    // Handle team settings click (Slice 6.0a)
+    function _handleTeamSettingsClick() {
+        if (!_selectedTeam) return;
+
+        if (typeof TeamManagementModal !== 'undefined') {
+            TeamManagementModal.show(_selectedTeam.id);
+        } else {
+            console.error('❌ TeamManagementModal not available');
+        }
+    }
     
     // Render component
     function _render() {
@@ -343,94 +364,162 @@ const TeamInfo = (function() {
     
     // Render teams mode
     function _renderTeamsMode() {
-        // Team switcher buttons (2 side by side)
-        let teamSwitcher = '';
-        if (_userTeams.length > 1) {
-            teamSwitcher = `
-                <div class="grid grid-cols-2 gap-2 mb-4">
-                    ${_userTeams.map(team => `
-                        <button 
-                            class="team-switch-btn px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                _selectedTeam && _selectedTeam.id === team.id 
-                                    ? 'bg-primary text-primary-foreground' 
-                                    : 'bg-card hover:bg-accent text-card-foreground'
-                            }"
-                            data-team-id="${team.id}"
-                        >
-                            ${team.teamTag}
-                        </button>
-                    `).join('')}
-                </div>
-            `;
-        } else if (_userTeams.length === 1) {
-            // Single team button (full width)
-            teamSwitcher = `
-                <button class="w-full px-3 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground mb-4">
-                    ${_selectedTeam.teamTag}
-                </button>
-            `;
-        }
-        
-        // Team card with logo placeholder and roster
-        let teamCard = '';
+        // Get current display mode for roster visuals and drawer header
+        const displayMode = typeof PlayerDisplayService !== 'undefined'
+            ? PlayerDisplayService.getDisplayMode()
+            : 'initials';
+
+        // Logo + team name section - logo on top, name below, clickable
+        let logoSection = '';
         if (_selectedTeam) {
-            // Build roster HTML separately to ensure clean structure
-            const rosterHTML = _selectedTeam.playerRoster.map(player => `
-                <div class="flex items-center gap-3 py-1">
-                    <div class="w-6 h-6 bg-primary/20 rounded-full flex items-center justify-center">
-                        <span class="text-xs font-bold text-primary">${player.initials}</span>
+            const activeLogoUrl = _selectedTeam.activeLogo?.urls?.medium;
+            const activeLogoContent = activeLogoUrl
+                ? `<img src="${activeLogoUrl}" alt="${_selectedTeam.teamName} logo" class="w-full h-full object-cover">`
+                : `<span class="text-3xl font-bold text-muted-foreground">${_selectedTeam.teamTag}</span>`;
+
+            // Inactive team logo (if user has 2 teams)
+            let inactiveLogoHTML = '';
+            const inactiveTeam = _userTeams.find(t => t.id !== _selectedTeam.id);
+            if (inactiveTeam) {
+                const inactiveLogoUrl = inactiveTeam.activeLogo?.urls?.medium;
+                const inactiveLogoContent = inactiveLogoUrl
+                    ? `<img src="${inactiveLogoUrl}" alt="${inactiveTeam.teamName} logo" class="w-full h-full object-cover">`
+                    : `<span class="text-sm font-bold text-muted-foreground">${inactiveTeam.teamTag}</span>`;
+
+                inactiveLogoHTML = `
+                    <div class="team-logo-switch w-12 h-12 rounded-md overflow-hidden cursor-pointer border border-border flex items-center justify-center transition-all"
+                         data-team-id="${inactiveTeam.id}" title="Switch to ${inactiveTeam.teamName}">
+                        ${inactiveLogoContent}
                     </div>
-                    <div class="flex-1">
-                        <div class="text-sm font-medium text-foreground">${player.displayName}</div>
-                    </div>
-                    ${player.role === 'leader' ? `
-                        <div class="w-4 h-4 rounded-full bg-primary flex items-center justify-center">
-                            <svg class="w-2 h-2 text-primary-foreground" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                            </svg>
-                        </div>
-                    ` : ''}
+                `;
+            }
+
+            // Team name with gear icon below logo
+            const teamNameRow = `
+                <div class="group flex items-center justify-center gap-1.5">
+                    <span class="text-sm font-semibold text-muted-foreground truncate">${_selectedTeam.teamName}</span>
+                    <span class="team-settings-icon opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 cursor-pointer"
+                          data-action="open-settings" title="Team Settings">
+                        <svg class="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </span>
                 </div>
-            `).join('');
-            
-            // Check if team has a logo
-            const logoUrl = _selectedTeam.activeLogo?.urls?.medium;
-            const logoSection = logoUrl
-                ? `<img src="${logoUrl}" alt="${_selectedTeam.teamName} logo" class="w-full h-full object-cover">`
-                : `<span class="text-2xl font-bold text-muted-foreground">${_selectedTeam.teamTag}</span>`;
+            `;
 
-            teamCard = `
-                <div class="mb-4" id="team-card-container">
-                    <!-- Logo with its own frame -->
-                    <div class="bg-card border border-border rounded-lg overflow-hidden w-32 h-32 flex items-center justify-center mb-4 mx-auto">
-                        ${logoSection}
+            logoSection = inactiveLogoHTML
+                ? `<div class="flex flex-col items-center gap-1.5 mb-3">
+                        <div class="flex items-end justify-center gap-2">
+                            <div class="team-logo-clickable bg-card border border-border rounded-lg overflow-hidden w-28 h-28 flex items-center justify-center cursor-pointer transition-all"
+                                 data-action="team-manage" title="Manage team">
+                                ${activeLogoContent}
+                            </div>
+                            ${inactiveLogoHTML}
+                        </div>
+                        ${teamNameRow}
+                    </div>`
+                : `<div class="flex flex-col items-center gap-1.5 mb-3">
+                        <div class="team-logo-clickable bg-card border border-border rounded-lg overflow-hidden w-36 h-36 flex items-center justify-center cursor-pointer transition-all"
+                             data-action="team-manage" title="Manage team">
+                            ${activeLogoContent}
+                        </div>
+                        ${teamNameRow}
+                    </div>`;
+        }
+
+        // Roster
+        let rosterHTML = '';
+        if (_selectedTeam) {
+            rosterHTML = _selectedTeam.playerRoster.map(player => {
+                const playerColor = typeof PlayerColorService !== 'undefined'
+                    ? PlayerColorService.getPlayerColor(player.userId)
+                    : null;
+                const colorOrDefault = typeof PlayerColorService !== 'undefined'
+                    ? PlayerColorService.getPlayerColorOrDefault(player.userId)
+                    : '#6B7280';
+
+                const leaderBadge = player.role === 'leader' ? `
+                    <svg class="w-4 h-4 text-primary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                    </svg>
+                ` : '';
+
+                let visualElement;
+                if (displayMode === 'coloredDots') {
+                    visualElement = `<span class="w-4 h-4 rounded-full flex-shrink-0" style="background-color: ${colorOrDefault}"></span>`;
+                } else if (displayMode === 'avatars' && player.photoURL) {
+                    visualElement = `
+                        <div class="w-6 h-6 rounded-full overflow-hidden flex-shrink-0">
+                            <img src="${player.photoURL}" alt="${player.initials}" class="w-full h-full object-cover">
+                        </div>
+                    `;
+                } else if (displayMode === 'coloredInitials') {
+                    visualElement = `<span class="text-sm font-bold flex-shrink-0" style="color: ${colorOrDefault}">${player.initials}</span>`;
+                } else {
+                    visualElement = `<span class="text-sm font-bold text-muted-foreground flex-shrink-0">${player.initials}</span>`;
+                }
+
+                return `
+                    <div class="roster-member group flex items-center gap-2 py-1 px-2 rounded hover:bg-muted/50 cursor-pointer"
+                         data-user-id="${player.userId}">
+                        ${visualElement}
+                        <span class="text-sm font-medium text-foreground truncate">${player.displayName}</span>
+                        ${leaderBadge}
                     </div>
+                `;
+            }).join('');
+        }
 
-                    <!-- Roster below logo (no frame) -->
-                    <div class="space-y-1">
+        // Display mode buttons for drawer header (inline, always visible)
+        const _modeBtn = (id, mode, label, content) => `
+            <button id="${id}"
+                    class="display-mode-btn px-1.5 py-0.5 text-xs rounded ${displayMode === mode ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}"
+                    data-mode="${mode}"
+                    title="${label}">${content}</button>`;
+
+        const displayModeButtons = `
+            <div class="flex items-center gap-0.5" id="display-mode-buttons">
+                ${_modeBtn('display-mode-initials', 'initials', 'Plain initials', 'ABC')}
+                ${_modeBtn('display-mode-coloredInitials', 'coloredInitials', 'Colored initials', '<span class="text-rainbow font-semibold">ABC</span>')}
+                ${_modeBtn('display-mode-coloredDots', 'coloredDots', 'Colored dots', '<span class="inline-flex gap-0.5"><span class="w-1.5 h-1.5 rounded-full bg-red-400"></span><span class="w-1.5 h-1.5 rounded-full bg-green-400"></span><span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span></span>')}
+                ${_modeBtn('display-mode-avatars', 'avatars', 'Avatar badges', '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>')}
+            </div>
+        `;
+
+        // Grid Tools overlay drawer with inline display mode buttons in header
+        const gridToolsDrawer = `
+            <div class="grid-tools-drawer ${_drawerExpanded ? 'drawer-open' : 'drawer-closed'}">
+                <div class="grid-tools-header w-full flex items-center gap-2 px-3 py-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors bg-card"
+                     aria-expanded="${_drawerExpanded}"
+                     aria-controls="grid-tools-drawer-content">
+                    <span class="cursor-pointer select-none flex-shrink-0" data-action="toggle-drawer">Templates</span>
+                    ${displayModeButtons}
+                    <svg class="drawer-arrow w-4 h-4 transition-transform duration-300 cursor-pointer flex-shrink-0"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                         data-action="toggle-drawer"
+                         style="transform: rotate(${_drawerExpanded ? '180deg' : '0deg'})">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                    </svg>
+                </div>
+                <div id="grid-tools-drawer-content" class="grid-tools-drawer-body bg-card px-3 pb-3">
+                    <!-- GridActionButtons will render here (templates only) -->
+                </div>
+            </div>
+        `;
+
+        // Container
+        return `
+            <div class="team-info-container h-full flex flex-col relative overflow-hidden">
+                <div class="space-y-2 flex-1 min-h-0 overflow-y-auto pb-6 px-1">
+                    ${logoSection}
+                    <div class="space-y-0.5 max-w-fit mx-auto">
                         ${rosterHTML}
                     </div>
                 </div>
-            `;
-        }
-        
-        return `
-            <div class="space-y-4">
-                <!-- Remove "Team Info" header -->
-                ${_userTeams.length < 2 ? `
-                    <div class="flex justify-end">
-                        <button 
-                            id="add-team-btn"
-                            class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                            title="Add second team"
-                        >
-                            + Add Team
-                        </button>
-                    </div>
-                ` : ''}
-                
-                ${teamSwitcher}
-                ${teamCard}
+                ${gridToolsDrawer}
             </div>
         `;
     }
@@ -439,75 +528,98 @@ const TeamInfo = (function() {
     function _attachEventListeners() {
         if (!_panel) return;
         
-        // Join/Create team button
+        // Join/Create team button (no-team state)
         const joinCreateBtn = _panel.querySelector('#join-create-team-btn');
         if (joinCreateBtn) {
             joinCreateBtn.addEventListener('click', _handleJoinCreateTeam);
         }
-        
-        // Add team button
-        const addTeamBtn = _panel.querySelector('#add-team-btn');
-        if (addTeamBtn) {
-            addTeamBtn.addEventListener('click', _handleJoinCreateTeam);
-        }
-        
-        // Team switch buttons
-        const teamSwitchBtns = _panel.querySelectorAll('.team-switch-btn');
-        teamSwitchBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const teamId = e.target.dataset.teamId;
-                _handleTeamSwitch(teamId);
+
+        // Logo-as-switcher: active logo click → team management modal
+        const activeLogos = _panel.querySelectorAll('[data-action="team-manage"]');
+        activeLogos.forEach(logo => {
+            logo.addEventListener('click', _handleJoinCreateTeam);
+        });
+
+        // Logo-as-switcher: inactive team logo click → switch team
+        const inactiveLogos = _panel.querySelectorAll('.team-logo-switch');
+        inactiveLogos.forEach(logo => {
+            logo.addEventListener('click', (e) => {
+                const teamId = e.currentTarget.dataset.teamId;
+                if (teamId) _handleTeamSwitch(teamId);
             });
         });
-        
-        // Copy join code button
-        const copyJoinCodeBtn = _panel.querySelector('#copy-join-code-btn');
-        if (copyJoinCodeBtn) {
-            copyJoinCodeBtn.addEventListener('click', _handleCopyJoinCode);
+
+        // Team settings gear icon
+        const settingsIcons = _panel.querySelectorAll('[data-action="open-settings"]');
+        settingsIcons.forEach(icon => {
+            icon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                _handleTeamSettingsClick();
+            });
+        });
+
+        // Slice 5.0.1: Roster member click for color picker (only in colored modes)
+        const displayMode = typeof PlayerDisplayService !== 'undefined'
+            ? PlayerDisplayService.getDisplayMode()
+            : 'initials';
+
+        if (displayMode === 'coloredInitials' || displayMode === 'coloredDots') {
+            const rosterMembers = _panel.querySelectorAll('.roster-member');
+            rosterMembers.forEach(member => {
+                member.addEventListener('click', (e) => {
+                    const userId = member.dataset.userId;
+                    if (userId && typeof ColorPickerPopover !== 'undefined') {
+                        ColorPickerPopover.show(member, userId);
+                    }
+                });
+            });
         }
-        
-        // Initialize team management drawer if we have a team
-        if (_selectedTeam && _currentUser && _userProfile) {
-            _initializeDrawer();
+
+        // Slice 6.0b: Grid Tools drawer toggle — only label and arrow toggle, not display mode buttons
+        const drawerToggles = _panel.querySelectorAll('[data-action="toggle-drawer"]');
+        drawerToggles.forEach(el => {
+            el.addEventListener('click', _toggleGridToolsDrawer);
+        });
+
+        // Dispatch event so GridActionButtons can initialize into the drawer
+        if (_panel.querySelector('.grid-tools-header')) {
+            window.dispatchEvent(new CustomEvent('grid-tools-drawer-ready'));
         }
     }
-    
-    // Initialize team management drawer
-    function _initializeDrawer() {
-        if (!_selectedTeam || !_currentUser || !_userProfile) return;
-        
-        // Check if TeamManagementDrawer is available
-        if (typeof TeamManagementDrawer === 'undefined') {
-            console.warn('⚠️ TeamManagementDrawer not available');
-            return;
+
+    // Slice 6.0b: Toggle Grid Tools drawer expanded/collapsed
+    function _toggleGridToolsDrawer() {
+        const drawer = _panel.querySelector('.grid-tools-drawer');
+        const header = _panel.querySelector('.grid-tools-header');
+        const arrow = header?.querySelector('.drawer-arrow');
+
+        if (!drawer) return;
+
+        _drawerExpanded = !_drawerExpanded;
+
+        if (_drawerExpanded) {
+            // Expand - slide up to show content
+            drawer.classList.remove('drawer-closed');
+            drawer.classList.add('drawer-open');
+            header.setAttribute('aria-expanded', 'true');
+            if (arrow) arrow.style.transform = 'rotate(180deg)';
+        } else {
+            // Collapse - slide down to hide content
+            drawer.classList.remove('drawer-open');
+            drawer.classList.add('drawer-closed');
+            header.setAttribute('aria-expanded', 'false');
+            if (arrow) arrow.style.transform = 'rotate(0deg)';
         }
-        
-        // Find the panel content container for full width
-        const panelContent = _panel.querySelector('.panel-content');
-        if (!panelContent) {
-            console.warn('⚠️ Panel content not found');
-            return;
-        }
-        
-        // Clean up existing drawer instance
-        if (_drawerInstance) {
-            _drawerInstance.cleanup();
-            _drawerInstance = null;
-        }
-        
-        // Create new drawer instance
-        _drawerInstance = Object.create(TeamManagementDrawer);
-        _drawerInstance.init(panelContent);
-        
-        // Determine if current user is leader
-        const isLeader = _selectedTeam.playerRoster.some(
-            player => player.userId === _currentUser.uid && player.role === 'leader'
-        );
-        
-        // Update drawer with team data
-        _drawerInstance.updateTeamData(_selectedTeam, isLeader);
-        
-        console.log('🔧 Team management drawer initialized for team:', _selectedTeam.teamName);
+
+        // Dispatch event so GridActionButtons can know drawer state changed
+        window.dispatchEvent(new CustomEvent('grid-tools-drawer-toggled', {
+            detail: { expanded: _drawerExpanded }
+        }));
+    }
+
+    // Slice 6.0b: Placeholder for drawer height updates (not needed for overlay style)
+    function _updateDrawerHeight() {
+        // No-op for overlay drawer - height is fixed
     }
     
     // Handle join/create team
@@ -572,10 +684,29 @@ const TeamInfo = (function() {
         _loadUserTeams();
     }
     
-    // Handle team created event  
+    // Handle team created event
     function _handleTeamCreated(event) {
         console.log('Team created event received - refreshing team data');
-        // The Firebase listener should pick this up automatically, but let's force a refresh
+        _loadUserTeams();
+    }
+
+    // Handle team left event - refresh to switch team or show no-team state
+    function _handleTeamLeft(event) {
+        console.log('Team left event received - refreshing team data');
+        const leftTeamId = event.detail?.teamId;
+
+        // Remove the left team from local state immediately for instant feedback
+        _userTeams = _userTeams.filter(t => t.id !== leftTeamId);
+
+        if (_selectedTeam?.id === leftTeamId) {
+            // Clear selection so _loadUserTeams will pick the remaining team via _selectTeam
+            _selectedTeam = null;
+            _selectedTeamId = null;
+            _cleanupListeners();
+        }
+
+        // Re-render immediately (shows remaining team or no-team state), then reload
+        _render();
         _loadUserTeams();
     }
     
@@ -619,26 +750,24 @@ const TeamInfo = (function() {
             _teamListener = null;
             console.log('🧹 Cleaned up team listener');
         }
-        
+
         // Clean up user profile listener
         if (_userProfileListener) {
             _userProfileListener();
             _userProfileListener = null;
             console.log('🧹 Cleaned up user profile listener');
         }
-        
-        // Clean up drawer instance
-        if (_drawerInstance) {
-            _drawerInstance.cleanup();
-            _drawerInstance = null;
-            console.log('🧹 Cleaned up drawer instance');
-        }
     }
     
     // Cleanup function
     function cleanup() {
         _cleanupListeners();
+
+        // Slice 6.0b: Remove drawer-related event listeners
+        window.removeEventListener('templates-updated', _updateDrawerHeight);
+
         _initialized = false;
+        _drawerExpanded = false;
     }
     
     // Public API

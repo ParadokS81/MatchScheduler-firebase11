@@ -12,12 +12,13 @@ const storage = getStorage();
 
 /**
  * Cloud Function triggered when a new avatar is uploaded to the temporary path.
- * This function will:
- * 1. Verify the uploader matches the userId in the path.
- * 2. Resize the image into multiple formats (128, 64, 32).
- * 3. Save the processed avatars to the public user-avatars/ path.
- * 4. Update the user's document in Firestore with the new avatar URL.
- * 5. Clean up the original temporary file.
+ *
+ * Simplified pipeline (single 128px output):
+ * 1. Verify the uploader matches the userId in the path
+ * 2. Resize image to 128px (CSS handles display sizing)
+ * 3. Save processed avatar to user-avatars/ path
+ * 4. Update user document and team rosters with photoURL
+ * 5. Clean up temporary files
  */
 exports.processAvatarUpload = onObjectFinalized({
     region: 'europe-west10',
@@ -35,13 +36,13 @@ exports.processAvatarUpload = onObjectFinalized({
 
     // --- Basic validation and exit conditions ---
 
-    // Exit if this is not an image.
+    // Exit if this is not an image
     if (!contentType || !contentType.startsWith('image/')) {
         console.log('This is not an image.');
         return null;
     }
 
-    // Exit if the file is not in the avatar upload directory.
+    // Exit if the file is not in the avatar upload directory
     if (!filePath.startsWith('avatar-uploads/')) {
         console.log('Not an avatar upload, skipping processing.');
         return null;
@@ -73,100 +74,97 @@ exports.processAvatarUpload = onObjectFinalized({
         return bucket.file(filePath).delete();
     }
 
-    // 3. Download image to a temporary location in the Cloud Function's environment
+    // 3. Download image to temporary location
     const tempFilePath = path.join(os.tmpdir(), originalFileName);
-    const tempAvatarDir = path.join(os.tmpdir(), 'avatars');
+    const timestamp = Date.now();
+    const avatarFileName = `avatar_${timestamp}.png`;
+    const processedFilePath = path.join(os.tmpdir(), avatarFileName);
 
     try {
-        // Ensure avatar directory exists
-        if (!fs.existsSync(tempAvatarDir)){
-            fs.mkdirSync(tempAvatarDir);
-        }
-
         await bucket.file(filePath).download({ destination: tempFilePath });
         console.log('Image downloaded locally to', tempFilePath);
 
-        // 4. Use Sharp to create resized versions
-        const timestamp = Date.now();
-        const sizes = [
-            { name: 'large', width: 128 },
-            { name: 'medium', width: 64 },
-            { name: 'small', width: 32 }
-        ];
+        // 4. Resize to single 128px version (CSS handles display sizing)
+        await sharp(tempFilePath)
+            .resize(128, 128, { fit: 'cover', position: 'center' })
+            .png({ quality: 90 })
+            .toFile(processedFilePath);
 
-        const uploadPromises = sizes.map(async (size) => {
-            const avatarFileName = `${size.name}_${timestamp}.png`;
-            const avatarFilePath = path.join(tempAvatarDir, avatarFileName);
+        // 5. Upload processed avatar to public folder
+        const destination = `user-avatars/${userId}/${avatarFileName}`;
 
-            await sharp(tempFilePath)
-                .resize(size.width, size.width, { fit: 'cover', position: 'center' })
-                .png({ quality: 90 })
-                .toFile(avatarFilePath);
-
-            // 5. Upload processed images to the public folder
-            const destination = `user-avatars/${userId}/${avatarFileName}`;
-
-            const [file] = await bucket.upload(avatarFilePath, {
-                destination: destination,
-                metadata: {
-                    contentType: 'image/png',
-                    cacheControl: 'public, max-age=31536000', // Cache for 1 year
-                },
-            });
-
-            // Clean up the local avatar file
-            fs.unlinkSync(avatarFilePath);
-
-            return { size: size.name, path: destination };
+        await bucket.upload(processedFilePath, {
+            destination: destination,
+            metadata: {
+                contentType: 'image/png',
+                cacheControl: 'public, max-age=31536000', // Cache for 1 year
+            },
         });
 
-        const processedAvatars = await Promise.all(uploadPromises);
-
-        // 6. Get public URLs for all processed avatars
+        // 6. Get public URL
         const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+        let photoURL;
 
-        const urlPromises = processedAvatars.map(async (avatar) => {
-            const file = bucket.file(avatar.path);
-
-            let url;
-            if (isEmulator) {
-                // In emulator, construct the download URL directly
-                const encodedPath = encodeURIComponent(avatar.path);
-                url = `http://127.0.0.1:9199/v0/b/${object.bucket}/o/${encodedPath}?alt=media`;
-            } else {
-                // In production, make the file public and use the public URL
-                await file.makePublic();
-                url = `https://storage.googleapis.com/${object.bucket}/${avatar.path}`;
-            }
-
-            return { size: avatar.size, url: url };
-        });
-
-        const avatarUrlsWithSizes = await Promise.all(urlPromises);
-        const avatarUrls = avatarUrlsWithSizes.reduce((acc, curr) => {
-            acc[curr.size] = curr.url;
-            return acc;
-        }, {});
+        if (isEmulator) {
+            const encodedPath = encodeURIComponent(destination);
+            photoURL = `http://127.0.0.1:9199/v0/b/${object.bucket}/o/${encodedPath}?alt=media`;
+        } else {
+            const file = bucket.file(destination);
+            await file.makePublic();
+            photoURL = `https://storage.googleapis.com/${object.bucket}/${destination}`;
+        }
 
         // 7. Update Firestore user document
         await userRef.update({
-            customAvatarUrl: avatarUrls.large,
+            photoURL: photoURL,
             avatarSource: 'custom',
-            photoURL: avatarUrls.large, // Also update photoURL for grid display
             lastUpdatedAt: FieldValue.serverTimestamp()
         });
 
-        console.log(`Successfully processed avatar for user ${userId}. URLs:`, avatarUrls);
+        console.log(`Successfully processed avatar for user ${userId}. URL: ${photoURL}`);
+
+        // 8. Update photoURL in all team rosters
+        const userDoc = await userRef.get();
+        const userData = userDoc.data();
+        if (userData?.teams) {
+            const teamIds = Object.keys(userData.teams).filter(id => userData.teams[id] === true);
+
+            for (const teamId of teamIds) {
+                try {
+                    const teamRef = db.collection('teams').doc(teamId);
+                    const teamDoc = await teamRef.get();
+
+                    if (teamDoc.exists) {
+                        const teamData = teamDoc.data();
+                        const updatedRoster = teamData.playerRoster.map(player => {
+                            if (player.userId === userId) {
+                                return {
+                                    ...player,
+                                    photoURL: photoURL
+                                };
+                            }
+                            return player;
+                        });
+
+                        await teamRef.update({ playerRoster: updatedRoster });
+                        console.log(`Updated avatar in team roster: ${teamId}`);
+                    }
+                } catch (err) {
+                    console.error(`Failed to update avatar in team ${teamId}:`, err);
+                    // Continue with other teams even if one fails
+                }
+            }
+        }
 
     } catch (error) {
         console.error('An error occurred during avatar processing:', error);
     } finally {
-        // 8. Clean up the original temporary files
+        // 9. Clean up temporary files
         if (fs.existsSync(tempFilePath)) {
             fs.unlinkSync(tempFilePath);
         }
-        if (fs.existsSync(tempAvatarDir)) {
-            fs.rmdirSync(tempAvatarDir, { recursive: true });
+        if (fs.existsSync(processedFilePath)) {
+            fs.unlinkSync(processedFilePath);
         }
         await bucket.file(filePath).delete();
         console.log(`Cleaned up temporary files for ${filePath}`);

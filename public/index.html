@@ -127,6 +127,7 @@
                     <div class="divider-tabs">
                         <button class="divider-tab active" data-tab="calendar">📅 Calendar</button>
                         <button class="divider-tab" data-tab="teams">👥 Teams</button>
+                        <button class="divider-tab" data-tab="players">🎮 Players</button>
                         <button class="divider-tab" data-tab="tournament">🏆 Tournament</button>
                     </div>
                 </div>
@@ -139,11 +140,10 @@
             </div>
 
             <!-- Bottom Row (Week 2 / Content + Side Panels) -->
+            <!-- Slice 6.0b: Grid Tools moved to TeamInfo drawer, this panel is now empty -->
             <div id="panel-bottom-left" class="panel">
-                <div class="panel-content">
-                    <h3 class="text-lg font-semibold mb-2">Grid Tools</h3>
-                    <div id="grid-action-buttons-container"></div>
-                    <p class="text-muted-foreground text-sm mt-2">More tools coming soon</p>
+                <div class="panel-content h-full flex items-center justify-center">
+                    <p class="text-xs text-muted-foreground italic">Coming soon</p>
                 </div>
             </div>
 
@@ -209,6 +209,7 @@
     <script src="js/services/AvailabilityService.js"></script>
     <script src="js/services/TemplateService.js"></script>
     <script src="js/services/PlayerDisplayService.js"></script>
+    <script src="js/services/PlayerColorService.js"></script>
     <script src="js/services/ConfirmationModal.js"></script>
     <script src="js/components/ToastService.js"></script>
     <script src="js/components/UserProfile.js"></script>
@@ -217,6 +218,7 @@
     <script src="js/components/TeamManagementDrawer.js"></script>
     <script src="js/components/KickPlayerModal.js"></script>
     <script src="js/components/TransferLeadershipModal.js"></script>
+    <script src="js/components/TeamManagementModal.js"></script>
     <script src="js/components/TeamInfo.js"></script>
     <script src="js/components/AvailabilityGrid.js"></script>
     <script src="js/components/WeekDisplay.js"></script>
@@ -224,6 +226,7 @@
     <script src="js/components/GridActionButtons.js"></script>
     <script src="js/components/SelectionActionButton.js"></script>
     <script src="js/components/PlayerTooltip.js"></script>
+    <script src="js/components/ColorPickerPopover.js"></script>
     <script src="js/components/OverflowModal.js"></script>
     <script src="js/components/DevToolbar.js"></script>
     <script src="js/services/TeamBrowserState.js"></script>
@@ -239,6 +242,8 @@
     <script src="js/services/AvatarUploadService.js"></script>
     <script src="js/components/AvatarUploadModal.js"></script>
     <script src="js/components/AvatarManagerModal.js"></script>
+    <script src="js/services/QWHubService.js"></script>
+    <script src="js/components/TeamsBrowserPanel.js"></script>
     <script src="js/components/BottomPanelController.js"></script>
     <script src="js/app.js" type="module"></script>
 </body>

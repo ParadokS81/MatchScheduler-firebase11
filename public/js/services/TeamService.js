@@ -140,30 +140,30 @@ const TeamService = (function() {
     }
     
     // Get team by ID (cache-first)
-    async function getTeam(teamId) {
+    async function getTeam(teamId, forceRefresh = false) {
         try {
-            // Check cache first (hot path)
-            if (_cacheInitialized && _allTeamsCache.has(teamId)) {
+            // Check cache first (hot path) unless force refresh requested
+            if (!forceRefresh && _cacheInitialized && _allTeamsCache.has(teamId)) {
                 console.log('📦 Team loaded from cache:', teamId);
                 return _allTeamsCache.get(teamId);
             }
-            
-            // Fallback to Firebase if not in cache
+
+            // Fetch from Firebase
             const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
-            
+
             const teamDoc = await getDoc(doc(_db, 'teams', teamId));
-            
+
             if (!teamDoc.exists()) {
                 throw new Error('Team not found');
             }
-            
+
             const teamData = { id: teamDoc.id, ...teamDoc.data() };
-            
+
             // Update cache
             _allTeamsCache.set(teamId, teamData);
-            
+
             return teamData;
-            
+
         } catch (error) {
             console.error('❌ Error getting team:', error);
             throw new Error(error.message || 'Failed to get team data');
@@ -289,25 +289,26 @@ const TeamService = (function() {
         return null;
     }
     
-    // Validate team tag
+    // Validate team tag (matches QW in-game tag, case-sensitive)
     function validateTeamTag(teamTag) {
         if (!teamTag || typeof teamTag !== 'string') {
             return 'Team tag is required';
         }
-        
-        const trimmed = teamTag.trim().toUpperCase();
-        if (trimmed.length < 2) {
-            return 'Team tag must be at least 2 characters';
+
+        const trimmed = teamTag.trim();
+        if (trimmed.length < 1) {
+            return 'Team tag is required';
         }
-        
+
         if (trimmed.length > 4) {
             return 'Team tag must be 4 characters or less';
         }
-        
-        if (!/^[A-Z0-9]+$/.test(trimmed)) {
-            return 'Team tag can only contain uppercase letters and numbers';
+
+        // Allow letters, numbers, and QW-style special characters: [ ] ( ) { } - _ . , !
+        if (!/^[a-zA-Z0-9\[\]\(\)\{\}\-_.,!]+$/.test(trimmed)) {
+            return 'Team tag can only contain letters, numbers, and common QW characters';
         }
-        
+
         return null;
     }
     
@@ -329,6 +330,25 @@ const TeamService = (function() {
         return null;
     }
     
+    // Update team tag (direct Firestore write, leader auth via security rules)
+    async function updateTeamTag(teamId, teamTag) {
+        const { doc, updateDoc, Timestamp } = await import(
+            'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js'
+        );
+
+        await updateDoc(doc(_db, 'teams', teamId), {
+            teamTag: teamTag,
+            lastActivityAt: Timestamp.now()
+        });
+
+        // Update cache
+        if (_cacheInitialized && _allTeamsCache.has(teamId)) {
+            const cached = _allTeamsCache.get(teamId);
+            cached.teamTag = teamTag;
+            cached.lastActivityAt = new Date();
+        }
+    }
+
     // Generic Cloud Function caller
     async function callFunction(functionName, data) {
         if (!_initialized || !_functions) {
@@ -369,6 +389,7 @@ const TeamService = (function() {
         isCacheReady,
         // Removed subscribe/unsubscribe - components handle their own listeners
         updateCachedTeam,
+        updateTeamTag,
         cleanup,
         generateJoinCode,
         validateTeamName,

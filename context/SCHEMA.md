@@ -29,8 +29,8 @@ interface UserDocument {
   photoURL: string | null;    // Computed URL for grid display, based on avatarSource
 
   // Avatar customization (Slice 4.3.3)
-  avatarSource: 'custom' | 'discord' | 'google' | 'default' | 'initials';  // User's preferred avatar source
-  customAvatarUrl: string | null;  // URL to custom uploaded avatar (128px), set by Cloud Function
+  // Simplified: single photoURL (128px max), CSS handles display sizing
+  avatarSource: 'custom' | 'discord' | 'google' | 'initials';  // User's preferred avatar source (no 'default' - use initials as fallback)
   discordAvatarHash: string | null;  // Discord avatar hash for CDN URL construction
 
   // Discord integration (Slice 4.3/4.4)
@@ -49,6 +49,12 @@ interface UserDocument {
 
   // Favorites (for comparison workflow)
   favoriteTeams: string[];    // Array of teamIds the user has starred
+
+  // Player color assignments (Slice 5.0.1)
+  // Per-user preference for how other players appear in the grid
+  playerColors: {
+    [targetUserId: string]: string  // Hex color, e.g., "#FF6B6B"
+  } | null;
 
   // Metadata
   createdAt: Timestamp;
@@ -103,7 +109,9 @@ Team information with embedded roster.
 interface TeamDocument {
   // Identity
   teamName: string;           // 3-30 chars
-  teamTag: string;            // 2-4 chars, uppercase
+  teamTag: string;            // 1-4 chars, case-sensitive, matches QW in-game tag
+                               // Used for QW Hub API lookups (hub.quakeworld.nu)
+                               // Special chars allowed: []()-_.,!
 
   // Leadership
   leaderId: string;           // userId of team leader
@@ -136,6 +144,7 @@ interface PlayerEntry {
   userId: string;             // Reference to /users/{userId}
   displayName: string;        // Denormalized from user profile
   initials: string;           // Denormalized from user profile
+  photoURL: string | null;    // Denormalized for avatar display (128px, CSS handles sizing)
   joinedAt: Date;             // When they joined the team
   role: 'leader' | 'member';
 }
@@ -302,15 +311,28 @@ const isLeader = team.leaderId === userId;
 
 ### Update availability atomically
 ```javascript
+// IMPORTANT: Use update() for nested field paths, NOT set({ merge: true })
+// set({ merge: true }) with dot-notation keys creates literal top-level fields
+// like "slots.mon_1800" instead of nested slots.mon_1800
+
 // Add user to slot
-await availRef.set({
-  [`slots.${slotId}`]: FieldValue.arrayUnion(userId)
-}, { merge: true });
+await availRef.update({
+  [`slots.${slotId}`]: FieldValue.arrayUnion(userId),
+  lastUpdated: FieldValue.serverTimestamp()
+});
 
 // Remove user from slot
-await availRef.set({
-  [`slots.${slotId}`]: FieldValue.arrayRemove(userId)
-}, { merge: true });
+await availRef.update({
+  [`slots.${slotId}`]: FieldValue.arrayRemove(userId),
+  lastUpdated: FieldValue.serverTimestamp()
+});
+
+// If document might not exist, create it first:
+const doc = await availRef.get();
+if (!doc.exists) {
+  await availRef.set({ teamId, weekId, slots: {}, lastUpdated: FieldValue.serverTimestamp() });
+}
+await availRef.update({ [`slots.${slotId}`]: FieldValue.arrayUnion(userId) });
 ```
 
 ### Get availability document ID
@@ -338,4 +360,6 @@ const docId = `${teamId}_${weekId}`;
 - **2026-01-23**: Initial schema documentation
 - Includes: users, teams, availability, eventLog collections
 - **2026-01-23**: Added templates subcollection under users (Slice 2.4)
-- **2026-01-26**: Added avatar customization fields (avatarSource, customAvatarUrl, discordAvatarHash) - Slice 4.3.3
+- **2026-01-26**: Added avatar customization fields (avatarSource, discordAvatarHash) - Slice 4.3.3
+- **2026-01-28**: Added playerColors map - Slice 5.0.1
+- **2026-01-29**: Simplified avatar system - removed avatarUrls multi-size, using single photoURL (128px) with CSS sizing

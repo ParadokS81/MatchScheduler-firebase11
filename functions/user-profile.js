@@ -237,7 +237,7 @@ exports.updateProfile = onCall(async (request) => {
 
     // Handle avatar source preference
     if (avatarSource !== undefined) {
-        const validSources = ['custom', 'discord', 'google', 'default', 'initials'];
+        const validSources = ['custom', 'discord', 'google', 'initials'];
         if (!validSources.includes(avatarSource)) {
             throw new HttpsError('invalid-argument', 'Invalid avatar source');
         }
@@ -266,8 +266,9 @@ exports.updateProfile = onCall(async (request) => {
             const userTeams = userData.teams || {};
             
             // Read all team documents if we need to update rosters
+            // photoURL needs to propagate to denormalized roster data
             const teamDocs = {};
-            if (updates.initials || updates.displayName) {
+            if (updates.initials || updates.displayName || updates.photoURL !== undefined) {
                 for (const teamId of Object.keys(userTeams)) {
                     const teamRef = db.collection('teams').doc(teamId);
                     const teamDoc = await transaction.get(teamRef);
@@ -284,30 +285,31 @@ exports.updateProfile = onCall(async (request) => {
                 lastLogin: FieldValue.serverTimestamp()
             });
             
-            // Update team rosters if needed
-            if (updates.initials || updates.displayName) {
+            // Update team rosters if needed (displayName, initials, or photoURL)
+            if (updates.initials || updates.displayName || updates.photoURL !== undefined) {
                 for (const [teamId, teamInfo] of Object.entries(teamDocs)) {
                     const playerRoster = teamInfo.data.playerRoster || [];
-                    
+
                     // Find and update this user's entry in the roster
                     const updatedRoster = playerRoster.map(player => {
                         if (player.userId === uid) {
                             return {
                                 ...player,
                                 ...(updates.displayName && { displayName: updates.displayName }),
-                                ...(updates.initials && { initials: updates.initials })
+                                ...(updates.initials && { initials: updates.initials }),
+                                ...(updates.photoURL !== undefined && { photoURL: updates.photoURL })
                             };
                         }
                         return player;
                     });
-                    
+
                     // Update team document with new roster
                     transaction.update(teamInfo.ref, {
                         playerRoster: updatedRoster,
                         lastActivityAt: FieldValue.serverTimestamp()
                     });
                 }
-                
+
                 console.log(`✅ Updated profile and ${Object.keys(teamDocs).length} team rosters for user: ${uid}`);
             }
         });

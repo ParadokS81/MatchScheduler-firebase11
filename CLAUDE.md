@@ -9,6 +9,7 @@ For complete architecture specifications, refer to the Pillar documents.
 - **Pillar Documents**: `context/Pillar*.md` - Architecture specifications
 - **Slice Specs**: `context/slices/` - Feature implementation details
 - **Dev Setup**: `docs/DEV-SETUP.md` - Local development with Firebase emulators
+- **QWHub API**: `context/QWHUB-API-REFERENCE.md` - External API for match history, detailed stats, mapshots (READ before any QWHub integration work)
 
 ---
 
@@ -360,6 +361,7 @@ setLoading(false);
 10. **Not connecting frontend to backend** - Every button needs a backend
 11. **Writing tests immediately** - Implementation first, check for errors, then test
 12. **Using React/Vue for new components** - Use Alpine.js for reactive UI needs
+13. **Using `set({ merge: true })` with dot-notation keys** - Use `update()` instead! `set({ merge: true })` treats `"slots.mon_1800"` as a literal top-level field name, while `update()` correctly interprets it as nested path `slots.mon_1800`
 
 ---
 

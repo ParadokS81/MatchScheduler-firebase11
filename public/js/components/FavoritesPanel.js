@@ -176,36 +176,31 @@ const FavoritesPanel = (function() {
                                   ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                                   : 'bg-muted text-muted-foreground cursor-not-allowed'}"
                        ${selectedTeams.size < 1 ? 'disabled' : ''}>
-                   Compare Now (${selectedTeams.size} opponent${selectedTeams.size !== 1 ? 's' : ''})
+                   Compare (${selectedTeams.size})
                </button>`;
 
         _container.innerHTML = `
             <div class="p-4 h-full flex flex-col">
-                <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-lg font-semibold text-foreground">
-                        Favorites (${favorites.length})
-                    </h3>
-                    <div class="flex gap-2">
-                        <button id="favorites-select-all"
-                                class="px-2 py-1 text-xs rounded bg-muted hover:bg-muted/80
-                                       text-muted-foreground transition-colors"
-                                ${favorites.length === 0 ? 'disabled' : ''}>
-                            Select All
-                        </button>
-                        <button id="favorites-deselect-all"
-                                class="px-2 py-1 text-xs rounded bg-muted hover:bg-muted/80
-                                       text-muted-foreground transition-colors"
-                                ${selectedTeams.size === 0 ? 'disabled' : ''}>
-                            Deselect All
-                        </button>
-                    </div>
+                <div class="flex items-center justify-end gap-2 mb-2">
+                    <button id="favorites-select-all"
+                            class="px-2 py-1 text-xs rounded bg-muted hover:bg-muted/80
+                                   text-muted-foreground transition-colors"
+                            ${favorites.length === 0 ? 'disabled' : ''}>
+                        Select All
+                    </button>
+                    <button id="favorites-deselect-all"
+                            class="px-2 py-1 text-xs rounded bg-muted hover:bg-muted/80
+                                   text-muted-foreground transition-colors"
+                            ${selectedTeams.size === 0 ? 'disabled' : ''}>
+                        Deselect All
+                    </button>
                 </div>
 
                 <div id="favorites-list" class="flex-1 overflow-y-auto space-y-2">
                     ${_renderFavoritesList(favorites, selectedTeams)}
                 </div>
 
-                <div class="mt-3 pt-3 border-t border-border">
+                <div class="mt-3 pt-2">
                     ${actionButton}
                 </div>
             </div>

@@ -2,6 +2,12 @@
  * AvatarManagerModal.js
  * Modal for selecting avatar source and managing custom uploads
  * Opens when user clicks their avatar in ProfileModal
+ *
+ * Avatar sources (in order of display):
+ * - Custom Upload: User-uploaded image
+ * - Discord Avatar: From Discord OAuth (with refresh)
+ * - Google Avatar: From Google OAuth (with refresh)
+ * - Initials: Fallback showing user's initials
  */
 const AvatarManagerModal = (function() {
     'use strict';
@@ -54,10 +60,9 @@ const AvatarManagerModal = (function() {
 
                         <!-- Source Options -->
                         <div class="space-y-2">
-                            ${_renderSourceOption('custom', 'Custom Upload', 'Upload your own image', currentSource)}
-                            ${_renderSourceOption('discord', 'Discord Avatar', 'Use your Discord profile picture', currentSource, !_hasDiscordAvatar())}
-                            ${_renderSourceOption('google', 'Google Avatar', 'Use your Google profile picture', currentSource, !_hasGoogleAvatar())}
-                            ${_renderSourceOption('default', 'Default', 'Use the default avatar', currentSource)}
+                            ${_renderCustomOption(currentSource)}
+                            ${_renderProviderOption('discord', 'Discord Avatar', 'Use your Discord profile picture', currentSource)}
+                            ${_renderProviderOption('google', 'Google Avatar', 'Use your Google profile picture', currentSource)}
                             ${_renderSourceOption('initials', 'Initials', 'Show your initials instead', currentSource)}
                         </div>
                     </div>
@@ -76,6 +81,76 @@ const AvatarManagerModal = (function() {
         `;
 
         container.classList.remove('hidden');
+    }
+
+    /**
+     * Render the custom upload option with Edit button if custom avatar exists
+     */
+    function _renderCustomOption(currentSource) {
+        const isSelected = currentSource === 'custom';
+        const hasCustomAvatar = !!(_userProfile?.photoURL && _userProfile?.avatarSource === 'custom');
+        const selectedClass = isSelected ? 'border-primary bg-primary/10' : 'border-border';
+
+        return `
+            <div class="avatar-source-option flex items-center gap-3 p-3 rounded-lg border ${selectedClass} cursor-pointer hover:bg-muted/50 transition-colors"
+                 data-source="custom">
+                <div class="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+                    ${_renderSourcePreview('custom')}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="font-medium text-foreground text-sm">Custom Upload</div>
+                    <div class="text-xs text-muted-foreground">${hasCustomAvatar ? 'Your uploaded avatar' : 'Upload your own image'}</div>
+                </div>
+                ${hasCustomAvatar ? `
+                    <button class="avatar-edit-btn p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors" title="Change image">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                        </svg>
+                    </button>
+                ` : ''}
+                ${isSelected ? `
+                    <svg class="w-5 h-5 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    /**
+     * Render Discord/Google provider option with Refresh button
+     */
+    function _renderProviderOption(source, label, description, currentSource) {
+        const isSelected = source === currentSource;
+        const isAvailable = source === 'discord' ? _hasDiscordAvatar() : _hasGoogleAvatar();
+        const disabledClass = !isAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50';
+        const selectedClass = isSelected ? 'border-primary bg-primary/10' : 'border-border';
+
+        return `
+            <div class="avatar-source-option flex items-center gap-3 p-3 rounded-lg border ${selectedClass} ${disabledClass} transition-colors"
+                 data-source="${source}" ${!isAvailable ? 'data-disabled="true"' : ''}>
+                <div class="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+                    ${_renderSourcePreview(source)}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="font-medium text-foreground text-sm">${label}</div>
+                    <div class="text-xs text-muted-foreground">${!isAvailable ? 'Not linked' : description}</div>
+                </div>
+                ${isAvailable ? `
+                    <button class="avatar-refresh-btn p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+                            data-provider="${source}" title="Refresh from ${source === 'discord' ? 'Discord' : 'Google'}">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </button>
+                ` : ''}
+                ${isSelected ? `
+                    <svg class="w-5 h-5 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                ` : ''}
+            </div>
+        `;
     }
 
     function _renderSourceOption(source, label, description, currentSource, disabled = false) {
@@ -120,17 +195,26 @@ const AvatarManagerModal = (function() {
     }
 
     function _detectCurrentSource() {
-        if (_userProfile?.avatarSource) return _userProfile.avatarSource;
-        if (_userProfile?.customAvatarUrl) return 'custom';
+        if (_userProfile?.avatarSource) {
+            // Map 'default' to 'initials' for legacy data
+            if (_userProfile.avatarSource === 'default') return 'initials';
+            return _userProfile.avatarSource;
+        }
+        if (_userProfile?.photoURL && _userProfile?.avatarSource === 'custom') return 'custom';
         if (_userProfile?.discordAvatarHash) return 'discord';
         if (_userProfile?.authProvider === 'google' && _currentUser?.photoURL) return 'google';
-        return 'default';
+        return 'initials';
     }
 
     function _resolveAvatarUrl(source) {
         switch (source) {
             case 'custom':
-                return _pendingCustomUrl || _userProfile?.customAvatarUrl;
+                // Use pending URL if we just uploaded, otherwise use stored custom URL
+                if (_pendingCustomUrl) return _pendingCustomUrl;
+                if (_userProfile?.avatarSource === 'custom' && _userProfile?.photoURL) {
+                    return _userProfile.photoURL;
+                }
+                return null;
             case 'discord':
                 if (_userProfile?.discordUserId && _userProfile?.discordAvatarHash) {
                     const hash = _userProfile.discordAvatarHash;
@@ -139,9 +223,7 @@ const AvatarManagerModal = (function() {
                 }
                 return null;
             case 'google':
-                return _currentUser?.photoURL;
-            case 'default':
-                return '/img/default-avatar.png';
+                return _currentUser?.photoURL || null;
             case 'initials':
                 return null;
             default:
@@ -168,16 +250,39 @@ const AvatarManagerModal = (function() {
         // Save button
         document.getElementById('avatar-manager-save').addEventListener('click', _handleSave);
 
+        // Edit button for custom avatar
+        const editBtn = document.querySelector('.avatar-edit-btn');
+        if (editBtn) {
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Don't trigger card selection
+                _openUploadModal();
+            });
+        }
+
+        // Refresh buttons for Discord/Google
+        document.querySelectorAll('.avatar-refresh-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Don't trigger card selection
+                const provider = btn.dataset.provider;
+                _refreshProviderAvatar(provider);
+            });
+        });
+
         // Source selection
         document.querySelectorAll('.avatar-source-option').forEach(option => {
             option.addEventListener('click', (e) => {
+                // Ignore if clicking on edit/refresh buttons
+                if (e.target.closest('.avatar-edit-btn') || e.target.closest('.avatar-refresh-btn')) {
+                    return;
+                }
+
                 const source = option.dataset.source;
                 const disabled = option.dataset.disabled === 'true';
 
                 if (disabled) return;
 
-                // Special handling for custom - open upload modal
-                if (source === 'custom') {
+                // Custom without existing avatar - open upload
+                if (source === 'custom' && !_hasCustomAvatar() && !_pendingCustomUrl) {
                     _openUploadModal();
                     return;
                 }
@@ -185,6 +290,10 @@ const AvatarManagerModal = (function() {
                 _selectSource(source);
             });
         });
+    }
+
+    function _hasCustomAvatar() {
+        return !!(_userProfile?.photoURL && _userProfile?.avatarSource === 'custom');
     }
 
     function _selectSource(source) {
@@ -195,13 +304,15 @@ const AvatarManagerModal = (function() {
             option.classList.toggle('bg-primary/10', isSelected);
             option.classList.toggle('border-border', !isSelected);
 
-            // Update checkmark
-            const existingCheck = option.querySelector('svg');
-            if (existingCheck) existingCheck.remove();
+            // Update checkmark (but preserve edit/refresh buttons)
+            const existingCheck = option.querySelector('svg:not(.avatar-edit-btn svg):not(.avatar-refresh-btn svg)');
+            if (existingCheck && !existingCheck.closest('.avatar-edit-btn') && !existingCheck.closest('.avatar-refresh-btn')) {
+                existingCheck.remove();
+            }
 
             if (isSelected) {
                 option.insertAdjacentHTML('beforeend', `
-                    <svg class="w-5 h-5 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-5 h-5 text-primary flex-shrink-0 checkmark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                     </svg>
                 `);
@@ -221,6 +332,12 @@ const AvatarManagerModal = (function() {
                 // Upload completed - store preview and select custom
                 _pendingCustomUrl = previewUrl;
                 _selectSource('custom');
+
+                // Update the custom option preview thumbnail
+                const customOption = document.querySelector('[data-source="custom"] .w-10');
+                if (customOption && previewUrl) {
+                    customOption.innerHTML = `<img src="${previewUrl}" alt="custom" class="w-full h-full object-cover">`;
+                }
             });
         } else {
             console.error('AvatarUploadModal not available');
@@ -230,10 +347,57 @@ const AvatarManagerModal = (function() {
         }
     }
 
+    async function _refreshProviderAvatar(provider) {
+        const btn = document.querySelector(`.avatar-refresh-btn[data-provider="${provider}"]`);
+        if (btn) {
+            // Show loading state
+            btn.innerHTML = `
+                <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            `;
+            btn.disabled = true;
+        }
+
+        try {
+            if (provider === 'discord') {
+                // Re-fetch Discord avatar hash via API
+                // For now, just show a message - full implementation would call a Cloud Function
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showInfo('Re-link your Discord account to refresh avatar');
+                }
+            } else if (provider === 'google') {
+                // Google avatar is from currentUser.photoURL - it's already fresh from auth
+                if (_currentUser?.photoURL) {
+                    _selectSource('google');
+                    if (typeof ToastService !== 'undefined') {
+                        ToastService.showSuccess('Google avatar refreshed');
+                    }
+                }
+            }
+        } catch (error) {
+            console.error(`Error refreshing ${provider} avatar:`, error);
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showError(`Failed to refresh ${provider} avatar`);
+            }
+        } finally {
+            // Restore button
+            if (btn) {
+                btn.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                `;
+                btn.disabled = false;
+            }
+        }
+    }
+
     function _handleSave() {
         // Find selected source
         const selectedOption = document.querySelector('.avatar-source-option.border-primary');
-        const source = selectedOption?.dataset.source || 'default';
+        const source = selectedOption?.dataset.source || 'initials';
         const photoURL = _resolveAvatarUrl(source);
 
         // Call callback with result

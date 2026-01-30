@@ -35,14 +35,20 @@ const DEV_USER_PASSWORD = 'devmode123';
 const DEV_USER_DISPLAY_NAME = 'ParadokS';
 const DEV_USER_INITIALS = 'PDX';
 
+// Helper to generate DiceBear avatar URL (deterministic based on seed)
+// Using "bottts" style for robot avatars - fun for gaming context
+function getAvatarUrl(seed) {
+    return `https://api.dicebear.com/7.x/bottts/png?seed=${encodeURIComponent(seed)}&size=128`;
+}
+
 // Fake teammates for DEV SQUAD (your team)
 // All use same password for easy dev switching
 const DEV_SQUAD_PLAYERS = [
-    { userId: 'fake-user-001', displayName: 'Alex Storm', initials: 'AS', email: 'alex@fake.test' },
-    { userId: 'fake-user-002', displayName: 'Bella Knight', initials: 'BK', email: 'bella@fake.test' },
-    { userId: 'fake-user-003', displayName: 'Carlos Vega', initials: 'CV', email: 'carlos@fake.test' },
-    { userId: 'fake-user-004', displayName: 'Diana Cross', initials: 'DC', email: 'diana@fake.test' },
-    { userId: 'fake-user-005', displayName: 'Erik Blade', initials: 'EB', email: 'erik@fake.test' },
+    { userId: 'fake-user-001', displayName: 'Alex Storm', initials: 'AS', email: 'alex@fake.test', photoURL: getAvatarUrl('alex-storm') },
+    { userId: 'fake-user-002', displayName: 'Bella Knight', initials: 'BK', email: 'bella@fake.test', photoURL: getAvatarUrl('bella-knight') },
+    { userId: 'fake-user-003', displayName: 'Carlos Vega', initials: 'CV', email: 'carlos@fake.test', photoURL: getAvatarUrl('carlos-vega') },
+    { userId: 'fake-user-004', displayName: 'Diana Cross', initials: 'DC', email: 'diana@fake.test', photoURL: getAvatarUrl('diana-cross') },
+    { userId: 'fake-user-005', displayName: 'Erik Blade', initials: 'EB', email: 'erik@fake.test', photoURL: getAvatarUrl('erik-blade') },
 ];
 
 // ============================================
@@ -57,11 +63,11 @@ const ADDITIONAL_TEAMS = [
         teamTag: 'PHX',
         divisions: ['D1', 'D2'],
         players: [
-            { userId: 'phx-user-001', displayName: 'Marcus Chen', initials: 'MC', email: 'marcus@fake.test', role: 'leader' },
-            { userId: 'phx-user-002', displayName: 'Sarah Walsh', initials: 'SW', email: 'sarah@fake.test', role: 'member' },
-            { userId: 'phx-user-003', displayName: 'Tyler Brooks', initials: 'TB', email: 'tyler@fake.test', role: 'member' },
-            { userId: 'phx-user-004', displayName: 'Nina Patel', initials: 'NP', email: 'nina@fake.test', role: 'member' },
-            { userId: 'phx-user-005', displayName: 'Jake Morrison', initials: 'JM', email: 'jake@fake.test', role: 'member' },
+            { userId: 'phx-user-001', displayName: 'Marcus Chen', initials: 'MC', email: 'marcus@fake.test', role: 'leader', photoURL: getAvatarUrl('marcus-chen') },
+            { userId: 'phx-user-002', displayName: 'Sarah Walsh', initials: 'SW', email: 'sarah@fake.test', role: 'member', photoURL: getAvatarUrl('sarah-walsh') },
+            { userId: 'phx-user-003', displayName: 'Tyler Brooks', initials: 'TB', email: 'tyler@fake.test', role: 'member', photoURL: getAvatarUrl('tyler-brooks') },
+            { userId: 'phx-user-004', displayName: 'Nina Patel', initials: 'NP', email: 'nina@fake.test', role: 'member', photoURL: getAvatarUrl('nina-patel') },
+            { userId: 'phx-user-005', displayName: 'Jake Morrison', initials: 'JM', email: 'jake@fake.test', role: 'member', photoURL: getAvatarUrl('jake-morrison') },
         ],
         // Availability pattern: Strong weekday evenings (Mon-Thu 19:00-21:00)
         // Good overlap with Dev Squad for 3-4 player matches
@@ -73,10 +79,10 @@ const ADDITIONAL_TEAMS = [
         teamTag: 'SHW',
         divisions: ['D2'],
         players: [
-            { userId: 'shw-user-001', displayName: 'Ryan Cooper', initials: 'RC', email: 'ryan@fake.test', role: 'leader' },
-            { userId: 'shw-user-002', displayName: 'Emma Liu', initials: 'EL', email: 'emma@fake.test', role: 'member' },
-            { userId: 'shw-user-003', displayName: 'Derek Hall', initials: 'DH', email: 'derek@fake.test', role: 'member' },
-            { userId: 'shw-user-004', displayName: 'Zoe Martinez', initials: 'ZM', email: 'zoe@fake.test', role: 'member' },
+            { userId: 'shw-user-001', displayName: 'Ryan Cooper', initials: 'RC', email: 'ryan@fake.test', role: 'leader', photoURL: getAvatarUrl('ryan-cooper') },
+            { userId: 'shw-user-002', displayName: 'Emma Liu', initials: 'EL', email: 'emma@fake.test', role: 'member', photoURL: getAvatarUrl('emma-liu') },
+            { userId: 'shw-user-003', displayName: 'Derek Hall', initials: 'DH', email: 'derek@fake.test', role: 'member', photoURL: getAvatarUrl('derek-hall') },
+            { userId: 'shw-user-004', displayName: 'Zoe Martinez', initials: 'ZM', email: 'zoe@fake.test', role: 'member', photoURL: getAvatarUrl('zoe-martinez') },
         ],
         // Availability pattern: Late night focus (21:00-23:00 all week)
         // Some overlap with Dev Squad late night players
@@ -88,12 +94,12 @@ const ADDITIONAL_TEAMS = [
         teamTag: 'NOVA',
         divisions: ['D1', 'D3'],
         players: [
-            { userId: 'nova-user-001', displayName: 'Olivia Kim', initials: 'OK', email: 'olivia@fake.test', role: 'leader' },
-            { userId: 'nova-user-002', displayName: 'Liam Foster', initials: 'LF', email: 'liam@fake.test', role: 'member' },
-            { userId: 'nova-user-003', displayName: 'Ava Thompson', initials: 'AT', email: 'ava@fake.test', role: 'member' },
-            { userId: 'nova-user-004', displayName: 'Noah Garcia', initials: 'NG', email: 'noah@fake.test', role: 'member' },
-            { userId: 'nova-user-005', displayName: 'Mia Robinson', initials: 'MR', email: 'mia@fake.test', role: 'member' },
-            { userId: 'nova-user-006', displayName: 'Ethan Wright', initials: 'EW', email: 'ethan@fake.test', role: 'member' },
+            { userId: 'nova-user-001', displayName: 'Olivia Kim', initials: 'OK', email: 'olivia@fake.test', role: 'leader', photoURL: getAvatarUrl('olivia-kim') },
+            { userId: 'nova-user-002', displayName: 'Liam Foster', initials: 'LF', email: 'liam@fake.test', role: 'member', photoURL: getAvatarUrl('liam-foster') },
+            { userId: 'nova-user-003', displayName: 'Ava Thompson', initials: 'AT', email: 'ava@fake.test', role: 'member', photoURL: getAvatarUrl('ava-thompson') },
+            { userId: 'nova-user-004', displayName: 'Noah Garcia', initials: 'NG', email: 'noah@fake.test', role: 'member', photoURL: getAvatarUrl('noah-garcia') },
+            { userId: 'nova-user-005', displayName: 'Mia Robinson', initials: 'MR', email: 'mia@fake.test', role: 'member', photoURL: getAvatarUrl('mia-robinson') },
+            { userId: 'nova-user-006', displayName: 'Ethan Wright', initials: 'EW', email: 'ethan@fake.test', role: 'member', photoURL: getAvatarUrl('ethan-wright') },
         ],
         // Availability pattern: Weekend warriors + some weekday flexibility
         // Good for weekend match testing
@@ -317,12 +323,14 @@ async function seedEmulator() {
     // ============================================
     // DEV SQUAD (Your team)
     // ============================================
+    const devUserPhotoURL = getAvatarUrl('paradoks-dev');
     const devRoster = [
-        { ...devUser, joinedAt: new Date(), role: 'leader' },
+        { ...devUser, photoURL: devUserPhotoURL, joinedAt: new Date(), role: 'leader' },
         ...DEV_SQUAD_PLAYERS.map((p, i) => ({
             userId: p.userId,
             displayName: p.displayName,
             initials: p.initials,
+            photoURL: p.photoURL || null,
             joinedAt: new Date(Date.now() - (i + 1) * 86400000),
             role: 'member'
         }))
@@ -348,7 +356,8 @@ async function seedEmulator() {
         initials: devUser.initials,
         email: devUser.email,
         userId: devUser.userId,
-        photoURL: null,
+        photoURL: devUserPhotoURL,
+        avatarSource: 'initials',
         discordTag: null,
         teams: { [devTeamId]: true },
         createdAt: Timestamp.now(),
@@ -363,7 +372,8 @@ async function seedEmulator() {
             initials: player.initials,
             email: player.email,
             userId: player.userId,
-            photoURL: null,
+            photoURL: player.photoURL || null,
+            avatarSource: 'initials',
             discordTag: null,
             teams: { [devTeamId]: true },
             createdAt: Timestamp.now(),
@@ -406,6 +416,7 @@ async function seedEmulator() {
             userId: p.userId,
             displayName: p.displayName,
             initials: p.initials,
+            photoURL: p.photoURL || null,
             joinedAt: new Date(Date.now() - (i + 5) * 86400000),
             role: p.role
         }));
@@ -432,7 +443,8 @@ async function seedEmulator() {
                 initials: player.initials,
                 email: player.email,
                 userId: player.userId,
-                photoURL: null,
+                photoURL: player.photoURL || null,
+                avatarSource: 'initials',
                 discordTag: null,
                 teams: { [team.id]: true },
                 createdAt: Timestamp.now(),

@@ -282,19 +282,108 @@ Detailed specifications in `/context/slices/[slice-name].md`
 
 **Note:** Floating button appears near selection with smart repositioning. Shows "+ Add Me" (primary) or "− Remove Me" (destructive) based on user's presence in all selected cells. Keyboard support: Enter to confirm, Escape to cancel/clear selection.
 
-### 📅 Slice 5.1: Teams Browser Tab
-**Status:** Not Started
-**User Value:** Browse all teams and their rosters in dedicated view
-**Components:** TeamsBrowserPanel (new)
-**Scope:** Full team cards with rosters, player search, division filters
+### ✅ Slice 5.1: Teams/Players Browser
+**Status:** Complete
+**User Value:** Browse all teams and players in a dedicated, organized view
+**Spec:** `context/slices/slice-5.1-teams-players-browser.md`
+**Components:** TeamsBrowserPanel (new), BottomPanelController (enhance)
+**Scope:**
+- Tab content for "Teams" and "Players" in bottom-center panel
+- **Teams View:** Full-width team detail driven by Browse Teams selection (bottom-right)
+- **Players View:** Multi-column responsive grid with search + division filters
+- Player cards with team logo + name, hover tooltip shows all teams
 
-### 📅 Slice 5.2: Tournament Hub Tab
+**Note:** Foundation for QW Hub integration. Browse Teams panel (bottom-right) drives team selection.
+
+### ✅ Slice 5.1a: QW Hub Tag Configuration
+**Status:** Complete (Revised)
+**User Value:** Team tags match QW in-game identity, enabling match history lookups
+**Components:** TeamService (modify), team-operations Cloud Function (modify), seed scripts
+**Scope:**
+- ~~Separate `qwHubTag` field~~ → Merged into existing `teamTag`
+- Relaxed `teamTag` validation: case-sensitive, allows QW special chars (`[]()-_.,!`), 1-4 chars
+- Seed scripts use real QW Hub tags (e.g., `]SR[`, `GoF!`, `tSQ`)
+- No UI changes needed — leaders set teamTag at team creation
+
+**Note:** During implementation, discovered that QW Hub tags and in-game tags are the same thing. Simplified by using `teamTag` directly for hub lookups instead of maintaining a separate field.
+
+### ✅ Slice 5.1b: Team Match History (Basic)
+**Status:** Complete
+**User Value:** See a team's recent match results from QW Hub
+**Spec:** `context/slices/slice-5.1b-team-match-history.md`
+**Components:** QWHubService (new), TeamsBrowserPanel (enhance)
+**Scope:**
+- Fetch recent 4on4 matches using team's `teamTag` for QW Hub API lookup
+- Display in team detail view with hub-style scoreboard rendering
+- Click match row to toggle inline scoreboard with mapshot background
+- "View on QW Hub" link, loading/error/retry states
+- QW color palette, colored names, country flags
+
+**Note:** Superseded by Slice 5.2 cluster for enhanced UX, but core QWHubService and scoreboard rendering remain.
+
+### Slice 5.2: Team Detail Redesign (Tab Cluster)
+
+Redesign of the team detail view with tabbed navigation, richer landing page, split-panel match history, stats popout, and head-to-head comparison. Supersedes 5.1b layout and 5.1c entirely.
+
+#### ✅ Slice 5.2a: Team Details Landing Page
+**Status:** Complete
+**User Value:** Rich team identity page with logo, roster, and auto-generated activity stats
+**Spec:** `context/slices/slice-5.2a-team-details-landing.md`
+**Components:** TeamsBrowserPanel (enhance), QWHubService (enhance)
+**Scope:**
+- Tabbed sub-navigation: [Details] [Match History] [Head to Head]
+- Details tab: Hero logo (11rem), team name + division in right-side header, roster with avatars
+- Two-column layout: identity left (logo + roster), activity right (map stats + upcoming)
+- Map activity summary: matches per map with W-L record (last 6 months, auto-generated from QWHub)
+- New `getTeamMapStats()` method in QWHubService (50 matches, client-side aggregation)
+- "Compare H2H" button navigates to Head to Head tab
+- Upcoming games placeholder section
+
+**Note:** Seed scripts updated with correct QWHub clan tags for all 24 teams. Record format uses compact W-L dash format (green-red coloring). Teams without QWHub tags show "Match history not available".
+
+#### 📅 Slice 5.2b: Match History Split-Panel
+**Status:** Not Started
+**User Value:** Browse match history with filters and preview scoreboards by hover/click
+**Spec:** `context/slices/slice-5.2b-match-history-split-panel.md`
+**Components:** TeamsBrowserPanel (enhance)
+**Scope:**
+- Left panel (40%): Scrollable match list with map filter dropdown, up to 20 matches
+- Right panel (60%): Scoreboard preview area with mapshot background
+- Hover = instant preview (from cached Supabase data), Click = sticky + fetch ktxstats
+- Key team stats bar on click: Eff%, RL#, Dmg, LG%
+- "View on QW Hub" game link + "Full Stats" button
+
+#### 📅 Slice 5.2c: Match Stats Popout Modal
+**Status:** Not Started
+**User Value:** Detailed match stats in draggable popout, enabling side-by-side comparison
+**Spec:** `context/slices/slice-5.2c-stats-popout-modal.md`
+**Components:** MatchStatsModal (new), TeamsBrowserPanel (enhance)
+**Scope:**
+- Trimmed ktxstats table: Frags, Eff%, Kills, Deaths, RL#, LG%, SG%, Dmg, RA, YA
+- Multiple modals open simultaneously for crude H2H match comparison
+- Draggable, z-index stacking, Escape to close
+- Direct link to QW Hub game page for full stats + demo streaming
+
+#### 📅 Slice 5.2d: Head-to-Head Tab
+**Status:** Not Started
+**User Value:** Compare two teams' H2H record with stats, map breakdown, and match list
+**Spec:** `context/slices/slice-5.2d-head-to-head-tab.md`
+**Supersedes:** Slice 5.1c
+**Components:** TeamsBrowserPanel (enhance), QWHubService (enhance)
+**Scope:**
+- H2H tab in team detail navigation, pre-selects current team
+- Searchable opponent dropdown (teams with QWHub tags)
+- Overall W/L record, per-map breakdown with win bars
+- Match list with click-to-view stats (reuses 5.2c MatchStatsModal)
+- New `getH2HMatches()` method in QWHubService (sorted cache key)
+
+### 📅 Slice 5.3: Tournament Hub Tab
 **Status:** Not Started
 **User Value:** See tournament deadlines and quick-compare against opponents
 **Components:** TournamentHubPanel (new)
 **Scope:** Tournament list, deadline warnings, preset comparison groups
 
-### 📅 Slice 5.3: Big4 Integration
+### 📅 Slice 5.4: Big4 Integration
 **Status:** Pending API access
 **User Value:** Automatic sync with thebig4.se tournament data
 **Components:** Big4Service (new), tournament sync functions
@@ -302,12 +391,43 @@ Detailed specifications in `/context/slices/[slice-name].md`
 
 ---
 
-## Progress Summary
-**Slices Complete:** 24 / ~28 (Part 5 adds new slices)
+## Part 6: UI Polish & Refactoring
 
-## Current Focus
-**Slice 5.1 - Teams Browser Tab** is next. Grid tools enhancement (5.0b) is complete.
+### 📅 Slice 6.0: Team Panel UI Refactor
+**Status:** Not Started
+**User Value:** Cleaner team management UX via modal, grid tools closer to roster
+**Spec:** `context/slices/slice-6.0-team-panel-refactor.md`
+**Components:** TeamManagementModal (new), TeamInfo (modify), GridActionButtons (relocate)
+**Scope:**
+- Move team management from drawer to modal (click team name/gear icon)
+- Relocate Grid Tools to collapsible drawer in team panel (below roster)
+- Remove old TeamManagementDrawer component
+- Better resolution handling at 1080p/1440p
+
+**Sub-slices:**
+- 6.0a: Team Management Modal
+- 6.0b: Grid Tools Drawer (in team panel)
+- 6.0c: Cleanup old drawer
+
+**Note:** Drawer struggled with variable content height. Modal handles complex content better. Grid Tools drawer has bounded content (max 4-5 rows) - ideal for drawer pattern.
 
 ---
 
-*Last Updated: 2026-01-28*
+## Progress Summary
+**Slices Complete:** 28 / ~36 (Part 5 expanded with 5.2 cluster)
+
+## Current Focus
+**Slice 5.2 - Team Detail Redesign** - Tabbed team detail view with rich landing page, split-panel match history, stats popout, and head-to-head comparison.
+
+## QW Hub Integration Path
+5.1 → 5.1a → 5.1b (basic) → **5.2a → 5.2b → 5.2c → 5.2d** (full redesign)
+
+Each 5.2 slice builds on the previous:
+- 5.2a: Tab infrastructure + Details landing page (foundation)
+- 5.2b: Match History split-panel (requires 5.2a tabs)
+- 5.2c: Stats popout modal (requires 5.2b "Full Stats" button)
+- 5.2d: H2H tab (requires 5.2a tabs, reuses 5.2b/c patterns)
+
+---
+
+*Last Updated: 2026-01-30*

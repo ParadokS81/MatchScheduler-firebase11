@@ -1,5 +1,6 @@
 // PlayerDisplayService.js - Display mode management and player lookup
 // Following CLAUDE.md architecture: Lightweight helper service
+// Slice 5.0.1: Expanded to 4 display modes with color support
 
 const PlayerDisplayService = (function() {
     'use strict';
@@ -7,21 +8,29 @@ const PlayerDisplayService = (function() {
     const STORAGE_KEY = 'matchscheduler_display_mode';
     const DEFAULT_MODE = 'initials';
 
+    // Valid display modes (Slice 5.0.1)
+    const VALID_MODES = ['initials', 'coloredInitials', 'coloredDots', 'avatars'];
+
     /**
      * Get current display mode from localStorage
-     * @returns {'initials' | 'avatars'}
+     * @returns {'initials' | 'coloredInitials' | 'coloredDots' | 'avatars'}
      */
     function getDisplayMode() {
-        return localStorage.getItem(STORAGE_KEY) || DEFAULT_MODE;
+        const stored = localStorage.getItem(STORAGE_KEY);
+        // Validate stored mode is still valid (handles legacy 'avatars' -> new modes)
+        if (stored && VALID_MODES.includes(stored)) {
+            return stored;
+        }
+        return DEFAULT_MODE;
     }
 
     /**
      * Set display mode and persist to localStorage
-     * @param {'initials' | 'avatars'} mode
+     * @param {'initials' | 'coloredInitials' | 'coloredDots' | 'avatars'} mode
      * @returns {boolean} Success
      */
     function setDisplayMode(mode) {
-        if (mode === 'initials' || mode === 'avatars') {
+        if (VALID_MODES.includes(mode)) {
             localStorage.setItem(STORAGE_KEY, mode);
             console.log('📺 Display mode set to:', mode);
 
@@ -33,6 +42,14 @@ const PlayerDisplayService = (function() {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Get all valid display modes
+     * @returns {string[]}
+     */
+    function getValidModes() {
+        return [...VALID_MODES];
     }
 
     /**
@@ -81,6 +98,7 @@ const PlayerDisplayService = (function() {
     return {
         getDisplayMode,
         setDisplayMode,
+        getValidModes,
         getPlayerDisplay,
         getPlayersDisplay
     };

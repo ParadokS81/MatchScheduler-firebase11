@@ -71,6 +71,8 @@ service cloud.firestore {
           !('lastLoginAt' in data) || isValidLastLoginAt()
         ) && (
           !('lastActivityAt' in data) || isValidLastActivityAt()
+        ) && (
+          !('playerColors' in data) || isValidPlayerColors()
         );
       }
       
@@ -84,13 +86,25 @@ service cloud.firestore {
       }
       
       function onlyAllowedUpdateFields() {
-        // Blacklist immutable fields - safe and works everywhere
-        return !('userId' in request.resource.data)
-          && !('createdAt' in request.resource.data)
-          && !('adminFlag' in request.resource.data)
-          && !('isAdmin' in request.resource.data)
-          && !('password' in request.resource.data)
-          && !('secret' in request.resource.data);
+        // Ensure immutable fields are not changed (they can exist, but must match original)
+        // Block dangerous fields entirely
+        let data = request.resource.data;
+        return (
+          // userId must match original if present
+          !('userId' in data) || data.userId == resource.data.userId
+        ) && (
+          // createdAt must match original if present
+          !('createdAt' in data) || data.createdAt == resource.data.createdAt
+        ) && (
+          // Dangerous fields must never exist
+          !('adminFlag' in data)
+        ) && (
+          !('isAdmin' in data)
+        ) && (
+          !('password' in data)
+        ) && (
+          !('secret' in data)
+        );
       }
       
       function isValidDisplayNameUpdate() {
@@ -136,6 +150,11 @@ service cloud.firestore {
       
       function isValidLastActivityAt() {
         return request.resource.data.lastActivityAt is timestamp;
+      }
+
+      function isValidPlayerColors() {
+        // Slice 5.0.1: playerColors is a map of userId -> hex color string
+        return request.resource.data.playerColors is map;
       }
 
       // User templates subcollection
@@ -256,9 +275,17 @@ service cloud.firestore {
           !('status' in data) || isValidStatus()
         ) && (
           !('lastActivityAt' in data) || isValidLastActivityAt()
+        ) && (
+          !('teamTag' in data) || isValidTeamTag()
         );
       }
-      
+
+      function isValidTeamTag() {
+        return request.resource.data.teamTag is string
+          && request.resource.data.teamTag.size() >= 1
+          && request.resource.data.teamTag.size() <= 4;
+      }
+
       function isValidTeamName() {
         return request.resource.data.teamName is string
           && request.resource.data.teamName.size() >= 3
@@ -322,7 +349,7 @@ service cloud.firestore {
       function isValidLastActivityAt() {
         return request.resource.data.lastActivityAt is timestamp;
       }
-      
+
       function onlyAllowedTeamUpdateFields() {
         // Blacklist immutable fields - this is the production-safe pattern.
         return !('teamId' in request.resource.data)

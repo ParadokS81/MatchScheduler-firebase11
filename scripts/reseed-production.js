@@ -270,6 +270,11 @@ function generateRandomAvailability(playerIndex, teamIndex) {
     return patterns[patternIndex]().filter(() => Math.random() > 0.35);
 }
 
+// Helper to generate DiceBear avatar URL (deterministic based on seed)
+function getAvatarUrl(seed) {
+    return `https://api.dicebear.com/7.x/bottts/png?seed=${encodeURIComponent(seed)}&size=128`;
+}
+
 // Convert team name to logo filename (thebig4.se format)
 function getLogoFilename(teamName) {
     return teamName
@@ -421,6 +426,9 @@ async function seedTeams() {
             const isLeader = playerName === team.captain;
             const initials = generateInitials(playerName);
 
+            // Generate avatar URL based on player name
+            const photoURL = getAvatarUrl(playerName.toLowerCase().replace(/\s+/g, '-'));
+
             if (team.realLeaderUid && isLeader) {
                 // Real user (ParadokS)
                 userId = team.realLeaderUid;
@@ -434,6 +442,8 @@ async function seedTeams() {
                     initials: initials,
                     email: `${playerName.toLowerCase().replace(/[^a-z0-9]/g, '')}@seed.test`,
                     userId: userId,
+                    photoURL: photoURL,
+                    avatarSource: 'initials',
                     teams: { [teamId]: true },
                     createdAt: Timestamp.now(),
                     lastUpdatedAt: Timestamp.now()
@@ -444,6 +454,7 @@ async function seedTeams() {
                 userId,
                 displayName: playerName,
                 initials: initials,
+                photoURL: photoURL,
                 joinedAt: new Date(),
                 role: isLeader ? 'leader' : 'member'
             });
@@ -531,10 +542,13 @@ async function seedTeams() {
         console.log(`  ${discordIcon}${logoIcon} ✓ ${team.teamName} [${team.teamTag}] - ${roster.length} players (captain: ${team.captain})`);
     }
 
-    // Update ParadokS user profile with Slackers team
+    // Update ParadokS user profile with Slackers team and avatar
     if (slackersTeamId) {
+        const paradoksPhotoURL = getAvatarUrl('paradoks');
         await db.collection('users').doc(PARADOKS_UID).update({
-            teams: { [slackersTeamId]: true }
+            teams: { [slackersTeamId]: true },
+            photoURL: paradoksPhotoURL,
+            avatarSource: 'initials'
         });
         console.log(`\n  ✓ Updated ParadokS profile with Slackers team ID: ${slackersTeamId}`);
     }

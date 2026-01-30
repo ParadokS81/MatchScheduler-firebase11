@@ -1,6 +1,7 @@
 // AvailabilityGrid.js - Factory pattern for independent grid instances
 // Vanilla JS with Revealing Module Pattern
 // Enhanced for Slice 2.5: Player badges, tooltip hover, overflow handling
+// Enhanced for Slice 5.0.1: 4 display modes (initials, coloredInitials, coloredDots, avatars)
 
 const AvailabilityGrid = (function() {
     'use strict';
@@ -15,6 +16,45 @@ const AvailabilityGrid = (function() {
 
     // Threshold to distinguish click from drag (in pixels)
     const DRAG_THRESHOLD = 5;
+
+    /**
+     * Get ordinal suffix for a number (1st, 2nd, 3rd, etc.)
+     */
+    function getOrdinalSuffix(n) {
+        const s = ['th', 'st', 'nd', 'rd'];
+        const v = n % 100;
+        return s[(v - 20) % 10] || s[v] || s[0];
+    }
+
+    /**
+     * Get the Monday of a given week number
+     */
+    function getMondayOfWeek(weekNumber) {
+        const now = new Date();
+        const year = now.getFullYear();
+
+        const jan1 = new Date(year, 0, 1);
+        const dayOfWeek = jan1.getDay();
+        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
+        const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
+
+        const monday = new Date(firstMonday);
+        monday.setDate(firstMonday.getDate() + (weekNumber - 1) * 7);
+        return monday;
+    }
+
+    /**
+     * Get day labels with dates (e.g., "Mon 9th", "Tue 10th")
+     */
+    function getDayLabelsWithDates(weekNumber) {
+        const monday = getMondayOfWeek(weekNumber);
+        return DAYS.map((_, idx) => {
+            const date = new Date(monday);
+            date.setDate(monday.getDate() + idx);
+            const dayNum = date.getDate();
+            return `${DAY_LABELS[idx]} ${dayNum}${getOrdinalSuffix(dayNum)}`;
+        });
+    }
 
     // Player badge display constants
     const MAX_VISIBLE_BADGES = 3;  // Show 3 badges + overflow indicator
@@ -372,6 +412,9 @@ const AvailabilityGrid = (function() {
         function _render() {
             if (!_container) return;
 
+            // Get day labels with dates for this week
+            const dayLabelsWithDates = getDayLabelsWithDates(_weekId);
+
             // Build the grid HTML - compact for 1080p
             // Added data attributes for clickable headers
             _container.innerHTML = `
@@ -380,7 +423,7 @@ const AvailabilityGrid = (function() {
                     <div class="grid-header">
                         <div class="time-label-spacer"></div>
                         ${DAYS.map((day, idx) => `
-                            <div class="day-header clickable" data-day="${day}">${DAY_LABELS[idx]}</div>
+                            <div class="day-header clickable" data-day="${day}">${dayLabelsWithDates[idx]}</div>
                         `).join('')}
                     </div>
 
@@ -525,6 +568,41 @@ const AvailabilityGrid = (function() {
             // Hover events for comparison match tooltip (Slice 3.4)
             _container.addEventListener('mouseenter', _handleMatchCellMouseEnter, true);
             _container.addEventListener('mouseleave', _handleMatchCellMouseLeave, true);
+
+            // Hover events for header highlight (Slice 5.0.1)
+            _container.addEventListener('mouseover', _handleCellHoverHighlight);
+            _container.addEventListener('mouseout', _handleCellHoverUnhighlight);
+        }
+
+        /**
+         * Highlight day/time headers when hovering a cell (Slice 5.0.1)
+         */
+        function _handleCellHoverHighlight(e) {
+            const cell = e.target.closest('.grid-cell');
+            if (!cell || !cell.dataset.cellId) return;
+
+            const [day, time] = cell.dataset.cellId.split('_');
+
+            // Highlight corresponding day header
+            const dayHeader = _container.querySelector(`.day-header[data-day="${day}"]`);
+            if (dayHeader) dayHeader.classList.add('highlight');
+
+            // Highlight corresponding time label
+            const timeLabel = _container.querySelector(`.time-label[data-time="${time}"]`);
+            if (timeLabel) timeLabel.classList.add('highlight');
+        }
+
+        /**
+         * Remove header highlights when leaving a cell (Slice 5.0.1)
+         */
+        function _handleCellHoverUnhighlight(e) {
+            const cell = e.target.closest('.grid-cell');
+            if (!cell) return;
+
+            // Remove all highlights
+            _container.querySelectorAll('.day-header.highlight, .time-label.highlight').forEach(el => {
+                el.classList.remove('highlight');
+            });
         }
 
         function init() {
@@ -703,11 +781,12 @@ const AvailabilityGrid = (function() {
 
         /**
          * Render player badges inside a cell
+         * Slice 5.0.1: Supports 4 display modes (initials, coloredInitials, coloredDots, avatars)
          * @param {HTMLElement} cell - The grid cell element
          * @param {Array<string>} playerIds - User IDs of available players
          * @param {Array} playerRoster - Team's playerRoster array
          * @param {string} currentUserId - Current user's ID
-         * @param {string} displayMode - 'initials' or 'avatars'
+         * @param {string} displayMode - 'initials', 'coloredInitials', 'coloredDots', or 'avatars'
          */
         function _renderPlayerBadges(cell, playerIds, playerRoster, currentUserId, displayMode) {
             if (!playerIds || playerIds.length === 0) {
@@ -739,18 +818,65 @@ const AvailabilityGrid = (function() {
                 const escapedName = _escapeHtml(player.displayName);
                 const escapedInitials = _escapeHtml(player.initials);
 
-                if (displayMode === 'avatars' && player.photoURL) {
-                    badgesHtml += `
-                        <div class="player-badge avatar ${isCurrentUserClass}" data-player-name="${escapedName}">
-                            <img src="${player.photoURL}" alt="${escapedInitials}" />
-                        </div>
-                    `;
-                } else {
-                    badgesHtml += `
-                        <div class="player-badge initials ${isCurrentUserClass}" data-player-name="${escapedName}">
-                            ${escapedInitials}
-                        </div>
-                    `;
+                // Get player color (Slice 5.0.1)
+                const playerColor = typeof PlayerColorService !== 'undefined'
+                    ? PlayerColorService.getPlayerColor(player.userId)
+                    : null;
+                const colorOrDefault = typeof PlayerColorService !== 'undefined'
+                    ? PlayerColorService.getPlayerColorOrDefault(player.userId)
+                    : '#6B7280';
+
+                switch (displayMode) {
+                    case 'avatars':
+                        // Avatar mode: show avatar image (CSS handles sizing to 32px)
+                        if (player.photoURL) {
+                            badgesHtml += `
+                                <div class="player-badge avatar ${isCurrentUserClass}" data-player-name="${escapedName}">
+                                    <img src="${player.photoURL}" alt="${escapedInitials}" />
+                                </div>
+                            `;
+                        } else {
+                            // No avatar, fallback to initials
+                            badgesHtml += `
+                                <div class="player-badge initials ${isCurrentUserClass}" data-player-name="${escapedName}">
+                                    ${escapedInitials}
+                                </div>
+                            `;
+                        }
+                        break;
+
+                    case 'coloredDots':
+                        // Colored dots mode: show small colored circles
+                        badgesHtml += `
+                            <span class="player-badge colored-dot ${isCurrentUserClass}"
+                                  style="background-color: ${colorOrDefault}"
+                                  data-player-name="${escapedName}"
+                                  title="${escapedName}">
+                            </span>
+                        `;
+                        break;
+
+                    case 'coloredInitials':
+                        // Colored initials mode: initials with assigned color
+                        const colorStyle = playerColor ? `color: ${playerColor}` : '';
+                        badgesHtml += `
+                            <div class="player-badge initials colored ${isCurrentUserClass}"
+                                 style="${colorStyle}"
+                                 data-player-name="${escapedName}">
+                                ${escapedInitials}
+                            </div>
+                        `;
+                        break;
+
+                    case 'initials':
+                    default:
+                        // Plain initials mode (default)
+                        badgesHtml += `
+                            <div class="player-badge initials ${isCurrentUserClass}" data-player-name="${escapedName}">
+                                ${escapedInitials}
+                            </div>
+                        `;
+                        break;
                 }
             });
 

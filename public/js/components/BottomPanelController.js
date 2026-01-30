@@ -49,13 +49,21 @@ const BottomPanelController = (function() {
             btn.classList.toggle('active', btn.dataset.tab === tabId);
         });
 
+        // Cleanup previous tab's component
+        if (_activeTab === 'teams' || _activeTab === 'players') {
+            TeamsBrowserPanel.cleanup();
+        }
+
         // Handle content switching
         switch(tabId) {
             case 'calendar':
                 _showCalendarContent();
                 break;
             case 'teams':
-                _showPlaceholder('teams', 'Teams Browser', 'Browse and compare teams - coming soon');
+                _showTeamsBrowser('teams');
+                break;
+            case 'players':
+                _showTeamsBrowser('players');
                 break;
             case 'tournament':
                 _showPlaceholder('tournament', 'Tournament Hub', 'Tournament brackets and standings - coming soon');
@@ -84,6 +92,29 @@ const BottomPanelController = (function() {
 
         // Re-initialize the week display
         _weekDisplay2Ref.init();
+    }
+
+    /**
+     * Show the Teams Browser content
+     * @param {string} view - 'teams' or 'players'
+     */
+    function _showTeamsBrowser(view) {
+        if (!_bottomPanel) return;
+
+        // Clear panel content
+        _bottomPanel.innerHTML = '';
+
+        // Clear any placeholder ref
+        _placeholderContent = null;
+
+        // Create container for TeamsBrowserPanel
+        const container = document.createElement('div');
+        container.id = 'teams-browser-panel';
+        container.className = 'h-full';
+        _bottomPanel.appendChild(container);
+
+        // Initialize the browser with the requested view
+        TeamsBrowserPanel.init('teams-browser-panel', view);
     }
 
     /**
@@ -134,6 +165,9 @@ const BottomPanelController = (function() {
      * Cleanup
      */
     function cleanup() {
+        if (_activeTab === 'teams' || _activeTab === 'players') {
+            TeamsBrowserPanel.cleanup();
+        }
         _weekDisplay2Ref = null;
         _bottomPanel = null;
         _placeholderContent = null;
