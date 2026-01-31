@@ -85,6 +85,7 @@ No auth. Returns JSON (despite `Content-Type: application/octet-stream`). Use `r
 - `spree`: max streak, quad kills
 - `speed`: max, avg movement speed
 - `weapons.{axe,sg,ssg,ng,sng,gl,rl,lg}`: each with acc (attacks/hits), kills, deaths, pickups, damage
+- `xferRL`, `xferLG`: weapon transfers (teammate picked up a dropped RL/LG) - top-level on player, NOT inside weapons
 - `items`: health_15/25/100, ga, ya, ra, q (quad), p (pent), r (ring) - with took count and time held
 - `ctf`: caps, carrier-defends, carrier-frags, defends, pickups, points, returns, runes
 
@@ -102,7 +103,7 @@ type Player = {
   login: string; name: string; team: string;
   stats: { frags: number; deaths: number; tk: number; "spawn-frags": number; kills: number; suicides: number; };
   dmg: { taken: number; given: number; team: number; self: number; "team-weapons": number; "enemy-weapons": number; "taken-to-die": number; };
-  xfer_rl: number; xfer_lg: number;
+  xferRL: number; xferLG: number;  // camelCase! Weapon transfers (teammate picked up dropped weapon)
   spree: { max: number; quad: number; };
   control: number;
   ctf: { caps: number; "carrier-defends": number; "carrier-frags": number; defends: number; pickups: number; points: number; returns: number; runes: { "0": number; "1": number; "2": number; "3": number; }; };

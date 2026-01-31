@@ -126,6 +126,13 @@ const QWHubService = (function() {
         return stats;
     }
 
+    /**
+     * Synchronous cache lookup for ktxstats. Returns cached stats or null.
+     */
+    function getCachedGameStats(demoSha256) {
+        return _statsCache.get(demoSha256) || null;
+    }
+
     // --- Mapshot URLs ---
 
     /**
@@ -268,7 +275,7 @@ const QWHubService = (function() {
             `&team_names=cs.${encodedTag}` +
             `&timestamp=gte.${sinceStr}` +
             `&order=timestamp.desc` +
-            `&limit=50`;
+            `&limit=1000`;
 
         const response = await fetch(url, {
             headers: { 'apikey': API_KEY }
@@ -316,6 +323,102 @@ const QWHubService = (function() {
     }
 
     /**
+     * Fetch full match history for a team within a time period.
+     * Returns transformed match objects with players data (for scoreboards).
+     * Used by Match History tab's split-panel view.
+     * @param {string} teamTag
+     * @param {number} months - Time period in months (default 3)
+     */
+    async function getMatchHistory(teamTag, months = 3) {
+        if (!teamTag) return [];
+
+        const apiTag = teamTag.toLowerCase();
+        const cacheKey = `history_${apiTag}_${months}`;
+
+        // Check cache (HOT PATH)
+        const cached = _matchCache.get(cacheKey);
+        if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
+            return cached.data;
+        }
+
+        // Calculate date range
+        const since = new Date();
+        since.setMonth(since.getMonth() - months);
+        const sinceStr = since.toISOString().split('T')[0];
+
+        const encodedTag = encodeURIComponent(`{${apiTag}}`);
+        const url = `${API_BASE}` +
+            `?select=id,timestamp,mode,map,teams,players,demo_sha256` +
+            `&mode=eq.4on4` +
+            `&team_names=cs.${encodedTag}` +
+            `&timestamp=gte.${sinceStr}` +
+            `&order=timestamp.desc` +
+            `&limit=1000`;
+
+        const response = await fetch(url, {
+            headers: { 'apikey': API_KEY }
+        });
+
+        if (!response.ok) {
+            throw new Error(`QW Hub API error: ${response.status}`);
+        }
+
+        const rawData = await response.json();
+        const matches = rawData.map(match => _transformMatch(match, apiTag));
+
+        _matchCache.set(cacheKey, {
+            data: matches,
+            fetchedAt: Date.now()
+        });
+
+        return matches;
+    }
+
+    /**
+     * Render colored QW name from ktxstats byte-encoded string.
+     * ktxstats names use chars >= 128 for brown text (subtract 128 to get ASCII).
+     * Chars 0-31 are special QW symbols (brackets, digits, bullets).
+     */
+    function coloredQuakeNameFromBytes(qwName) {
+        if (!qwName) return '';
+        let str = '', type = 'normal';
+        const changeType = (newType) => {
+            if (type !== newType) {
+                if (type !== 'normal') str += '</span>';
+                if (newType !== 'normal') str += `<span class="qw-color-${newType}">`;
+                type = newType;
+            }
+        };
+        for (let i = 0; i < qwName.length; i++) {
+            const raw = qwName.charCodeAt(i);
+            let ch = raw;
+            if (ch >= 128) ch -= 128;
+
+            if (ch < 16 || (ch >= 29 && ch <= 31)) {
+                changeType('normal'); str += '_';
+            } else if (ch === 16) {
+                changeType('g'); str += '[';
+            } else if (ch === 17) {
+                changeType('g'); str += ']';
+            } else if (ch >= 18 && ch <= 27) {
+                changeType('g'); str += String.fromCharCode(ch - 18 + 48);
+            } else if (ch === 28) {
+                changeType('normal'); str += '&#8226;';
+            } else {
+                changeType(raw >= 160 ? 'b' : 'normal');
+                const c = String.fromCharCode(ch);
+                if (c === '<') str += '&lt;';
+                else if (c === '>') str += '&gt;';
+                else if (c === '"') str += '&quot;';
+                else if (c === '&') str += '&amp;';
+                else str += c;
+            }
+        }
+        changeType('normal');
+        return str;
+    }
+
+    /**
      * Clear all cached match data.
      */
     function clearCache() {
@@ -325,14 +428,17 @@ const QWHubService = (function() {
 
     return {
         getRecentMatches,
+        getMatchHistory,
         getTeamMapStats,
         getGameStats,
+        getCachedGameStats,
         getHubUrl,
         getMatchUrl,
         getMapshotUrl,
         qwToAscii,
         getFragColorStyle,
         coloredQuakeName,
+        coloredQuakeNameFromBytes,
         clearCache
     };
 })();

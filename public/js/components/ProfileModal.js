@@ -114,6 +114,14 @@ const ProfileModal = (function() {
                             <div class="border-t border-border pt-4" id="discord-section-container">
                                 ${_renderDiscordSection()}
                             </div>
+
+                            <!-- Timezone Section (Slice 7.0c) -->
+                            <div class="border-t border-border pt-4">
+                                <label class="block text-sm font-medium text-muted-foreground mb-2">Timezone</label>
+                                <select id="profile-timezone" name="timezone" class="w-full bg-muted border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                                    ${_renderTimezoneOptions()}
+                                </select>
+                            </div>
                         </form>
                     </div>
 
@@ -288,10 +296,27 @@ const ProfileModal = (function() {
                     profileData.photoURL = photoURL || null;
                 }
             }
-            
+
+            // Add timezone (Slice 7.0c)
+            const timezone = formData.get('timezone');
+            if (timezone) {
+                profileData.timezone = timezone;
+            }
+
             // Always use updateProfile (user doc already exists from sign-in)
             await AuthService.updateProfile(profileData);
             console.log('✅ Profile saved successfully');
+
+            // Update TimezoneService if timezone changed (Slice 7.0c)
+            if (timezone && typeof TimezoneService !== 'undefined') {
+                const currentTz = TimezoneService.getUserTimezone();
+                if (currentTz !== timezone) {
+                    TimezoneService.setUserTimezone(timezone);
+                    window.dispatchEvent(new CustomEvent('timezone-changed', {
+                        detail: { timezone }
+                    }));
+                }
+            }
 
             hide();
 
@@ -502,6 +527,25 @@ const ProfileModal = (function() {
         if (avatarBtn) {
             avatarBtn.addEventListener('click', _handleAvatarChangeClick);
         }
+    }
+
+    // Render timezone select options (Slice 7.0c)
+    function _renderTimezoneOptions() {
+        if (typeof TimezoneService === 'undefined') return '<option>UTC</option>';
+
+        const groups = TimezoneService.getTimezoneOptions();
+        const currentTz = _userProfile?.timezone || TimezoneService.getUserTimezone();
+
+        let html = '';
+        for (const group of groups) {
+            html += `<optgroup label="${group.region}">`;
+            for (const tz of group.timezones) {
+                const selected = tz.id === currentTz ? ' selected' : '';
+                html += `<option value="${tz.id}"${selected}>${tz.label}</option>`;
+            }
+            html += '</optgroup>';
+        }
+        return html;
     }
 
     // Render Discord section based on auth state

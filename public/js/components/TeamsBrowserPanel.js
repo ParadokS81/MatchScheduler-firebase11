@@ -19,6 +19,23 @@ const TeamsBrowserPanel = (function() {
     let _tooltip = null;
     let _tooltipHideTimeout = null;
 
+    // Slice 5.2b: Match History split-panel state
+    let _historyMatches = [];        // Full fetched match list (all within period)
+    let _historyMapFilter = '';       // '' = all maps
+    let _historyOpponentFilter = '';  // '' = all opponents
+    let _historyPeriod = 3;           // Default 3 months
+    let _hoveredMatchId = null;       // Currently hovered match (preview)
+    let _selectedMatchId = null;      // Clicked/sticky match
+    let _selectedMatchStats = null;   // ktxstats for selected match
+    let _statsLoading = false;        // Loading indicator for ktxstats fetch
+
+    // Sortable table state
+    let _sortColumn = 'date';         // 'date' | 'map' | 'scoreUs' | 'scoreThem' | 'opponent' | 'result'
+    let _sortDirection = 'desc';      // 'asc' | 'desc'
+
+    // Stats table tab state
+    let _activeStatsTab = 'performance'; // 'performance' | 'weapons' | 'resources'
+
     // ========================================
     // Initialization
     // ========================================
@@ -361,28 +378,31 @@ const TeamsBrowserPanel = (function() {
 
         return `
             <div class="team-details-landing">
-                <!-- Left: Identity — hero logo + centered roster -->
+                <!-- Left: Identity — title spanning, then logo + roster side by side -->
                 <div class="team-details-identity">
-                    <div class="team-details-hero">
+                    <div class="team-details-identity-title">
+                        <span class="team-details-right-name">${_escapeHtml(team.teamName || 'Unknown Team')}</span>
+                        <span class="team-details-right-division">${divisions}</span>
+                    </div>
+                    <div class="team-details-identity-body">
                         <div class="team-details-logo">
                             ${logoUrl
                                 ? `<img src="${logoUrl}" alt="${_escapeHtml(team.teamName)}">`
                                 : `<div class="team-details-logo-placeholder">${_escapeHtml(team.teamTag || '??')}</div>`
                             }
                         </div>
-                    </div>
-                    <div class="team-details-roster">
-                        ${rosterHtml}
+                        <div class="team-details-roster">
+                            ${rosterHtml}
+                        </div>
                     </div>
                 </div>
 
-                <!-- Right: Title + Division + Activity + Upcoming -->
+                <!-- Right: Activity + Upcoming -->
                 <div class="team-details-activity">
-                    <div class="team-details-right-title">
-                        <span class="team-details-right-name">${_escapeHtml(team.teamName || 'Unknown Team')}</span>
-                        <span class="team-details-right-division">${divisions}</span>
+                    <div class="team-details-activity-title">
+                        <span class="team-details-right-name">Match Stats</span>
+                        <span class="team-details-right-division">Last 6 months</span>
                     </div>
-                    <div class="team-details-activity-header" id="map-stats-label">Activity</div>
                     <div id="map-stats-content" data-team-tag="${team.teamTag || ''}">
                         ${hasTag
                             ? '<div class="text-xs text-muted-foreground">Loading activity...</div>'
@@ -492,63 +512,1094 @@ const TeamsBrowserPanel = (function() {
     function _renderMatchHistoryTab(team) {
         const hasTag = !!team.teamTag;
 
+        if (!hasTag) {
+            return `
+                <div class="text-sm text-muted-foreground p-4">
+                    <p>Match history not available</p>
+                    <p class="text-xs mt-1">Team leader can configure QW Hub tag in Team Settings</p>
+                </div>
+            `;
+        }
+
         return `
-            <div class="match-history-section">
-                <div class="section-header">
-                    <h4 class="section-title">Recent Matches</h4>
-                    ${hasTag ? `
-                        <a href="${QWHubService.getHubUrl(team.teamTag)}"
-                           target="_blank"
-                           class="text-xs text-muted-foreground hover:text-foreground transition-colors">
-                            View on QW Hub &rarr;
-                        </a>
-                    ` : ''}
+            <div class="match-history-split" data-team-tag="${team.teamTag}">
+                <!-- Left: Match List -->
+                <div class="mh-list-panel">
+                    ${_renderMatchFilters()}
+                    <div class="mh-match-list" id="mh-match-list">
+                        <div class="text-xs text-muted-foreground p-2">Loading matches...</div>
+                    </div>
                 </div>
 
-                <div id="match-history-content" data-team-tag="${team.teamTag || ''}">
-                    ${hasTag
-                        ? '<div class="text-muted-foreground text-sm">Loading matches...</div>'
-                        : `
-                            <div class="text-muted-foreground text-sm">
-                                <p>Match history not available</p>
-                                <p class="text-xs mt-1">Team leader can configure QW Hub tag in Team Settings</p>
-                            </div>
-                        `
-                    }
+                <!-- Right: Preview Panel -->
+                <div class="mh-preview-panel" id="mh-preview-panel">
+                    <div class="mh-preview-empty">
+                        <p class="text-xs text-muted-foreground">Hover a match to preview scoreboard</p>
+                    </div>
                 </div>
             </div>
         `;
     }
 
+    // Store match data by ID for scoreboard rendering (avoids data attributes)
+    const _matchDataById = new Map();
+
+    /**
+     * Render the match filter bar (map dropdown derived from fetched data).
+     */
+    function _renderMatchFilters() {
+        const uniqueMaps = [...new Set(_historyMatches.map(m => m.map))].sort();
+        const uniqueOpponents = [...new Set(_historyMatches.map(m => m.opponentTag))].sort();
+
+        return `
+            <div class="mh-filters">
+                <select class="mh-filter-select" id="mh-map-filter"
+                        onchange="TeamsBrowserPanel.filterByMap(this.value)">
+                    <option value="">All Maps</option>
+                    ${uniqueMaps.map(map => `
+                        <option value="${map}" ${_historyMapFilter === map ? 'selected' : ''}>${map}</option>
+                    `).join('')}
+                </select>
+                <select class="mh-filter-select" id="mh-opponent-filter"
+                        onchange="TeamsBrowserPanel.filterByOpponent(this.value)">
+                    <option value="">All Opponents</option>
+                    ${uniqueOpponents.map(opp => `
+                        <option value="${opp}" ${_historyOpponentFilter === opp ? 'selected' : ''}>${_escapeHtml(opp)}</option>
+                    `).join('')}
+                </select>
+                <select class="mh-filter-select mh-period-select" id="mh-period-filter"
+                        onchange="TeamsBrowserPanel.changePeriod(Number(this.value))">
+                    <option value="3" ${_historyPeriod === 3 ? 'selected' : ''}>3 months</option>
+                    <option value="6" ${_historyPeriod === 6 ? 'selected' : ''}>6 months</option>
+                </select>
+            </div>
+        `;
+    }
+
+    /**
+     * Sort matches by current sort column and direction.
+     */
+    function _sortMatches(matches) {
+        const sorted = [...matches];
+        const dir = _sortDirection === 'asc' ? 1 : -1;
+
+        sorted.sort((a, b) => {
+            switch (_sortColumn) {
+                case 'date':
+                    return dir * (a.date - b.date);
+                case 'map':
+                    return dir * a.map.localeCompare(b.map);
+                case 'scoreUs':
+                    return dir * (a.ourScore - b.ourScore);
+                case 'scoreThem':
+                    return dir * (a.opponentScore - b.opponentScore);
+                case 'opponent':
+                    return dir * a.opponentTag.localeCompare(b.opponentTag);
+                case 'result':
+                    // W > D > L
+                    const order = { 'W': 2, 'D': 1, 'L': 0 };
+                    return dir * ((order[a.result] || 0) - (order[b.result] || 0));
+                default:
+                    return 0;
+            }
+        });
+        return sorted;
+    }
+
+    /**
+     * Handle column header click for sorting.
+     */
+    function sortByColumn(column) {
+        if (_sortColumn === column) {
+            _sortDirection = _sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            _sortColumn = column;
+            _sortDirection = column === 'date' ? 'desc' : 'desc';
+        }
+        _applyFiltersAndUpdate();
+    }
+
+    /**
+     * Switch the stats table tab (Performance / Weapons / Resources).
+     * Re-renders just the preview panel to show the new tab.
+     */
+    function switchStatsTab(tab) {
+        _activeStatsTab = tab;
+        if (_selectedMatchId && _selectedMatchStats) {
+            const panel = document.getElementById('mh-preview-panel');
+            if (panel) {
+                panel.innerHTML = _renderPreviewPanel(_selectedMatchId);
+            }
+        }
+    }
+
+    /**
+     * Render sort indicator arrow for a column header.
+     */
+    function _sortIndicator(column) {
+        if (_sortColumn !== column) return '';
+        return _sortDirection === 'asc' ? ' &#9650;' : ' &#9660;';
+    }
+
+    /**
+     * Render the left-panel match list as a sortable table.
+     */
+    function _renderMatchList(matches) {
+        if (matches.length === 0) {
+            return '<p class="text-xs text-muted-foreground p-2">No matches found</p>';
+        }
+
+        const sorted = _sortMatches(matches);
+
+        const headerHtml = `
+            <div class="mh-table-header">
+                <span class="mh-th mh-th-date" onclick="TeamsBrowserPanel.sortByColumn('date')">date${_sortIndicator('date')}</span>
+                <span></span>
+                <span class="mh-th mh-th-map" onclick="TeamsBrowserPanel.sortByColumn('map')">map${_sortIndicator('map')}</span>
+                <span class="mh-th mh-th-us">us</span>
+                <span class="mh-th mh-th-score" onclick="TeamsBrowserPanel.sortByColumn('scoreUs')">#${_sortIndicator('scoreUs')}</span>
+                <span class="mh-th mh-th-score" onclick="TeamsBrowserPanel.sortByColumn('scoreThem')">#${_sortIndicator('scoreThem')}</span>
+                <span class="mh-th mh-th-vs" onclick="TeamsBrowserPanel.sortByColumn('opponent')">vs${_sortIndicator('opponent')}</span>
+                <span class="mh-th mh-th-result" onclick="TeamsBrowserPanel.sortByColumn('result')">w/l${_sortIndicator('result')}</span>
+            </div>
+        `;
+
+        const rowsHtml = sorted.map(m => {
+            const dateStr = m.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const resultClass = m.result === 'W' ? 'mh-result-win'
+                              : m.result === 'L' ? 'mh-result-loss'
+                              : 'mh-result-draw';
+            const isSelected = String(m.id) === _selectedMatchId;
+
+            return `
+                <div class="mh-table-row ${isSelected ? 'selected' : ''}"
+                     data-match-id="${m.id}"
+                     onmouseenter="TeamsBrowserPanel.previewMatch('${m.id}')"
+                     onmouseleave="TeamsBrowserPanel.clearPreview()"
+                     onclick="TeamsBrowserPanel.selectMatch('${m.id}')">
+                    <span class="mh-td mh-td-date">${dateStr}</span>
+                    <span></span>
+                    <span class="mh-td mh-td-map">${m.map}</span>
+                    <span class="mh-td mh-td-us">${_escapeHtml(m.ourTag)}</span>
+                    <span class="mh-td mh-td-score">${m.ourScore}</span>
+                    <span class="mh-td mh-td-score">${m.opponentScore}</span>
+                    <span class="mh-td mh-td-opponent">${_escapeHtml(m.opponentTag)}</span>
+                    <span class="mh-td mh-td-result ${resultClass}">${m.result}</span>
+                </div>
+            `;
+        }).join('');
+
+        return headerHtml + rowsHtml;
+    }
+
+    /**
+     * Render unified stats-on-map view: map background + stats table + action links.
+     * Shown when a match is sticky-selected and ktxstats are loaded.
+     */
+    function _renderStatsView(match, ktxstats) {
+        const mapshotUrl = QWHubService.getMapshotUrl(match.map, 'lg');
+        const hubUrl = `https://hub.quakeworld.nu/games/?gameId=${match.id}`;
+        const tableHtml = _renderStatsTable(ktxstats, match);
+
+        return `
+            <div class="mh-stats-view" style="background-image: url('${mapshotUrl}');">
+                <div class="mh-stats-overlay sb-text-outline">
+                    ${tableHtml}
+                    <div class="mh-actions">
+                        <a href="${hubUrl}" target="_blank" class="mh-action-link">
+                            View on QW Hub &rarr;
+                        </a>
+                        <button class="mh-action-link" onclick="TeamsBrowserPanel.openFullStats('${match.id}')">
+                            Full Stats &#x29C9;
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render the right-panel preview.
+     * Hover: classic scoreboard. Click (sticky): unified stats-on-map view.
+     */
+    function _renderPreviewPanel(matchId) {
+        const match = _matchDataById.get(String(matchId));
+        if (!match) return '';
+
+        const isSticky = String(matchId) === _selectedMatchId;
+
+        if (isSticky) {
+            if (_selectedMatchStats && !_statsLoading) {
+                // Unified stats-on-map view
+                return _renderStatsView(match, _selectedMatchStats);
+            }
+            // Still loading — show scoreboard + loading indicator
+            let html = _renderScoreboard(match);
+            if (_statsLoading) {
+                html += '<div class="mh-stats-loading sb-text-outline">Loading stats...</div>';
+            }
+            return html;
+        }
+
+        // Hover — scoreboard + summary if ktxstats cached
+        let html = _renderScoreboard(match);
+        const cachedStats = match.demoHash ? QWHubService.getCachedGameStats(match.demoHash) : null;
+        if (cachedStats) {
+            html += _renderScoreboardSummary(cachedStats, match);
+        }
+        return html;
+    }
+
+    // Track ApexCharts instance for cleanup
+    let _activityChart = null;
+
+    /**
+     * Resolve a CSS custom property to a hex color string.
+     * Needed because ApexCharts can't use oklch() or var() in JS options.
+     */
+    function _cssVarToHex(varName) {
+        const temp = document.createElement('div');
+        temp.style.color = `var(${varName})`;
+        temp.style.display = 'none';
+        document.body.appendChild(temp);
+        const computed = getComputedStyle(temp).color;
+        document.body.removeChild(temp);
+        // computed is usually "rgb(r, g, b)" or "rgba(r, g, b, a)"
+        const match = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (!match) return null;
+        const [, r, g, b] = match;
+        return '#' + [r, g, b].map(c => Number(c).toString(16).padStart(2, '0')).join('');
+    }
+
+    /**
+     * Return container HTML for the activity chart.
+     * Call _mountActivityChart() after inserting into DOM.
+     */
+    function _renderActivityGraph(matches) {
+        return `
+            <div class="mh-activity-section">
+                <div class="mh-section-label">Activity <span class="mh-activity-total">${matches.length} matches</span></div>
+                <div id="mh-activity-chart"></div>
+            </div>
+        `;
+    }
+
+    /**
+     * Mount ApexCharts line chart into #mh-activity-chart.
+     * Must be called after the container is in the DOM.
+     */
+    function _mountActivityChart(matches) {
+        // Destroy previous instance
+        if (_activityChart) {
+            _activityChart.destroy();
+            _activityChart = null;
+        }
+
+        const el = document.getElementById('mh-activity-chart');
+        if (!el || matches.length === 0) return;
+
+        // Build weekly buckets spanning the full period
+        const now = new Date();
+        const periodStart = new Date(now.getFullYear(), now.getMonth() - _historyPeriod, now.getDate());
+
+        // Get Monday of periodStart's week
+        const startDay = periodStart.getDay();
+        const mondayOffset = startDay === 0 ? -6 : 1 - startDay;
+        const firstMonday = new Date(periodStart);
+        firstMonday.setDate(periodStart.getDate() + mondayOffset);
+        firstMonday.setHours(0, 0, 0, 0);
+
+        // Generate all weeks
+        const weeks = [];
+        const cursor = new Date(firstMonday);
+        while (cursor <= now) {
+            weeks.push({ start: new Date(cursor), count: 0 });
+            cursor.setDate(cursor.getDate() + 7);
+        }
+
+        // Bucket matches into weeks
+        matches.forEach(m => {
+            const matchDate = m.date;
+            for (let i = weeks.length - 1; i >= 0; i--) {
+                if (matchDate >= weeks[i].start) {
+                    weeks[i].count++;
+                    break;
+                }
+            }
+        });
+
+        if (weeks.length < 2) return;
+
+        // Resolve CSS custom properties to hex for ApexCharts
+        // (ApexCharts can't use oklch() or var() in its JS options)
+        const chartColor = _cssVarToHex('--primary') || '#6366f1';
+        const mutedColor = _cssVarToHex('--muted-foreground') || '#888888';
+
+        const options = {
+            chart: {
+                type: 'area',
+                height: 120,
+                sparkline: { enabled: false },
+                toolbar: { show: false },
+                zoom: { enabled: false },
+                background: 'transparent',
+                fontFamily: 'inherit',
+                animations: {
+                    enabled: true,
+                    easing: 'easeinout',
+                    speed: 400
+                }
+            },
+            theme: { mode: 'dark' },
+            series: [{
+                name: 'Matches',
+                data: weeks.map(w => w.count)
+            }],
+            xaxis: {
+                categories: weeks.map((w, i) => {
+                    // Show month abbreviation at first week and at month boundaries
+                    if (i === 0) return w.start.toLocaleDateString('en-US', { month: 'short' });
+                    const prevMonth = weeks[i - 1].start.getMonth();
+                    const curMonth = w.start.getMonth();
+                    if (curMonth !== prevMonth) {
+                        return w.start.toLocaleDateString('en-US', { month: 'short' });
+                    }
+                    return ' ';
+                }),
+                labels: {
+                    show: true,
+                    rotate: 0,
+                    hideOverlappingLabels: false,
+                    trim: false,
+                    style: { fontSize: '10px', colors: mutedColor }
+                },
+                axisBorder: { show: false },
+                axisTicks: { show: false },
+                tooltip: {
+                    enabled: true,
+                    formatter: function(val, opts) {
+                        const idx = opts?.dataPointIndex;
+                        if (idx !== undefined && idx >= 0 && idx < weeks.length) {
+                            return weeks[idx].start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        }
+                        return val;
+                    }
+                }
+            },
+            yaxis: {
+                show: false,
+                min: 0
+            },
+            colors: [chartColor],
+            stroke: {
+                curve: 'smooth',
+                width: 2
+            },
+            fill: {
+                type: 'gradient',
+                gradient: {
+                    shadeIntensity: 1,
+                    opacityFrom: 0.3,
+                    opacityTo: 0.05,
+                    stops: [0, 100]
+                }
+            },
+            dataLabels: {
+                enabled: true,
+                formatter: function(val) { return val > 0 ? val : ''; },
+                offsetY: -6,
+                style: {
+                    fontSize: '9px',
+                    colors: [mutedColor],
+                    fontWeight: 400
+                },
+                background: { enabled: false }
+            },
+            markers: {
+                size: 0,
+                hover: { size: 4 }
+            },
+            tooltip: {
+                theme: 'dark',
+                x: { show: true },
+                y: {
+                    formatter: function(val) { return val + ' matches'; }
+                }
+            },
+            grid: {
+                show: false,
+                padding: { left: 4, right: 4, top: 0, bottom: 0 }
+            }
+        };
+
+        _activityChart = new ApexCharts(el, options);
+        _activityChart.render();
+    }
+
+    /**
+     * Render summary stats panel (shown when no match is hovered/selected).
+     * Derives all data client-side from filtered matches.
+     * Breakdowns adapt to active filters:
+     *   - Map filtered → show only Opponents breakdown
+     *   - Opponent filtered → show only Maps breakdown
+     *   - Both/neither → show both breakdowns
+     */
+    function _renderSummaryPanel() {
+        const filtered = _getFilteredHistoryMatches();
+        if (filtered.length === 0 && _historyMatches.length === 0) {
+            return `
+                <div class="mh-preview-empty">
+                    <p class="text-xs text-muted-foreground">No match data available</p>
+                </div>
+            `;
+        }
+
+        // Use filtered matches for activity + breakdowns
+        const matches = filtered.length > 0 ? filtered : _historyMatches;
+
+        // --- Weekly activity line graph (reflects filters) ---
+        const activityHtml = _renderActivityGraph(matches);
+
+        // Determine which breakdowns to show based on active filters
+        const hasMapFilter = !!_historyMapFilter;
+        const hasOppFilter = !!_historyOpponentFilter;
+        const showMaps = !hasMapFilter || hasOppFilter; // Show maps unless only map is filtered
+        const showOpponents = !hasOppFilter || hasMapFilter; // Show opponents unless only opp is filtered
+        // If both filters active, show both (edge case)
+        // If no filters, show both (default)
+
+        // --- Map breakdown ---
+        let mapsHtml = '';
+        if (showMaps) {
+            const mapAgg = {};
+            matches.forEach(m => {
+                if (!mapAgg[m.map]) mapAgg[m.map] = { name: m.map, total: 0, wins: 0, losses: 0 };
+                mapAgg[m.map].total++;
+                if (m.result === 'W') mapAgg[m.map].wins++;
+                else if (m.result === 'L') mapAgg[m.map].losses++;
+            });
+            const mapRows = Object.values(mapAgg).sort((a, b) => b.total - a.total);
+
+            mapsHtml = `
+                <div class="mh-breakdown-col">
+                    <div class="mh-section-label">Maps</div>
+                    <div class="mh-breakdown-table">
+                        <div class="mh-breakdown-hdr">
+                            <span class="mh-bd-name">Map</span>
+                            <span class="mh-bd-count">#</span>
+                            <span class="mh-bd-record">W-L</span>
+                        </div>
+                        ${mapRows.map(r => `
+                            <div class="mh-breakdown-row" onclick="TeamsBrowserPanel.filterByMap('${r.name}')">
+                                <span class="mh-bd-name">${r.name}</span>
+                                <span class="mh-bd-count">${r.total}</span>
+                                <span class="mh-bd-record"><span class="mh-bd-win">${r.wins}</span>-<span class="mh-bd-loss">${r.losses}</span></span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- Opponent breakdown ---
+        let oppsHtml = '';
+        if (showOpponents) {
+            const oppAgg = {};
+            matches.forEach(m => {
+                const opp = m.opponentTag;
+                if (!oppAgg[opp]) oppAgg[opp] = { name: opp, total: 0, wins: 0, losses: 0 };
+                oppAgg[opp].total++;
+                if (m.result === 'W') oppAgg[opp].wins++;
+                else if (m.result === 'L') oppAgg[opp].losses++;
+            });
+            const oppRows = Object.values(oppAgg).sort((a, b) => b.total - a.total);
+
+            oppsHtml = `
+                <div class="mh-breakdown-col">
+                    <div class="mh-section-label">Opponents</div>
+                    <div class="mh-breakdown-table">
+                        <div class="mh-breakdown-hdr">
+                            <span class="mh-bd-name">Team</span>
+                            <span class="mh-bd-count">#</span>
+                            <span class="mh-bd-record">W-L</span>
+                        </div>
+                        ${oppRows.map(r => `
+                            <div class="mh-breakdown-row" onclick="TeamsBrowserPanel.filterByOpponent('${_escapeHtml(r.name)}')">
+                                <span class="mh-bd-name">${_escapeHtml(r.name)}</span>
+                                <span class="mh-bd-count">${r.total}</span>
+                                <span class="mh-bd-record"><span class="mh-bd-win">${r.wins}</span>-<span class="mh-bd-loss">${r.losses}</span></span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Use single column layout when only one breakdown is shown
+        const isSingleCol = !showMaps || !showOpponents;
+        const breakdownHtml = `
+            <div class="mh-breakdown-columns ${isSingleCol ? 'mh-breakdown-single' : ''}">
+                ${mapsHtml}
+                ${oppsHtml}
+            </div>
+        `;
+
+        return `
+            <div class="mh-summary-panel">
+                ${activityHtml}
+                ${breakdownHtml}
+            </div>
+        `;
+    }
+
+    // ========================================
+    // Stats Table: Per-player stats with 3 tabs
+    // ========================================
+
+    const STATS_COLUMNS = {
+        performance: [
+            { key: 'eff', label: 'Eff', suffix: '%' },
+            { key: 'deaths', label: 'D', highlightInverse: true },
+            { key: 'dmg', label: 'Dmg', format: 'k' },
+            { key: 'ewep', label: 'EWEP', format: 'k' },
+            { key: 'toDie', label: 'ToDie' }
+        ],
+        weapons: [
+            { key: 'sgPct', label: '%', suffix: '%', group: 'sg' },
+            { key: 'rlKills', label: 'Kills', group: 'rl', groupStart: true, groupLabel: 'Rocket Launcher' },
+            { key: 'rlTook', label: 'Took', group: 'rl' },
+            { key: 'rlDropped', label: 'Drop', group: 'rl', highlightInverse: true },
+            { key: 'rlXfer', label: 'Xfer', group: 'rl' },
+            { key: 'lgPct', label: '%', suffix: '%', group: 'lg', groupStart: true, groupLabel: 'Lightning Gun' },
+            { key: 'lgKills', label: 'Kills', group: 'lg' },
+            { key: 'lgTook', label: 'Took', group: 'lg' },
+            { key: 'lgDropped', label: 'Drop', group: 'lg', highlightInverse: true },
+            { key: 'lgXfer', label: 'Xfer', group: 'lg' }
+        ],
+        resources: [
+            { key: 'ga', label: 'GA', colorClass: 'mh-hdr-ga' },
+            { key: 'ya', label: 'YA', colorClass: 'mh-hdr-ya' },
+            { key: 'ra', label: 'RA', colorClass: 'mh-hdr-ra' },
+            { key: 'mh', label: 'MH', colorClass: 'mh-hdr-mh' },
+            { key: 'q', label: 'Q', colorClass: 'mh-hdr-q' },
+            { key: 'p', label: 'P', colorClass: 'mh-hdr-p' },
+            { key: 'r', label: 'R', colorClass: 'mh-hdr-r' }
+        ]
+    };
+
+    function _escapeHtmlLocal(str) {
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /**
+     * Extract per-player stats for a given tab.
+     */
+    function _extractPlayerStats(player, tab) {
+        const s = player.stats || {};
+        const d = player.dmg || {};
+        const w = player.weapons || {};
+        const it = player.items || {};
+
+        if (tab === 'performance') {
+            const eff = (s.kills + s.deaths) > 0
+                ? Math.round(100 * s.kills / (s.kills + s.deaths)) : 0;
+            return {
+                eff,
+                deaths: s.deaths || 0,
+                dmg: d.given || 0,
+                ewep: d['enemy-weapons'] || 0,
+                toDie: d['taken-to-die'] || 0
+            };
+        }
+        if (tab === 'weapons') {
+            const sg = w.sg || {};
+            const rl = w.rl || {};
+            const lg = w.lg || {};
+            return {
+                sgPct: sg.acc && sg.acc.attacks > 0
+                    ? Math.round(100 * sg.acc.hits / sg.acc.attacks) : 0,
+                rlKills: rl.kills ? rl.kills.enemy || 0 : 0,
+                rlTook: rl.pickups ? rl.pickups.taken || 0 : 0,
+                rlDropped: rl.pickups ? rl.pickups.dropped || 0 : 0,
+                rlXfer: player.xferRL || 0,
+                lgPct: lg.acc && lg.acc.attacks > 0
+                    ? Math.round(100 * lg.acc.hits / lg.acc.attacks) : 0,
+                lgKills: lg.kills ? lg.kills.enemy || 0 : 0,
+                lgTook: lg.pickups ? lg.pickups.taken || 0 : 0,
+                lgDropped: lg.pickups ? lg.pickups.dropped || 0 : 0,
+                lgXfer: player.xferLG || 0
+            };
+        }
+        // resources
+        return {
+            ga: it.ga ? it.ga.took || 0 : 0,
+            ya: it.ya ? it.ya.took || 0 : 0,
+            ra: it.ra ? it.ra.took || 0 : 0,
+            mh: it.health_100 ? it.health_100.took || 0 : 0,
+            q: it.q ? it.q.took || 0 : 0,
+            p: it.p ? it.p.took || 0 : 0,
+            r: it.r ? it.r.took || 0 : 0
+        };
+    }
+
+    /**
+     * Aggregate team stats from an array of players for a given tab.
+     * Percentages are recomputed from totals (not averaged).
+     */
+    function _aggregateTeamStats(players, tab) {
+        if (players.length === 0) return null;
+
+        // Sum all fields
+        const agg = {};
+        players.forEach(p => {
+            const stats = _extractPlayerStats(p, tab);
+            Object.keys(stats).forEach(key => {
+                agg[key] = (agg[key] || 0) + stats[key];
+            });
+        });
+
+        if (tab === 'performance') {
+            // Recompute eff from totals
+            const totalKills = players.reduce((s, p) => s + (p.stats?.kills || 0), 0);
+            const totalDeaths = players.reduce((s, p) => s + (p.stats?.deaths || 0), 0);
+            agg.eff = (totalKills + totalDeaths) > 0
+                ? Math.round(100 * totalKills / (totalKills + totalDeaths)) : 0;
+            // toDie is averaged
+            agg.toDie = Math.round(agg.toDie / players.length);
+        }
+        if (tab === 'weapons') {
+            // Recompute percentages from raw totals
+            const sgHits = players.reduce((s, p) => s + (p.weapons?.sg?.acc?.hits || 0), 0);
+            const sgAtks = players.reduce((s, p) => s + (p.weapons?.sg?.acc?.attacks || 0), 0);
+            agg.sgPct = sgAtks > 0 ? Math.round(100 * sgHits / sgAtks) : 0;
+            const lgHits = players.reduce((s, p) => s + (p.weapons?.lg?.acc?.hits || 0), 0);
+            const lgAtks = players.reduce((s, p) => s + (p.weapons?.lg?.acc?.attacks || 0), 0);
+            agg.lgPct = lgAtks > 0 ? Math.round(100 * lgHits / lgAtks) : 0;
+        }
+        return agg;
+    }
+
+    /**
+     * Render per-player stats table with 3 toggleable tabs.
+     * Replaces the old aggregated stats bar.
+     */
+    function _renderStatsTable(ktxstats, match) {
+        if (!ktxstats || !ktxstats.players) return '';
+
+        const tab = _activeStatsTab;
+        const columns = STATS_COLUMNS[tab];
+        const ourTagLower = match.ourTag.toLowerCase();
+
+        // Filter bogus players (ping === 0) and split by team
+        const validPlayers = ktxstats.players.filter(p => p.ping !== 0);
+        const ourPlayers = validPlayers
+            .filter(p => QWHubService.qwToAscii(p.team).toLowerCase() === ourTagLower)
+            .sort((a, b) => (b.stats?.frags || 0) - (a.stats?.frags || 0));
+        const theirPlayers = validPlayers
+            .filter(p => QWHubService.qwToAscii(p.team).toLowerCase() !== ourTagLower)
+            .sort((a, b) => (b.stats?.frags || 0) - (a.stats?.frags || 0));
+
+        // Tab buttons
+        const tabs = ['performance', 'weapons', 'resources', 'awards'];
+        const tabLabels = { performance: 'Perf', weapons: 'Weapons', resources: 'Resources', awards: 'Awards' };
+        const tabsHtml = tabs.map(t =>
+            `<button class="mh-stab${t === tab ? ' mh-stab-active' : ''}"
+                    onclick="TeamsBrowserPanel.switchStatsTab('${t}')">${tabLabels[t]}</button>`
+        ).join('');
+
+        // Awards tab — completely different layout
+        if (tab === 'awards') {
+            return _renderAwardsTab(tabsHtml, validPlayers);
+        }
+
+        // Header row — with group labels for weapons tab
+        let headerCells = '';
+        if (tab === 'weapons') {
+            // Group header row: SG | RL | LG
+            headerCells = columns.map(col => {
+                const classes = [col.colorClass || '', col.groupStart ? 'mh-group-start' : ''].filter(Boolean).join(' ');
+                return `<th class="${classes}">${col.label}</th>`;
+            }).join('');
+        } else {
+            headerCells = columns.map(col => {
+                const classes = [col.colorClass || ''].filter(Boolean).join(' ');
+                return `<th class="${classes}">${col.label}</th>`;
+            }).join('');
+        }
+
+        // Pre-compute per-column top value across all individual players
+        const allIndividualStats = [...ourPlayers, ...theirPlayers].map(p => _extractPlayerStats(p, tab));
+        const skipHighlight = new Set(['p', 'r', 'rlXfer', 'lgXfer']);
+        const columnTopVal = {};
+        columns.forEach(col => {
+            if (skipHighlight.has(col.key) || col.noHighlight) return;
+            const vals = allIndividualStats.map(s => s[col.key] || 0).filter(v => v > 0);
+            const maxVal = Math.max(...vals, 0);
+            // Only highlight if the top value is unique (not tied by multiple players)
+            const count = vals.filter(v => v === maxVal).length;
+            if (maxVal > 0 && count === 1) {
+                columnTopVal[col.key] = maxVal;
+            }
+        });
+
+        // Build a single data row
+        function renderRow(stats, nameHtml, frags, isAggregate) {
+            const rowCls = isAggregate ? 'mh-st-agg' : 'mh-st-player';
+            const cells = columns.map(col => {
+                const val = stats[col.key] || 0;
+                let display;
+                if (col.format === 'k' && val >= 1000) {
+                    display = (val / 1000).toFixed(1) + 'k';
+                } else {
+                    display = String(val) + (col.suffix || '');
+                }
+                const dimmed = val === 0 ? ' mh-dim' : '';
+                const groupCls = col.groupStart ? ' mh-group-start' : '';
+
+                // Highlight #1 value for individual player rows
+                const isTop = !isAggregate && val > 0 && columnTopVal[col.key] === val;
+                if (isTop) {
+                    const colorType = col.highlightInverse ? 'red' : 'green';
+                    display = `<span class="mh-top mh-top-${colorType}">${display}</span>`;
+                }
+
+                return `<td class="${dimmed}${groupCls}">${display}</td>`;
+            }).join('');
+            return `<tr class="${rowCls}">
+                <td class="mh-st-frags">${frags}</td>
+                <td class="mh-st-name">${nameHtml}</td>
+                ${cells}
+            </tr>`;
+        }
+
+        // Team aggregate rows
+        const ourAgg = _aggregateTeamStats(ourPlayers, tab);
+        const theirAgg = _aggregateTeamStats(theirPlayers, tab);
+        const ourTotalFrags = ourPlayers.reduce((s, p) => s + (p.stats?.frags || 0), 0);
+        const theirTotalFrags = theirPlayers.reduce((s, p) => s + (p.stats?.frags || 0), 0);
+        const ourTeamName = ourPlayers.length > 0
+            ? QWHubService.qwToAscii(ourPlayers[0].team) : match.ourTag;
+        const theirTeamName = theirPlayers.length > 0
+            ? QWHubService.qwToAscii(theirPlayers[0].team) : (match.opponentTag || '?');
+
+        let rowsHtml = '';
+        if (ourAgg) rowsHtml += renderRow(ourAgg, `<strong>${_escapeHtmlLocal(ourTeamName)}</strong>`, ourTotalFrags, true);
+        if (theirAgg) rowsHtml += renderRow(theirAgg, `<strong>${_escapeHtmlLocal(theirTeamName)}</strong>`, theirTotalFrags, true);
+
+        // Divider between aggregates and individual players
+        const colSpan = 2 + columns.length;
+        rowsHtml += `<tr class="mh-st-divider"><td colspan="${colSpan}"></td></tr>`;
+
+        // Individual player rows: our team first, then opponent
+        const allPlayerGroups = [ourPlayers, theirPlayers];
+        allPlayerGroups.forEach((group, groupIdx) => {
+            group.forEach(player => {
+                const stats = _extractPlayerStats(player, tab);
+                const nameHtml = QWHubService.coloredQuakeNameFromBytes(player.name);
+                rowsHtml += renderRow(stats, nameHtml, player.stats?.frags || 0, false);
+            });
+            // Team separator between player groups
+            if (groupIdx < allPlayerGroups.length - 1 && group.length > 0) {
+                rowsHtml += `<tr class="mh-st-team-sep"><td colspan="${colSpan}"></td></tr>`;
+            }
+        });
+
+        // Weapon group header row (sits above the column headers)
+        let groupHeaderHtml = '';
+        if (tab === 'weapons') {
+            groupHeaderHtml = `<tr class="mh-st-group-hdr">
+                <th></th><th></th>
+                <th>Shotgun</th>
+                <th class="mh-group-start" colspan="4">Rocket Launcher</th>
+                <th class="mh-group-start" colspan="5">Lightning Gun</th>
+            </tr>`;
+        }
+
+        return `
+            <div class="mh-stats-table-wrap">
+                <div class="mh-stab-bar">${tabsHtml}</div>
+                <div class="mh-stats-table-scroll">
+                    <table class="mh-stats-table">
+                        <thead>
+                            ${groupHeaderHtml}
+                            <tr>
+                                <th class="mh-st-frags-hdr">Frags</th>
+                                <th class="mh-st-name-hdr">Nick</th>
+                                ${headerCells}
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
+    // ========================================
+    // Match History Interaction Handlers
+    // ========================================
+
+    /**
+     * Preview a match scoreboard on hover (instant from Supabase data).
+     * Does NOT override sticky selection.
+     */
+    function previewMatch(matchId) {
+        if (_selectedMatchId) return; // Don't override sticky
+
+        _hoveredMatchId = matchId;
+        const panel = document.getElementById('mh-preview-panel');
+        if (panel) {
+            panel.innerHTML = _renderPreviewPanel(matchId);
+        }
+
+        // Prefetch ktxstats in background — if cached, summary already shown above.
+        // If not cached, fetch and re-render when ready (if still hovering this match).
+        const match = _matchDataById.get(String(matchId));
+        if (match?.demoHash && !QWHubService.getCachedGameStats(match.demoHash)) {
+            QWHubService.getGameStats(match.demoHash).then(() => {
+                if (_hoveredMatchId === matchId && !_selectedMatchId && panel) {
+                    panel.innerHTML = _renderPreviewPanel(matchId);
+                }
+            }).catch(() => {}); // silent fail — summary is optional
+        }
+    }
+
+    /**
+     * Clear hover preview. If sticky selection exists, keep showing it.
+     */
+    function clearPreview() {
+        _hoveredMatchId = null;
+        if (!_selectedMatchId) {
+            const panel = document.getElementById('mh-preview-panel');
+            if (panel) {
+                panel.innerHTML = _renderSummaryPanel();
+                _mountActivityChart(_historyMatches);
+            }
+        }
+    }
+
+    /**
+     * Click a match to stick the selection. Fetches ktxstats for team stats bar.
+     * Clicking the same match again un-sticks it (toggle off).
+     */
+    async function selectMatch(matchId) {
+        // Toggle off if clicking same match
+        if (_selectedMatchId === String(matchId)) {
+            _selectedMatchId = null;
+            _selectedMatchStats = null;
+            _statsLoading = false;
+            // Mouse is still over this row, so show hover preview instead of summary
+            _hoveredMatchId = String(matchId);
+            const panel = document.getElementById('mh-preview-panel');
+            if (panel) {
+                panel.innerHTML = _renderPreviewPanel(matchId);
+            }
+            _updateMatchListHighlights();
+            return;
+        }
+
+        _selectedMatchId = String(matchId);
+        _selectedMatchStats = null;
+        _statsLoading = true;
+        _updateMatchListHighlights();
+
+        // Render scoreboard immediately (from Supabase data)
+        const panel = document.getElementById('mh-preview-panel');
+        if (panel) {
+            panel.innerHTML = _renderPreviewPanel(matchId);
+        }
+
+        // Fetch ktxstats for detailed team stats (cold path)
+        const match = _matchDataById.get(String(matchId));
+        if (match?.demoHash) {
+            try {
+                const stats = await QWHubService.getGameStats(match.demoHash);
+                // Guard: still the same selected match?
+                if (_selectedMatchId === String(matchId)) {
+                    _selectedMatchStats = stats;
+                    _statsLoading = false;
+                    if (panel) {
+                        panel.innerHTML = _renderPreviewPanel(matchId);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load game stats:', error);
+                _statsLoading = false;
+                if (_selectedMatchId === String(matchId) && panel) {
+                    panel.innerHTML = _renderPreviewPanel(matchId);
+                }
+            }
+        } else {
+            _statsLoading = false;
+        }
+    }
+
+    /**
+     * Apply filters and update the match list + preview panel.
+     */
+    function _applyFiltersAndUpdate() {
+        const filtered = _getFilteredHistoryMatches();
+
+        // Clear selection if selected match no longer in filtered list
+        if (_selectedMatchId && !filtered.some(m => String(m.id) === _selectedMatchId)) {
+            _selectedMatchId = null;
+            _selectedMatchStats = null;
+            _statsLoading = false;
+        }
+
+        // Update preview panel
+        const panel = document.getElementById('mh-preview-panel');
+        if (panel) {
+            if (_selectedMatchId) {
+                panel.innerHTML = _renderPreviewPanel(_selectedMatchId);
+            } else {
+                panel.innerHTML = _renderSummaryPanel();
+                // Activity chart uses filtered matches to reflect current filters
+                _mountActivityChart(filtered.length > 0 ? filtered : _historyMatches);
+            }
+        }
+
+        // Update match list
+        const listEl = document.getElementById('mh-match-list');
+        if (listEl) {
+            listEl.innerHTML = _renderMatchList(filtered);
+        }
+    }
+
+    function filterByMap(map) {
+        _historyMapFilter = map;
+        // Sync dropdown
+        const select = document.getElementById('mh-map-filter');
+        if (select) select.value = map;
+        _applyFiltersAndUpdate();
+    }
+
+    /**
+     * Filter match list by opponent tag.
+     */
+    function filterByOpponent(tag) {
+        _historyOpponentFilter = tag;
+        // Sync dropdown
+        const select = document.getElementById('mh-opponent-filter');
+        if (select) select.value = tag;
+        _applyFiltersAndUpdate();
+    }
+
+    /**
+     * Change the time period and re-fetch matches.
+     */
+    async function changePeriod(months) {
+        _historyPeriod = months;
+        _selectedMatchId = null;
+        _selectedMatchStats = null;
+        _statsLoading = false;
+        _historyMapFilter = '';
+        _historyOpponentFilter = '';
+
+        // Find current team tag from DOM
+        const splitPanel = document.querySelector('.match-history-split');
+        if (!splitPanel) return;
+        const teamTag = splitPanel.dataset.teamTag;
+        if (!teamTag) return;
+
+        // Show loading state
+        const listEl = document.getElementById('mh-match-list');
+        if (listEl) {
+            listEl.innerHTML = '<div class="text-xs text-muted-foreground p-2">Loading matches...</div>';
+        }
+        const panel = document.getElementById('mh-preview-panel');
+        if (panel) {
+            panel.innerHTML = '<div class="mh-preview-empty"><p class="text-xs text-muted-foreground">Loading...</p></div>';
+        }
+
+        await _loadMatchHistory(teamTag);
+    }
+
+    /**
+     * Get filtered history matches based on current map + opponent filters.
+     */
+    function _getFilteredHistoryMatches() {
+        let matches = _historyMatches;
+        if (_historyMapFilter) {
+            matches = matches.filter(m => m.map === _historyMapFilter);
+        }
+        if (_historyOpponentFilter) {
+            matches = matches.filter(m => m.opponentTag === _historyOpponentFilter);
+        }
+        return matches;
+    }
+
+    /**
+     * Update selected/hovered highlights on match rows (DOM-only, no re-render).
+     */
+    function _updateMatchListHighlights() {
+        const rows = document.querySelectorAll('.mh-table-row');
+        rows.forEach(row => {
+            row.classList.toggle('selected', row.dataset.matchId === _selectedMatchId);
+        });
+    }
+
+    /**
+     * Placeholder for Full Stats button (Slice 5.2c).
+     */
+    function openFullStats(matchId) {
+        console.log('Full Stats requested for match:', matchId, '(Slice 5.2c placeholder)');
+    }
+
+    /**
+     * Load match history for a team tag. Fetches 20 matches and populates state.
+     */
     async function _loadMatchHistory(teamTag) {
-        const container = document.getElementById('match-history-content');
-        if (!container || container.dataset.teamTag !== teamTag) return;
+        const splitPanel = document.querySelector('.match-history-split');
+        if (!splitPanel || splitPanel.dataset.teamTag !== teamTag) return;
+
+        const listEl = document.getElementById('mh-match-list');
+        if (!listEl) return;
 
         try {
-            const matches = await QWHubService.getRecentMatches(teamTag, 5);
+            const matches = await QWHubService.getMatchHistory(teamTag, _historyPeriod);
 
             // Guard against stale render (user switched teams during fetch)
-            if (container.dataset.teamTag !== teamTag) return;
+            const currentPanel = document.querySelector('.match-history-split');
+            if (!currentPanel || currentPanel.dataset.teamTag !== teamTag) return;
+
+            // Populate state
+            _historyMatches = matches;
+            _matchDataById.clear();
+            matches.forEach(m => _matchDataById.set(String(m.id), m));
 
             if (matches.length === 0) {
-                container.innerHTML = `
-                    <p class="text-muted-foreground text-sm">No recent 4on4 matches found</p>
-                `;
+                listEl.innerHTML = '<p class="text-xs text-muted-foreground p-2">No recent 4on4 matches found</p>';
+                // Show empty summary
+                const previewPanel = document.getElementById('mh-preview-panel');
+                if (previewPanel) {
+                    previewPanel.innerHTML = _renderSummaryPanel();
+                    _mountActivityChart(matches);
+                }
                 return;
             }
 
-            container.innerHTML = `
-                <div class="match-list">
-                    ${matches.map(m => _renderMatchRow(m)).join('')}
-                </div>
-                <p class="text-xs text-muted-foreground mt-2">Showing last ${matches.length} matches</p>
-            `;
+            // Update filter dropdowns with available maps and opponents
+            _updateFilterDropdowns(matches);
+
+            // Render match list
+            const filtered = _getFilteredHistoryMatches();
+            listEl.innerHTML = _renderMatchList(filtered);
+
+            // Show summary panel in right side
+            const previewPanel = document.getElementById('mh-preview-panel');
+            if (previewPanel && !_selectedMatchId) {
+                previewPanel.innerHTML = _renderSummaryPanel();
+                _mountActivityChart(matches);
+            }
+
         } catch (error) {
             console.error('Failed to load match history:', error);
-            if (container.dataset.teamTag !== teamTag) return;
+            const currentPanel = document.querySelector('.match-history-split');
+            if (!currentPanel || currentPanel.dataset.teamTag !== teamTag) return;
 
-            container.innerHTML = `
-                <div class="text-muted-foreground text-sm">
+            listEl.innerHTML = `
+                <div class="text-xs text-muted-foreground p-2">
                     <p>Couldn't load match history</p>
                     <button class="text-xs mt-1 text-primary hover:underline cursor-pointer"
                             onclick="TeamsBrowserPanel.retryMatchHistory('${_escapeHtml(teamTag)}')">
@@ -559,62 +1610,129 @@ const TeamsBrowserPanel = (function() {
         }
     }
 
-    // Store match data by ID for scoreboard rendering (avoids data attributes)
-    const _matchDataById = new Map();
+    /**
+     * Update filter dropdown options after match data loads.
+     */
+    function _updateFilterDropdowns(matches) {
+        const uniqueMaps = [...new Set(matches.map(m => m.map))].sort();
+        const uniqueOpponents = [...new Set(matches.map(m => m.opponentTag))].sort();
 
-    function _renderMatchRow(match) {
-        // Cache full match data for scoreboard rendering
-        _matchDataById.set(String(match.id), match);
+        const mapSelect = document.getElementById('mh-map-filter');
+        if (mapSelect) {
+            mapSelect.innerHTML = `
+                <option value="">All Maps</option>
+                ${uniqueMaps.map(map => `
+                    <option value="${map}" ${_historyMapFilter === map ? 'selected' : ''}>${map}</option>
+                `).join('')}
+            `;
+        }
 
-        const dateStr = match.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const resultClass = match.result === 'W' ? 'text-green-500'
-                          : match.result === 'L' ? 'text-red-500'
-                          : 'text-muted-foreground';
-
-        return `
-            <div class="match-row-wrapper">
-                <div class="match-row clickable"
-                     data-match-id="${match.id}"
-                     onclick="TeamsBrowserPanel.toggleScoreboard(this)">
-                    <span class="match-date">${dateStr}</span>
-                    <span class="match-map">${match.map}</span>
-                    <span class="match-score">
-                        <span class="match-our-tag">${_escapeHtml(match.ourTag)}</span>
-                        <span class="match-frags">${match.ourScore} - ${match.opponentScore}</span>
-                        <span class="match-opp-tag">${_escapeHtml(match.opponentTag)}</span>
-                    </span>
-                    <span class="match-result ${resultClass}">${match.result}</span>
-                </div>
-                <div class="match-scoreboard-container" style="display:none;"></div>
-            </div>
-        `;
+        const oppSelect = document.getElementById('mh-opponent-filter');
+        if (oppSelect) {
+            oppSelect.innerHTML = `
+                <option value="">All Opponents</option>
+                ${uniqueOpponents.map(opp => `
+                    <option value="${opp}" ${_historyOpponentFilter === opp ? 'selected' : ''}>${opp}</option>
+                `).join('')}
+            `;
+        }
     }
 
     /**
-     * Toggle scoreboard display for a match row.
-     * Uses Supabase data (teams/players) already cached in match object — instant, no fetch needed.
+     * Render awards tab with achievement cards.
      */
-    function toggleScoreboard(rowEl) {
-        const wrapper = rowEl.closest('.match-row-wrapper');
-        const container = wrapper.querySelector('.match-scoreboard-container');
+    function _renderAwardsTab(tabsHtml, players) {
+        const awards = [
+            {
+                icon: '🎯', title: 'Top Fragger',
+                calc: p => p.stats?.frags || 0,
+                format: v => `${v} frags`
+            },
+            {
+                icon: '⚡', title: 'Most Efficient',
+                calc: p => {
+                    const k = p.stats?.kills || 0, d = p.stats?.deaths || 0;
+                    return (k + d) > 0 ? Math.round(100 * k / (k + d)) : 0;
+                },
+                format: v => `${v}%`
+            },
+            {
+                icon: '💀', title: 'RL Killer',
+                calc: p => p.weapons?.rl?.kills?.enemy || 0,
+                format: v => `${v} kills`
+            },
+            {
+                icon: '🔫', title: 'Sharpshooter',
+                calc: p => {
+                    const sg = p.weapons?.sg;
+                    return sg?.acc?.attacks > 0 ? Math.round(100 * sg.acc.hits / sg.acc.attacks) : 0;
+                },
+                format: v => `${v}% SG`
+            },
+            {
+                icon: '⚡', title: 'Shafter',
+                calc: p => {
+                    const lg = p.weapons?.lg;
+                    return lg?.acc?.attacks > 0 ? Math.round(100 * lg.acc.hits / lg.acc.attacks) : 0;
+                },
+                format: v => `${v}% LG`
+            },
+            {
+                icon: '💎', title: 'Quadrunner',
+                calc: p => p.items?.q?.took || 0,
+                format: v => `${v} pickups`
+            },
+            {
+                icon: '🛡️', title: 'Pentstealer',
+                calc: p => p.items?.p?.took || 0,
+                format: v => `${v} pickups`
+            },
+            {
+                icon: '💥', title: 'Damage Dealer',
+                calc: p => (p.dmg?.given || 0) - (p.dmg?.taken || 0),
+                format: v => `${v > 0 ? '+' : ''}${v}`
+            }
+        ];
 
-        // Toggle off if already showing
-        if (container.style.display !== 'none') {
-            container.style.display = 'none';
-            return;
-        }
+        const cardsHtml = awards.map(award => {
+            let best = null;
+            let bestVal = 0;
+            players.forEach(p => {
+                const val = award.calc(p);
+                if (val > bestVal) {
+                    bestVal = val;
+                    best = p;
+                }
+            });
 
-        const matchId = rowEl.dataset.matchId;
-        const match = _matchDataById.get(matchId);
+            if (!best || bestVal === 0) return '';
 
-        if (!match || !match.teams.length) {
-            container.style.display = 'block';
-            container.innerHTML = '<p class="text-xs text-muted-foreground p-2">No scoreboard data</p>';
-            return;
-        }
+            const name = QWHubService.coloredQuakeNameFromBytes(best.name);
+            const team = QWHubService.qwToAscii(best.team);
 
-        container.style.display = 'block';
-        container.innerHTML = _renderScoreboard(match);
+            return `
+                <div class="mh-award-card">
+                    <div class="mh-award-header">
+                        <span class="mh-award-icon">${award.icon}</span>
+                        <span class="mh-award-title">${award.title}</span>
+                    </div>
+                    <div class="mh-award-player">${name}</div>
+                    <div class="mh-award-detail">
+                        <span class="mh-award-team">${_escapeHtmlLocal(team)}</span>
+                        <span class="mh-award-value">${award.format(bestVal)}</span>
+                    </div>
+                </div>
+            `;
+        }).filter(Boolean).join('');
+
+        return `
+            <div class="mh-stats-table-wrap">
+                <div class="mh-stab-bar">${tabsHtml}</div>
+                <div class="mh-awards-grid">
+                    ${cardsHtml}
+                </div>
+            </div>
+        `;
     }
 
     /**
@@ -684,6 +1802,112 @@ const TeamsBrowserPanel = (function() {
     }
 
     /**
+     * Render curated team summary stats below the scoreboard.
+     * Shows: Pent, Quad, Ring | RA, YA | RL (Took/Drop/Xfer), LG (Took/Drop/Xfer)
+     */
+    function _renderScoreboardSummary(ktxstats, match) {
+        if (!ktxstats || !ktxstats.players) return '';
+
+        const ourTagLower = match.ourTag.toLowerCase();
+        const validPlayers = ktxstats.players.filter(p => p.ping !== 0);
+
+        // Split into our team / their team
+        const ourPlayers = validPlayers.filter(p =>
+            QWHubService.qwToAscii(p.team).toLowerCase() === ourTagLower);
+        const theirPlayers = validPlayers.filter(p =>
+            QWHubService.qwToAscii(p.team).toLowerCase() !== ourTagLower);
+
+        function sumTeam(players, getter) {
+            return players.reduce((s, p) => s + (getter(p) || 0), 0);
+        }
+
+        function teamStats(players) {
+            return {
+                q: sumTeam(players, p => p.items?.q?.took),
+                p: sumTeam(players, p => p.items?.p?.took),
+                r: sumTeam(players, p => p.items?.r?.took),
+                ra: sumTeam(players, p => p.items?.ra?.took),
+                ya: sumTeam(players, p => p.items?.ya?.took),
+                rlK: sumTeam(players, p => p.weapons?.rl?.kills?.enemy),
+                rlT: sumTeam(players, p => p.weapons?.rl?.pickups?.taken),
+                rlD: sumTeam(players, p => p.weapons?.rl?.pickups?.dropped),
+                rlX: sumTeam(players, p => p.xferRL),
+                lgK: sumTeam(players, p => p.weapons?.lg?.kills?.enemy),
+                lgT: sumTeam(players, p => p.weapons?.lg?.pickups?.taken),
+                lgD: sumTeam(players, p => p.weapons?.lg?.pickups?.dropped),
+                lgX: sumTeam(players, p => p.xferLG),
+            };
+        }
+
+        const our = teamStats(ourPlayers);
+        const their = teamStats(theirPlayers);
+
+        const ourName = ourPlayers.length > 0
+            ? QWHubService.qwToAscii(ourPlayers[0].team) : match.ourTag;
+        const theirName = theirPlayers.length > 0
+            ? QWHubService.qwToAscii(theirPlayers[0].team) : (match.opponentTag || '?');
+
+        function dim(val) {
+            return val === 0 ? 'mh-dim' : '';
+        }
+
+        function renderTeamRow(name, s) {
+            return `<tr>
+                <td class="sb-sum-team">${_escapeHtmlLocal(name)}</td>
+                <td class="sb-sum-q ${dim(s.q)}">${s.q}</td>
+                <td class="sb-sum-p ${dim(s.p)}">${s.p}</td>
+                <td class="sb-sum-r ${dim(s.r)}">${s.r}</td>
+                <td class="sb-sum-ra ${dim(s.ra)}">${s.ra}</td>
+                <td class="sb-sum-ya ${dim(s.ya)}">${s.ya}</td>
+                <td class="sb-sum-sep ${dim(s.rlK)}">${s.rlK}</td>
+                <td class="${dim(s.rlT)}">${s.rlT}</td>
+                <td class="${dim(s.rlD)}">${s.rlD}</td>
+                <td class="${dim(s.rlX)}">${s.rlX}</td>
+                <td class="sb-sum-sep ${dim(s.lgK)}">${s.lgK}</td>
+                <td class="${dim(s.lgT)}">${s.lgT}</td>
+                <td class="${dim(s.lgD)}">${s.lgD}</td>
+                <td class="${dim(s.lgX)}">${s.lgX}</td>
+            </tr>`;
+        }
+
+        return `
+            <div class="sb-summary sb-text-outline">
+                <table class="sb-summary-table">
+                    <thead>
+                        <tr class="sb-sum-group-hdr">
+                            <th></th>
+                            <th colspan="3">Powerups</th>
+                            <th colspan="2">Armor</th>
+                            <th class="sb-sum-sep" colspan="4">Rocket Launcher</th>
+                            <th class="sb-sum-sep" colspan="4">Lightning Gun</th>
+                        </tr>
+                        <tr>
+                            <th></th>
+                            <th class="sb-sum-q">Q</th>
+                            <th class="sb-sum-p">P</th>
+                            <th class="sb-sum-r">R</th>
+                            <th class="sb-sum-ra">RA</th>
+                            <th class="sb-sum-ya">YA</th>
+                            <th class="sb-sum-sep">Kills</th>
+                            <th>Took</th>
+                            <th>Drop</th>
+                            <th>Xfer</th>
+                            <th class="sb-sum-sep">Kills</th>
+                            <th>Took</th>
+                            <th>Drop</th>
+                            <th>Xfer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${renderTeamRow(ourName, our)}
+                        ${renderTeamRow(theirName, their)}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    /**
      * Retry loading match history (called from retry button onclick).
      */
     function retryMatchHistory(teamTag) {
@@ -695,9 +1919,34 @@ const TeamsBrowserPanel = (function() {
     // Browse Teams Event Handler (Slice 5.1b)
     // ========================================
 
+    /**
+     * Reset all match history state (called when switching teams).
+     */
+    function _resetHistoryState() {
+        _historyMatches = [];
+        _historyMapFilter = '';
+        _historyOpponentFilter = '';
+        _historyPeriod = 3;
+        _hoveredMatchId = null;
+        _selectedMatchId = null;
+        _selectedMatchStats = null;
+        _statsLoading = false;
+        _matchDataById.clear();
+        _sortColumn = 'date';
+        _sortDirection = 'desc';
+        _activeStatsTab = 'performance';
+        if (_activityChart) {
+            _activityChart.destroy();
+            _activityChart = null;
+        }
+    }
+
     function _handleBrowseTeamSelect(event) {
         const { teamId } = event.detail;
         if (!teamId) return;
+
+        // Reset match history state for new team
+        _resetHistoryState();
 
         // If not in teams view, switch to it via the BottomPanelController
         if (_currentView !== 'teams') {
@@ -1006,6 +2255,7 @@ const TeamsBrowserPanel = (function() {
         _divisionFilters.clear();
         _allTeams = [];
         _allPlayers = [];
+        _resetHistoryState();
 
         console.log('TeamsBrowserPanel cleaned up');
     }
@@ -1017,6 +2267,15 @@ const TeamsBrowserPanel = (function() {
         switchTab,
         retryMapStats,
         retryMatchHistory,
-        toggleScoreboard
+        // Slice 5.2b: Match History split-panel interactions
+        previewMatch,
+        clearPreview,
+        selectMatch,
+        filterByMap,
+        filterByOpponent,
+        changePeriod,
+        openFullStats,
+        sortByColumn,
+        switchStatsTab
     };
 })();

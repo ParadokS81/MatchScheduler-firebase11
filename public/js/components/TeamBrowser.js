@@ -449,7 +449,7 @@ const TeamBrowser = (function() {
         // Check for small logo
         const smallLogoUrl = team.activeLogo?.urls?.small;
         const badgeContent = smallLogoUrl
-            ? `<img src="${smallLogoUrl}" alt="${team.teamTag}" class="w-full h-full object-cover">`
+            ? `<img src="${smallLogoUrl}" alt="${team.teamTag}" class="w-full h-full">`
             : (team.teamTag || '??');
 
         return `

@@ -17,20 +17,38 @@ const OverflowModal = (function() {
         return div.innerHTML;
     }
 
-    function _render(slotId, weekId, players, currentUserId) {
-        // Format slot ID for display (e.g., "mon_1900" → "Monday 19:00")
-        const [day, time] = slotId.split('_');
-        const dayNames = {
-            mon: 'Monday',
-            tue: 'Tuesday',
-            wed: 'Wednesday',
-            thu: 'Thursday',
-            fri: 'Friday',
-            sat: 'Saturday',
-            sun: 'Sunday'
-        };
-        const formattedDay = dayNames[day] || day;
-        const formattedTime = `${time.slice(0, 2)}:${time.slice(2)}`;
+    function _getRefDate(weekId) {
+        if (!weekId) return undefined;
+        const weekNum = parseInt(weekId.split('-')[1], 10);
+        if (isNaN(weekNum)) return undefined;
+
+        const year = new Date().getUTCFullYear();
+        const jan1 = new Date(Date.UTC(year, 0, 1));
+        const dayOfWeek = jan1.getUTCDay();
+        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
+        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
+        const monday = new Date(firstMonday);
+        monday.setUTCDate(firstMonday.getUTCDate() + (weekNum - 1) * 7);
+        return monday;
+    }
+
+    function _render(utcSlotId, weekId, players, currentUserId) {
+        // Format UTC slot ID for display in user's local timezone
+        let formattedDay, formattedTime;
+        if (typeof TimezoneService !== 'undefined') {
+            const refDate = _getRefDate(weekId);
+            const display = TimezoneService.formatSlotForDisplay(utcSlotId, refDate);
+            formattedDay = display.dayLabel;
+            formattedTime = display.timeLabel;
+        } else {
+            const [day, time] = utcSlotId.split('_');
+            const dayNames = {
+                mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday',
+                thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday'
+            };
+            formattedDay = dayNames[day] || day;
+            formattedTime = `${time.slice(0, 2)}:${time.slice(2)}`;
+        }
 
         // Format week ID (e.g., "2026-05" → "Week 5")
         const weekNumber = weekId.split('-')[1]?.replace(/^0/, '') || weekId;

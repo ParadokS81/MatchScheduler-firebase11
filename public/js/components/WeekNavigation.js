@@ -14,19 +14,19 @@ const WeekNavigation = (function() {
      */
     function _calculateCurrentWeekNumber() {
         const now = new Date();
-        const year = now.getFullYear();
+        const year = now.getUTCFullYear();
 
         // Find first Thursday of the year (ISO week 1 contains first Thursday)
-        const jan1 = new Date(year, 0, 1);
-        const jan1Day = jan1.getDay();
+        const jan1 = new Date(Date.UTC(year, 0, 1));
+        const jan1Day = jan1.getUTCDay();
 
         // Days to Thursday (4)
         const daysToThursday = jan1Day <= 4 ? (4 - jan1Day) : (11 - jan1Day);
-        const firstThursday = new Date(year, 0, 1 + daysToThursday);
+        const firstThursday = new Date(Date.UTC(year, 0, 1 + daysToThursday));
 
         // First Monday is 3 days before first Thursday
         const firstMonday = new Date(firstThursday);
-        firstMonday.setDate(firstThursday.getDate() - 3);
+        firstMonday.setUTCDate(firstThursday.getUTCDate() - 3);
 
         // Calculate days since first Monday
         const daysSinceFirstMonday = Math.floor((now - firstMonday) / (24 * 60 * 60 * 1000));

@@ -2,14 +2,15 @@
 // Vanilla JS with Revealing Module Pattern
 // Enhanced for Slice 2.5: Player badges, tooltip hover, overflow handling
 // Enhanced for Slice 5.0.1: 4 display modes (initials, coloredInitials, coloredDots, avatars)
+// Enhanced for Slice 7.0b: UTC timezone conversion layer via TimezoneService
 
 const AvailabilityGrid = (function() {
     'use strict';
 
-    const TIME_SLOTS = [
-        '1800', '1830', '1900', '1930', '2000',
-        '2030', '2100', '2130', '2200', '2230', '2300'
-    ];
+    // Display time slots from TimezoneService (local times shown to user)
+    const TIME_SLOTS = typeof TimezoneService !== 'undefined'
+        ? TimezoneService.DISPLAY_TIME_SLOTS
+        : ['1800', '1830', '1900', '1930', '2000', '2030', '2100', '2130', '2200', '2230', '2300'];
 
     const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
     const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -27,19 +28,19 @@ const AvailabilityGrid = (function() {
     }
 
     /**
-     * Get the Monday of a given week number
+     * Get the Monday of a given week number (UTC-based)
      */
     function getMondayOfWeek(weekNumber) {
         const now = new Date();
-        const year = now.getFullYear();
+        const year = now.getUTCFullYear();
 
-        const jan1 = new Date(year, 0, 1);
-        const dayOfWeek = jan1.getDay();
+        const jan1 = new Date(Date.UTC(year, 0, 1));
+        const dayOfWeek = jan1.getUTCDay();
         const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
-        const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
+        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
 
         const monday = new Date(firstMonday);
-        monday.setDate(firstMonday.getDate() + (weekNumber - 1) * 7);
+        monday.setUTCDate(firstMonday.getUTCDate() + (weekNumber - 1) * 7);
         return monday;
     }
 
@@ -50,8 +51,8 @@ const AvailabilityGrid = (function() {
         const monday = getMondayOfWeek(weekNumber);
         return DAYS.map((_, idx) => {
             const date = new Date(monday);
-            date.setDate(monday.getDate() + idx);
-            const dayNum = date.getDate();
+            date.setUTCDate(monday.getUTCDate() + idx);
+            const dayNum = date.getUTCDate();
             return `${DAY_LABELS[idx]} ${dayNum}${getOrdinalSuffix(dayNum)}`;
         });
     }
@@ -73,8 +74,12 @@ const AvailabilityGrid = (function() {
     function create(containerId, weekId) {
         let _container = null;
         let _weekId = weekId;
-        let _selectedCells = new Set();
+        let _selectedCells = new Set(); // Stores LOCAL cell IDs for display
         let _clickHandler = null;
+
+        // UTC timezone mapping (Slice 7.0b)
+        let _gridToUtcMap = null; // Map<localCellId, utcSlotId>
+        let _utcToGridMap = null; // Map<utcSlotId, localCellId>
 
         // Advanced selection state
         let _isDragging = false;
@@ -91,11 +96,49 @@ const AvailabilityGrid = (function() {
         // Team view state (Slice 2.5)
         let _playerRoster = null;
         let _currentUserId = null;
-        let _availabilitySlots = null;
+        let _availabilitySlots = null;      // Local-keyed (for tooltip lookup)
+        let _availabilitySlotsUtc = null;   // UTC-keyed (for refreshDisplay)
         let _onOverflowClickCallback = null;
 
         // Comparison mode state (Slice 3.4)
         let _comparisonMode = false;
+
+        /**
+         * Build UTC conversion maps for the current week.
+         * Call on init/render and when week changes.
+         */
+        function _buildUtcMaps() {
+            if (typeof TimezoneService !== 'undefined') {
+                const refDate = getMondayOfWeek(_weekId);
+                _gridToUtcMap = TimezoneService.buildGridToUtcMap(refDate);
+                _utcToGridMap = TimezoneService.buildUtcToGridMap(refDate);
+            } else {
+                // No TimezoneService: identity mapping (local = UTC)
+                _gridToUtcMap = new Map();
+                _utcToGridMap = new Map();
+                for (const day of DAYS) {
+                    for (const time of TIME_SLOTS) {
+                        const id = `${day}_${time}`;
+                        _gridToUtcMap.set(id, id);
+                        _utcToGridMap.set(id, id);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Convert a local cell ID to its UTC slot ID for Firestore.
+         */
+        function _localToUtc(localCellId) {
+            return _gridToUtcMap?.get(localCellId) || localCellId;
+        }
+
+        /**
+         * Convert a UTC slot ID to its local cell ID for grid display.
+         */
+        function _utcToLocal(utcSlotId) {
+            return _utcToGridMap?.get(utcSlotId) || null;
+        }
 
         /**
          * Get the bounding rectangle of selected cells in viewport coordinates
@@ -140,7 +183,7 @@ const AvailabilityGrid = (function() {
             document.dispatchEvent(new CustomEvent('grid-selection-change', {
                 detail: {
                     gridId: _weekId,
-                    selectedCells: selectedArray.map(slotId => ({ weekId: getWeekId(), slotId })),
+                    selectedCells: selectedArray.map(localId => ({ weekId: getWeekId(), slotId: _localToUtc(localId) })),
                     bounds: bounds
                 }
             }));
@@ -412,11 +455,14 @@ const AvailabilityGrid = (function() {
         function _render() {
             if (!_container) return;
 
+            // Build UTC conversion maps for this week
+            _buildUtcMaps();
+
             // Get day labels with dates for this week
             const dayLabelsWithDates = getDayLabelsWithDates(_weekId);
 
             // Build the grid HTML - compact for 1080p
-            // Added data attributes for clickable headers
+            // Cell IDs are local display positions; data-utc-slot carries the UTC Firestore key
             _container.innerHTML = `
                 <div class="availability-grid-container">
                     <!-- Day Headers Row -->
@@ -432,9 +478,11 @@ const AvailabilityGrid = (function() {
                         ${TIME_SLOTS.map(time => `
                             <div class="grid-row">
                                 <div class="time-label clickable" data-time="${time}">${formatTime(time)}</div>
-                                ${DAYS.map(day => `
-                                    <div class="grid-cell" data-cell-id="${day}_${time}"></div>
-                                `).join('')}
+                                ${DAYS.map(day => {
+                                    const localCellId = `${day}_${time}`;
+                                    const utcSlotId = _localToUtc(localCellId);
+                                    return `<div class="grid-cell" data-cell-id="${localCellId}" data-utc-slot="${utcSlotId}"></div>`;
+                                }).join('')}
                             </div>
                         `).join('')}
                     </div>
@@ -457,7 +505,8 @@ const AvailabilityGrid = (function() {
             const cellId = cell?.dataset.cellId;
 
             if (cellId && _onOverflowClickCallback) {
-                _onOverflowClickCallback(cellId, _weekId);
+                // Pass UTC slot ID to callback for Firestore lookup
+                _onOverflowClickCallback(_localToUtc(cellId), _weekId);
             }
         }
 
@@ -517,10 +566,10 @@ const AvailabilityGrid = (function() {
                          cell.classList.contains('comparison-match-partial'))) {
                         // Open comparison modal instead of selecting
                         e.stopPropagation();
-                        const slotId = cell.dataset.cellId;
+                        const utcSlotId = _localToUtc(cell.dataset.cellId);
                         const weekId = getWeekId();
                         if (typeof ComparisonModal !== 'undefined') {
-                            ComparisonModal.show(weekId, slotId);
+                            ComparisonModal.show(weekId, utcSlotId);
                         }
                         return;
                     }
@@ -578,6 +627,7 @@ const AvailabilityGrid = (function() {
          * Highlight day/time headers when hovering a cell (Slice 5.0.1)
          */
         function _handleCellHoverHighlight(e) {
+            if (!_container) return;
             const cell = e.target.closest('.grid-cell');
             if (!cell || !cell.dataset.cellId) return;
 
@@ -596,6 +646,7 @@ const AvailabilityGrid = (function() {
          * Remove header highlights when leaving a cell (Slice 5.0.1)
          */
         function _handleCellHoverUnhighlight(e) {
+            if (!_container) return;
             const cell = e.target.closest('.grid-cell');
             if (!cell) return;
 
@@ -612,12 +663,14 @@ const AvailabilityGrid = (function() {
                 return null;
             }
             _selectedCells.clear();
+            _buildUtcMaps();
             _render();
             return instance;
         }
 
         function getSelectedCells() {
-            return Array.from(_selectedCells);
+            // Return UTC slot IDs for Firestore storage
+            return Array.from(_selectedCells).map(localId => _localToUtc(localId));
         }
 
         function clearSelection() {
@@ -630,8 +683,12 @@ const AvailabilityGrid = (function() {
 
         function cleanup() {
             // Remove container event listeners
-            if (_container && _clickHandler) {
-                _container.removeEventListener('click', _clickHandler);
+            if (_container) {
+                if (_clickHandler) {
+                    _container.removeEventListener('click', _clickHandler);
+                }
+                _container.removeEventListener('mouseover', _handleCellHoverHighlight);
+                _container.removeEventListener('mouseout', _handleCellHoverUnhighlight);
             }
 
             // Remove document-level listener for drag
@@ -664,6 +721,7 @@ const AvailabilityGrid = (function() {
             _playerRoster = null;
             _currentUserId = null;
             _availabilitySlots = null;
+            _availabilitySlotsUtc = null;
             _onOverflowClickCallback = null;
             _comparisonMode = false;
 
@@ -674,7 +732,7 @@ const AvailabilityGrid = (function() {
         function getWeekId() {
             // Return full ISO week format (YYYY-WW) for compatibility with ComparisonEngine
             const now = new Date();
-            const year = now.getFullYear();
+            const year = now.getUTCFullYear();
             return `${year}-${String(_weekId).padStart(2, '0')}`;
         }
 
@@ -713,35 +771,29 @@ const AvailabilityGrid = (function() {
                 cell.classList.remove('user-available');
             });
 
-            // Handle both nested slots object AND flat "slots.xxx" keys from Firestore
-            // Firestore returns flat keys like "slots.sat_2100" when using dot notation in set()
-            Object.entries(availabilityData).forEach(([key, userIds]) => {
-                let slotId = null;
+            // Helper to mark a UTC slot as available for the user
+            function _markUtcSlotAvailable(utcSlotId, userIds) {
+                if (!Array.isArray(userIds) || !userIds.includes(currentUserId)) return;
+                const localCellId = _utcToLocal(utcSlotId);
+                if (!localCellId) return; // Slot outside display range
+                const cell = _container.querySelector(`[data-cell-id="${localCellId}"]`);
+                if (cell) cell.classList.add('user-available');
+            }
 
+            // Handle both nested slots object AND flat "slots.xxx" keys from Firestore
+            Object.entries(availabilityData).forEach(([key, userIds]) => {
                 // Check for nested slots object
                 if (key === 'slots' && typeof userIds === 'object' && !Array.isArray(userIds)) {
-                    // Nested structure: { slots: { sat_2100: [...] } }
-                    Object.entries(userIds).forEach(([nestedSlotId, nestedUserIds]) => {
-                        if (Array.isArray(nestedUserIds) && nestedUserIds.includes(currentUserId)) {
-                            const cell = _container.querySelector(`[data-cell-id="${nestedSlotId}"]`);
-                            if (cell) {
-                                cell.classList.add('user-available');
-                            }
-                        }
+                    Object.entries(userIds).forEach(([utcSlotId, nestedUserIds]) => {
+                        _markUtcSlotAvailable(utcSlotId, nestedUserIds);
                     });
                     return;
                 }
 
                 // Check for flat "slots.xxx" keys
                 if (key.startsWith('slots.')) {
-                    slotId = key.replace('slots.', '');
-                }
-
-                if (slotId && Array.isArray(userIds) && userIds.includes(currentUserId)) {
-                    const cell = _container.querySelector(`[data-cell-id="${slotId}"]`);
-                    if (cell) {
-                        cell.classList.add('user-available');
-                    }
+                    const utcSlotId = key.replace('slots.', '');
+                    _markUtcSlotAvailable(utcSlotId, userIds);
                 }
             });
         }
@@ -755,13 +807,16 @@ const AvailabilityGrid = (function() {
         }
 
         /**
-         * Select a specific cell by ID (for template loading)
-         * @param {string} cellId - The cell ID to select (e.g., "mon_1800")
+         * Select a specific cell by UTC slot ID (for template loading).
+         * Templates store UTC slot IDs; this maps to the local grid position.
+         * @param {string} utcSlotId - The UTC slot ID to select (e.g., "mon_1700")
          */
-        function selectCell(cellId) {
-            const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
-            if (cell && !_selectedCells.has(cellId)) {
-                _selectedCells.add(cellId);
+        function selectCell(utcSlotId) {
+            const localCellId = _utcToLocal(utcSlotId);
+            if (!localCellId) return; // Slot outside display range
+            const cell = _container?.querySelector(`[data-cell-id="${localCellId}"]`);
+            if (cell && !_selectedCells.has(localCellId)) {
+                _selectedCells.add(localCellId);
                 cell.classList.add('selected');
             }
         }
@@ -905,31 +960,42 @@ const AvailabilityGrid = (function() {
             _playerRoster = playerRoster;
             _currentUserId = currentUserId;
 
-            // Extract slots from availability data (handle both flat and nested structures)
-            let slots = {};
+            // Extract UTC slots from availability data (handle both flat and nested structures)
+            let utcSlots = {};
             if (availabilityData.slots && typeof availabilityData.slots === 'object') {
-                slots = availabilityData.slots;
+                utcSlots = availabilityData.slots;
             } else {
                 // Handle flat "slots.xxx" keys
                 Object.entries(availabilityData).forEach(([key, value]) => {
                     if (key.startsWith('slots.')) {
                         const slotId = key.replace('slots.', '');
-                        slots[slotId] = value;
+                        utcSlots[slotId] = value;
                     }
                 });
             }
 
-            _availabilitySlots = slots;
+            // Store original UTC slots for refreshDisplay
+            _availabilitySlotsUtc = utcSlots;
+
+            // Build local-keyed slots for tooltip access (map UTC → local)
+            const localSlots = {};
+            for (const [utcSlotId, playerIds] of Object.entries(utcSlots)) {
+                const localCellId = _utcToLocal(utcSlotId);
+                if (localCellId) {
+                    localSlots[localCellId] = playerIds;
+                }
+            }
+            _availabilitySlots = localSlots;
 
             const displayMode = typeof PlayerDisplayService !== 'undefined'
                 ? PlayerDisplayService.getDisplayMode()
                 : 'initials';
 
-            // Process each cell
+            // Process each cell using local-mapped data
             const allCells = _container.querySelectorAll('.grid-cell');
             allCells.forEach(cell => {
                 const cellId = cell.dataset.cellId;
-                const playerIds = slots[cellId] || [];
+                const playerIds = localSlots[cellId] || [];
 
                 _renderPlayerBadges(cell, playerIds, playerRoster, currentUserId, displayMode);
 
@@ -959,9 +1025,9 @@ const AvailabilityGrid = (function() {
          * Refresh the display (e.g., when display mode changes)
          */
         function refreshDisplay() {
-            if (_availabilitySlots && _playerRoster && _currentUserId) {
+            if (_availabilitySlotsUtc && _playerRoster && _currentUserId) {
                 updateTeamDisplay(
-                    { slots: _availabilitySlots },
+                    { slots: _availabilitySlotsUtc },
                     _playerRoster,
                     _currentUserId
                 );
@@ -1018,8 +1084,9 @@ const AvailabilityGrid = (function() {
                 const existingBadge = cell.querySelector('.match-count-badge');
                 if (existingBadge) existingBadge.remove();
 
-                // Get match info from ComparisonEngine
-                const matchInfo = ComparisonEngine.getSlotMatchInfo(weekIdFormatted, cellId);
+                // Get match info from ComparisonEngine using UTC slot ID
+                const utcSlotId = _localToUtc(cellId);
+                const matchInfo = ComparisonEngine.getSlotMatchInfo(weekIdFormatted, utcSlotId);
 
                 if (matchInfo.hasMatch) {
                     // Add appropriate class based on match type
@@ -1278,7 +1345,7 @@ const AvailabilityGrid = (function() {
 
             const cellId = cell.dataset.cellId;
             if (cellId) {
-                _showMatchTooltip(cell, getWeekId(), cellId);
+                _showMatchTooltip(cell, getWeekId(), _localToUtc(cellId));
             }
         }
 

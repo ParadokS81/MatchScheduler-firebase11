@@ -86,6 +86,12 @@ const MatchSchedulerApp = (function() {
 
     // Initialize availability grid components
     function _initializeAvailabilityGrid() {
+        // Initialize TimezoneService before grid (Slice 7.0b)
+        // Auto-detects from browser; user preference loaded later from Firestore
+        if (typeof TimezoneService !== 'undefined') {
+            TimezoneService.init();
+        }
+
         // Initialize WeekNavigation state manager
         WeekNavigation.init();
 
@@ -93,7 +99,7 @@ const MatchSchedulerApp = (function() {
         const currentWeek = WeekNavigation.getCurrentWeekNumber();
 
         // Initialize Week 1 display in top-center panel (navigation arrows visible)
-        _weekDisplay1 = WeekDisplay.create('panel-top-center', currentWeek, { showNavigation: true });
+        _weekDisplay1 = WeekDisplay.create('panel-top-center', currentWeek, { showNavigation: true, showTimezoneSelector: true });
         _weekDisplay1.init();
 
         // Initialize Week 2 display in bottom-center panel (navigation arrows visible)
@@ -109,6 +115,17 @@ const MatchSchedulerApp = (function() {
             _weekDisplay2.setWeekNumber(secondWeek);
 
             // Re-setup availability listeners for the new weeks if a team is selected
+            if (_selectedTeam) {
+                _setupAvailabilityListeners(_selectedTeam.id);
+            }
+        });
+
+        // Listen for timezone changes (Slice 7.0c) - rebuild grids with new UTC mappings
+        window.addEventListener('timezone-changed', () => {
+            _weekDisplay1.rebuildGrid();
+            _weekDisplay2.rebuildGrid();
+
+            // Re-setup availability listeners so grid re-renders with team data
             if (_selectedTeam) {
                 _setupAvailabilityListeners(_selectedTeam.id);
             }

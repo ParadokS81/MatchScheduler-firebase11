@@ -144,6 +144,17 @@ const UserProfile = (function() {
                 if (typeof FavoritesPanel !== 'undefined') {
                     FavoritesPanel.init();
                 }
+
+                // Load timezone preference (Slice 7.0c)
+                if (typeof TimezoneService !== 'undefined' && _userProfile.timezone) {
+                    const currentTz = TimezoneService.getUserTimezone();
+                    if (currentTz !== _userProfile.timezone) {
+                        TimezoneService.setUserTimezone(_userProfile.timezone);
+                        window.dispatchEvent(new CustomEvent('timezone-changed', {
+                            detail: { timezone: _userProfile.timezone }
+                        }));
+                    }
+                }
             } else {
                 console.log('⚠️ User document not found - this should not happen with new flow');
                 _userProfile = null;

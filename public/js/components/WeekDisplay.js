@@ -12,28 +12,27 @@ const WeekDisplay = (function() {
      */
     function getWeekLabel(weekNumber) {
         const now = new Date();
-        const year = now.getFullYear();
+        const year = now.getUTCFullYear();
 
-        // Find first Monday of the year
-        const jan1 = new Date(year, 0, 1);
-        const dayOfWeek = jan1.getDay();
-        // Days to add to get to first Monday (0 = Sunday, 1 = Monday, etc.)
+        // Find first Monday of the year (UTC)
+        const jan1 = new Date(Date.UTC(year, 0, 1));
+        const dayOfWeek = jan1.getUTCDay();
         const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
 
-        const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
+        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
 
         // Calculate Monday of the requested week
         const monday = new Date(firstMonday);
-        monday.setDate(firstMonday.getDate() + (weekNumber - 1) * 7);
+        monday.setUTCDate(firstMonday.getUTCDate() + (weekNumber - 1) * 7);
 
         // Calculate Sunday
         const sunday = new Date(monday);
-        sunday.setDate(monday.getDate() + 6);
+        sunday.setUTCDate(monday.getUTCDate() + 6);
 
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-        const formatDate = (date) => `${months[date.getMonth()]} ${date.getDate()}`;
+        const formatDate = (date) => `${months[date.getUTCMonth()]} ${date.getUTCDate()}`;
 
         // Spaced out format: "2026    Week 6    Feb 9 - Feb 15"
         return `${year} \u00A0\u00A0 Week ${weekNumber} \u00A0\u00A0 ${formatDate(monday)} - ${formatDate(sunday)}`;
@@ -46,15 +45,15 @@ const WeekDisplay = (function() {
      */
     function getMondayOfWeek(weekNumber) {
         const now = new Date();
-        const year = now.getFullYear();
+        const year = now.getUTCFullYear();
 
-        const jan1 = new Date(year, 0, 1);
-        const dayOfWeek = jan1.getDay();
+        const jan1 = new Date(Date.UTC(year, 0, 1));
+        const dayOfWeek = jan1.getUTCDay();
         const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
-        const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
+        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
 
         const monday = new Date(firstMonday);
-        monday.setDate(firstMonday.getDate() + (weekNumber - 1) * 7);
+        monday.setUTCDate(firstMonday.getUTCDate() + (weekNumber - 1) * 7);
         return monday;
     }
 
@@ -72,6 +71,7 @@ const WeekDisplay = (function() {
         let _weekLabel = getWeekLabel(weekNumber);
         let _grid = null;
         let _showNavigation = options.showNavigation !== false; // Default true
+        let _showTimezoneSelector = options.showTimezoneSelector === true; // Default false
 
         function _render() {
             if (!_panel) return;
@@ -92,12 +92,16 @@ const WeekDisplay = (function() {
                 </button>
             ` : '';
 
+            // Timezone selector (only on displays that opt in)
+            const tzSelectorHtml = _showTimezoneSelector ? _buildTzSelector() : '';
+
             _panel.innerHTML = `
                 <div class="week-display">
                     <div class="week-header-nav">
                         ${navHtml}
                         <h3 class="week-header">${_weekLabel}</h3>
                         ${navNextHtml}
+                        ${tzSelectorHtml}
                     </div>
                     <div id="${gridContainerId}" class="week-grid-container"></div>
                 </div>
@@ -106,6 +110,133 @@ const WeekDisplay = (function() {
             // Attach navigation handlers
             if (_showNavigation) {
                 _attachNavHandlers();
+            }
+            if (_showTimezoneSelector) {
+                _attachTzHandlers();
+            }
+        }
+
+        function _buildTzSelector() {
+            if (typeof TimezoneService === 'undefined') return '';
+
+            const abbr = TimezoneService.getTimezoneAbbreviation();
+            const options = TimezoneService.getTimezoneOptions();
+            const currentTz = TimezoneService.getUserTimezone();
+
+            let dropdownItems = '';
+            for (const group of options) {
+                dropdownItems += `<div class="tz-dropdown-region">${group.region}</div>`;
+                for (const tz of group.timezones) {
+                    const activeClass = tz.id === currentTz ? ' active' : '';
+                    dropdownItems += `<div class="tz-dropdown-item${activeClass}" data-tz-id="${tz.id}">${tz.label}</div>`;
+                }
+            }
+
+            return `
+                <div class="tz-selector">
+                    <button class="tz-selector-btn" type="button" title="Change timezone">
+                        <span class="tz-abbr">${abbr}</span>
+                        <span class="tz-chevron">&#9660;</span>
+                    </button>
+                    <div class="tz-dropdown">
+                        ${dropdownItems}
+                    </div>
+                </div>
+            `;
+        }
+
+        function _attachTzHandlers() {
+            const selectorBtn = _panel?.querySelector('.tz-selector-btn');
+            const dropdown = _panel?.querySelector('.tz-dropdown');
+            if (!selectorBtn || !dropdown) return;
+
+            // Toggle dropdown
+            selectorBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = dropdown.classList.toggle('open');
+                selectorBtn.classList.toggle('open', isOpen);
+            });
+
+            // Handle timezone selection
+            dropdown.addEventListener('click', (e) => {
+                const item = e.target.closest('.tz-dropdown-item');
+                if (!item) return;
+
+                const tzId = item.dataset.tzId;
+                if (!tzId) return;
+
+                _selectTimezone(tzId);
+                dropdown.classList.remove('open');
+                selectorBtn.classList.remove('open');
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', _handleOutsideClick);
+
+            // Listen for external timezone changes (e.g., loaded from user profile)
+            window.addEventListener('timezone-changed', _handleExternalTzChange);
+        }
+
+        function _handleExternalTzChange() {
+            if (typeof TimezoneService === 'undefined') return;
+            const abbrEl = _panel?.querySelector('.tz-abbr');
+            if (abbrEl) {
+                abbrEl.textContent = TimezoneService.getTimezoneAbbreviation();
+            }
+            // Update active state in dropdown
+            const currentTz = TimezoneService.getUserTimezone();
+            const items = _panel?.querySelectorAll('.tz-dropdown-item');
+            if (items) {
+                items.forEach(item => {
+                    item.classList.toggle('active', item.dataset.tzId === currentTz);
+                });
+            }
+        }
+
+        function _handleOutsideClick(e) {
+            const selector = _panel?.querySelector('.tz-selector');
+            if (selector && !selector.contains(e.target)) {
+                const dropdown = _panel?.querySelector('.tz-dropdown');
+                const btn = _panel?.querySelector('.tz-selector-btn');
+                if (dropdown) dropdown.classList.remove('open');
+                if (btn) btn.classList.remove('open');
+            }
+        }
+
+        async function _selectTimezone(tzId) {
+            if (typeof TimezoneService === 'undefined') return;
+
+            // Update service
+            TimezoneService.setUserTimezone(tzId);
+
+            // Update button label
+            const abbrEl = _panel?.querySelector('.tz-abbr');
+            if (abbrEl) {
+                abbrEl.textContent = TimezoneService.getTimezoneAbbreviation();
+            }
+
+            // Update active state in dropdown
+            const items = _panel?.querySelectorAll('.tz-dropdown-item');
+            if (items) {
+                items.forEach(item => {
+                    item.classList.toggle('active', item.dataset.tzId === tzId);
+                });
+            }
+
+            // Persist to Firestore (non-blocking)
+            _persistTimezone(tzId);
+
+            // Dispatch event so grids re-render
+            window.dispatchEvent(new CustomEvent('timezone-changed', { detail: { timezone: tzId } }));
+        }
+
+        async function _persistTimezone(tzId) {
+            try {
+                if (typeof AuthService !== 'undefined') {
+                    await AuthService.updateProfile({ timezone: tzId });
+                }
+            } catch (error) {
+                console.error('Failed to save timezone preference:', error);
             }
         }
 
@@ -182,6 +313,22 @@ const WeekDisplay = (function() {
             _grid.init();
         }
 
+        /**
+         * Rebuild the grid with current week (e.g., after timezone change)
+         */
+        function rebuildGrid() {
+            if (_grid) {
+                _grid.cleanup();
+            }
+            const gridContainerId = `availability-grid-week-${_weekNumber}`;
+            const gridContainer = _panel?.querySelector('.week-grid-container');
+            if (gridContainer) {
+                gridContainer.id = gridContainerId;
+            }
+            _grid = AvailabilityGrid.create(gridContainerId, _weekNumber);
+            _grid.init();
+        }
+
         function getGrid() {
             return _grid;
         }
@@ -196,7 +343,7 @@ const WeekDisplay = (function() {
          */
         function getWeekId() {
             const now = new Date();
-            const year = now.getFullYear();
+            const year = now.getUTCFullYear();
             return `${year}-${String(_weekNumber).padStart(2, '0')}`;
         }
 
@@ -271,12 +418,12 @@ const WeekDisplay = (function() {
         }
 
         /**
-         * Select a specific cell by ID (for template loading)
-         * @param {string} cellId - The cell ID to select (e.g., "mon_1800")
+         * Select a specific cell by UTC slot ID (for template loading)
+         * @param {string} utcSlotId - The UTC slot ID to select (e.g., "mon_1700")
          */
-        function selectCell(cellId) {
+        function selectCell(utcSlotId) {
             if (_grid) {
-                _grid.selectCell(cellId);
+                _grid.selectCell(utcSlotId);
             }
         }
 
@@ -347,6 +494,8 @@ const WeekDisplay = (function() {
         }
 
         function cleanup() {
+            document.removeEventListener('click', _handleOutsideClick);
+            window.removeEventListener('timezone-changed', _handleExternalTzChange);
             if (_grid) {
                 _grid.cleanup();
                 _grid = null;
@@ -360,6 +509,7 @@ const WeekDisplay = (function() {
             getGrid,
             getWeekNumber,
             setWeekNumber,
+            rebuildGrid,
             getWeekId,
             getSelectedCellsWithWeekId,
             clearSelection,

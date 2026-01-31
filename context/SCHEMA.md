@@ -56,6 +56,11 @@ interface UserDocument {
     [targetUserId: string]: string  // Hex color, e.g., "#FF6B6B"
   } | null;
 
+  // Timezone preference (Slice 7.0)
+  timezone: string | null;     // IANA timezone, e.g., "Europe/Stockholm"
+                               // Default: null (auto-detected from browser)
+                               // Used for: grid display conversion, slot UTC mapping
+
   // Metadata
   createdAt: Timestamp;
   lastUpdatedAt: Timestamp;
@@ -205,10 +210,11 @@ interface AvailabilityDocument {
 }
 ```
 
-**Slot ID Format:** `{day}_{time}`
+**Slot ID Format:** `{day}_{time}` (UTC)
 - Day: `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`
-- Time: `1800`, `1830`, `1900`, `1930`, `2000`, `2030`, `2100`, `2130`, `2200`, `2230`, `2300`
-- Examples: `mon_1800`, `fri_2100`, `sun_1930`
+- Time: Any half-hour in UTC (`0000`-`2330`). Display range varies by user timezone.
+- Examples: `mon_1700` (UTC, displays as 18:00 CET), `tue_0200` (UTC, displays as 21:00 EST)
+- All slot IDs represent UTC times. TimezoneService converts for display.
 
 **Week ID Format:** `YYYY-WW`
 - ISO week number with leading zero
@@ -363,3 +369,4 @@ const docId = `${teamId}_${weekId}`;
 - **2026-01-26**: Added avatar customization fields (avatarSource, discordAvatarHash) - Slice 4.3.3
 - **2026-01-28**: Added playerColors map - Slice 5.0.1
 - **2026-01-29**: Simplified avatar system - removed avatarUrls multi-size, using single photoURL (128px) with CSS sizing
+- **2026-01-31**: Added timezone field to user document, slot IDs now UTC-based (Slice 7.0a)

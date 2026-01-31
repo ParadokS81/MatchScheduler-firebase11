@@ -110,7 +110,9 @@ const ADDITIONAL_TEAMS = [
 // Collect all players from additional teams for Auth setup
 const ALL_ADDITIONAL_PLAYERS = ADDITIONAL_TEAMS.flatMap(team => team.players);
 
-const TIME_SLOTS = ['1800', '1830', '1900', '1930', '2000', '2030', '2100', '2130', '2200', '2230', '2300'];
+// UTC time slots for CET test users (CET = UTC+1 in winter)
+// CET 18:00 = UTC 17:00, CET 23:00 = UTC 22:00
+const TIME_SLOTS = ['1700', '1730', '1800', '1830', '1900', '1930', '2000', '2030', '2100', '2130', '2200'];
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 function getCurrentWeekNumber() {
@@ -128,12 +130,12 @@ function getWeekId(weekNumber) {
 
 function generateRandomAvailability(playerIndex) {
     const patterns = [
-        // Weekday evenings
-        () => DAYS.slice(0, 5).flatMap(day => ['1900', '1930', '2000', '2030'].map(t => `${day}_${t}`)),
+        // Weekday evenings (CET 19-21 = UTC 18-20)
+        () => DAYS.slice(0, 5).flatMap(day => ['1800', '1830', '1900', '1930'].map(t => `${day}_${t}`)),
         // Weekend warrior
         () => DAYS.slice(5).flatMap(day => TIME_SLOTS.map(t => `${day}_${t}`)),
-        // Late night
-        () => DAYS.flatMap(day => ['2100', '2130', '2200', '2230', '2300'].map(t => `${day}_${t}`)),
+        // Late night (CET 21-23 = UTC 20-22)
+        () => DAYS.flatMap(day => ['2000', '2030', '2100', '2130', '2200'].map(t => `${day}_${t}`)),
         // Flexible
         () => DAYS.flatMap(day => TIME_SLOTS.filter(() => Math.random() > 0.6).map(t => `${day}_${t}`)),
     ];
@@ -151,25 +153,25 @@ function generateTeamAvailability(pattern, playerIndex) {
 
     switch (pattern) {
         case 'weekday_prime':
-            // Strong Mon-Thu 19:00-21:00 with some variation
+            // Strong Mon-Thu CET 19:00-21:00 = UTC 18:00-20:00
             // This creates good 3-4 player overlap with Dev Squad
             ['mon', 'tue', 'wed', 'thu'].forEach(day => {
-                ['1900', '1930', '2000', '2030', '2100'].forEach(time => {
+                ['1800', '1830', '1900', '1930', '2000'].forEach(time => {
                     if (Math.random() > 0.25) baseSlots.push(`${day}_${time}`);
                 });
             });
-            // Add some Friday availability
+            // Add some Friday availability (CET 19-20 = UTC 18-19)
             if (playerIndex % 2 === 0) {
-                ['1900', '1930', '2000'].forEach(time => {
+                ['1800', '1830', '1900'].forEach(time => {
                     if (Math.random() > 0.4) baseSlots.push(`fri_${time}`);
                 });
             }
             break;
 
         case 'late_night':
-            // 21:00-23:00 all week - overlaps with Dev Squad late players
+            // CET 21:00-23:00 = UTC 20:00-22:00 all week
             DAYS.forEach(day => {
-                ['2100', '2130', '2200', '2230', '2300'].forEach(time => {
+                ['2000', '2030', '2100', '2130', '2200'].forEach(time => {
                     if (Math.random() > 0.3) baseSlots.push(`${day}_${time}`);
                 });
             });
@@ -183,12 +185,12 @@ function generateTeamAvailability(pattern, playerIndex) {
                     if (Math.random() > 0.2) baseSlots.push(`${day}_${time}`);
                 });
             });
-            // Weekday: lighter, varied by player
+            // Weekday: lighter, varied by player (UTC = CET - 1h)
             const weekdaySlots = playerIndex % 3 === 0
-                ? ['1800', '1830', '1900']
+                ? ['1700', '1730', '1800']
                 : playerIndex % 3 === 1
-                    ? ['2000', '2030', '2100']
-                    : ['2100', '2130', '2200'];
+                    ? ['1900', '1930', '2000']
+                    : ['2000', '2030', '2100'];
             ['mon', 'wed', 'fri'].forEach(day => {
                 weekdaySlots.forEach(time => {
                     if (Math.random() > 0.4) baseSlots.push(`${day}_${time}`);
@@ -359,6 +361,7 @@ async function seedEmulator() {
         photoURL: devUserPhotoURL,
         avatarSource: 'initials',
         discordTag: null,
+        timezone: 'Europe/Stockholm',
         teams: { [devTeamId]: true },
         createdAt: Timestamp.now(),
         lastUpdatedAt: Timestamp.now()
@@ -375,6 +378,7 @@ async function seedEmulator() {
             photoURL: player.photoURL || null,
             avatarSource: 'initials',
             discordTag: null,
+            timezone: 'Europe/Stockholm',
             teams: { [devTeamId]: true },
             createdAt: Timestamp.now(),
             lastUpdatedAt: Timestamp.now()
@@ -446,6 +450,7 @@ async function seedEmulator() {
                 photoURL: player.photoURL || null,
                 avatarSource: 'initials',
                 discordTag: null,
+                timezone: 'Europe/Stockholm',
                 teams: { [team.id]: true },
                 createdAt: Timestamp.now(),
                 lastUpdatedAt: Timestamp.now()

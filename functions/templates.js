@@ -5,8 +5,9 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const MAX_TEMPLATES = 3;
 const MAX_NAME_LENGTH = 20;
 
-// Valid slot pattern: day_time format (e.g., "mon_1800", "tue_1930")
-const VALID_SLOT_PATTERN = /^(mon|tue|wed|thu|fri|sat|sun)_(18|19|20|21|22|23)(00|30)$/;
+// Valid slot pattern: day_time format in UTC (e.g., "mon_1800", "tue_0200")
+// Any hour 00-23 valid since different timezones map to different UTC hours
+const VALID_SLOT_PATTERN = /^(mon|tue|wed|thu|fri|sat|sun)_(0[0-9]|1[0-9]|2[0-3])(00|30)$/;
 
 /**
  * Save a new availability template

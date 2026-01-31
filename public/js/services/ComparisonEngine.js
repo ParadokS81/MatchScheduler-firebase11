@@ -27,7 +27,7 @@ const ComparisonEngine = (function() {
     function _getVisibleWeeks() {
         const currentWeek = WeekNavigation.getCurrentWeekNumber();
         const now = new Date();
-        const year = now.getFullYear();
+        const year = now.getUTCFullYear();
 
         // Format: "YYYY-WW" (ISO format with leading zero)
         const week1 = `${year}-${String(currentWeek).padStart(2, '0')}`;

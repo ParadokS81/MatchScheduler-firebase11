@@ -21,37 +21,63 @@ const ComparisonModal = (function() {
     }
 
     /**
-     * Format slot ID for display (e.g., "mon_1900" → "Monday at 19:00")
+     * Get the Monday of a given week number (UTC) for DST-correct formatting.
+     * @param {string} weekId - e.g., "2026-05"
+     * @returns {Date|undefined}
      */
-    function _formatSlot(slotId) {
-        const [day, time] = slotId.split('_');
-        const dayNames = {
-            mon: 'Monday',
-            tue: 'Tuesday',
-            wed: 'Wednesday',
-            thu: 'Thursday',
-            fri: 'Friday',
-            sat: 'Saturday',
-            sun: 'Sunday'
-        };
-        const formattedDay = dayNames[day] || day;
-        const formattedTime = `${time.slice(0, 2)}:${time.slice(2)}`;
-        return `${formattedDay} at ${formattedTime}`;
+    function _getRefDate(weekId) {
+        if (!weekId) return undefined;
+        const weekNum = parseInt(weekId.split('-')[1], 10);
+        if (isNaN(weekNum)) return undefined;
+
+        const year = new Date().getUTCFullYear();
+        const jan1 = new Date(Date.UTC(year, 0, 1));
+        const dayOfWeek = jan1.getUTCDay();
+        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
+        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
+        const monday = new Date(firstMonday);
+        monday.setUTCDate(firstMonday.getUTCDate() + (weekNum - 1) * 7);
+        return monday;
     }
 
     /**
-     * Format slot ID for message (e.g., "mon_1900" → "Mon 19:00")
-     * Shorter format for compact message display
+     * Format UTC slot ID for display in user's local timezone.
+     * e.g., "mon_2000" → "Monday at 21:00" for CET user
      */
-    function _formatSlotForMessage(slotId) {
-        const [day, time] = slotId.split('_');
+    function _formatSlot(utcSlotId, refDate) {
+        if (typeof TimezoneService !== 'undefined') {
+            const display = TimezoneService.formatSlotForDisplay(utcSlotId, refDate);
+            return display.fullLabel;
+        }
+        // Fallback: raw display
+        const [day, time] = utcSlotId.split('_');
+        const dayNames = {
+            mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday',
+            thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday'
+        };
+        return `${dayNames[day] || day} at ${time.slice(0, 2)}:${time.slice(2)}`;
+    }
+
+    /**
+     * Format UTC slot ID for message in user's local timezone.
+     * e.g., "mon_2000" → "Mon 21:00" for CET user
+     */
+    function _formatSlotForMessage(utcSlotId, refDate) {
+        if (typeof TimezoneService !== 'undefined') {
+            const display = TimezoneService.formatSlotForDisplay(utcSlotId, refDate);
+            const shortDayNames = {
+                Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed',
+                Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun'
+            };
+            return `${shortDayNames[display.dayLabel] || display.dayLabel} ${display.timeLabel}`;
+        }
+        // Fallback: raw display
+        const [day, time] = utcSlotId.split('_');
         const dayNames = {
             mon: 'Mon', tue: 'Tue', wed: 'Wed',
             thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun'
         };
-        const formattedDay = dayNames[day] || day;
-        const formattedTime = `${time.slice(0, 2)}:${time.slice(2)}`;
-        return `${formattedDay} ${formattedTime}`;
+        return `${dayNames[day] || day} ${time.slice(0, 2)}:${time.slice(2)}`;
     }
 
     /**
@@ -108,7 +134,7 @@ const ComparisonModal = (function() {
         ];
 
         opponentSlots.forEach((slot) => {
-            const formatted = _formatSlotForMessage(slot.slotId);
+            const formatted = _formatSlotForMessage(slot.slotId, _getRefDate(slot.weekId));
             const marker = slot.isPriority ? '> ' : '  ';
             const counts = `${slot.userCount}v${slot.opponentCount}`;
             lines.push(`${marker}${formatted} (${counts})`);
@@ -354,7 +380,7 @@ const ComparisonModal = (function() {
      * Render the full modal with VS layout
      */
     function _renderModal(weekId, slotId, userTeamInfo, matches, isLeader, leaderDiscordInfo) {
-        const formattedSlot = _formatSlot(slotId);
+        const formattedSlot = _formatSlot(slotId, _getRefDate(weekId));
         const selectedMatch = matches[_selectedOpponentIndex] || matches[0];
 
         // Get user's team ID from TeamService or userTeamInfo

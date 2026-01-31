@@ -182,12 +182,13 @@ exports.updateProfile = onCall(async (request) => {
     }
 
     const { uid } = auth;
-    const { displayName, initials, discordUsername, discordUserId, avatarSource, photoURL } = data;
+    const { displayName, initials, discordUsername, discordUserId, avatarSource, photoURL, timezone } = data;
 
     // Validate input - at least one field must be provided
     const hasAnyField = displayName || initials ||
         discordUsername !== undefined || discordUserId !== undefined ||
-        avatarSource !== undefined || photoURL !== undefined;
+        avatarSource !== undefined || photoURL !== undefined ||
+        timezone !== undefined;
 
     if (!hasAnyField) {
         throw new HttpsError('invalid-argument', 'At least one field must be provided');
@@ -247,6 +248,14 @@ exports.updateProfile = onCall(async (request) => {
     // Handle photoURL update
     if (photoURL !== undefined) {
         updates.photoURL = photoURL || null;
+    }
+
+    // Handle timezone update (Slice 7.0c)
+    if (timezone !== undefined) {
+        if (typeof timezone !== 'string' || timezone.length < 3 || timezone.length > 50) {
+            throw new HttpsError('invalid-argument', 'Invalid timezone format');
+        }
+        updates.timezone = timezone;
     }
 
     try {

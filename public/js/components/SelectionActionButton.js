@@ -262,7 +262,9 @@ const SelectionActionButton = (function() {
         document.removeEventListener('keydown', _handleKeydown);
         _container?.remove();
         _container = null;
-        _actionButton = null;
+        _addButton = null;
+        _removeButton = null;
+        _saveTemplateButton = null;
         _clearButton = null;
         _currentSelection = [];
         _currentBounds = null;

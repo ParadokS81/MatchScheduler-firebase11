@@ -341,28 +341,35 @@ Redesign of the team detail view with tabbed navigation, richer landing page, sp
 
 **Note:** Seed scripts updated with correct QWHub clan tags for all 24 teams. Record format uses compact W-L dash format (green-red coloring). Teams without QWHub tags show "Match history not available".
 
-#### 📅 Slice 5.2b: Match History Split-Panel
-**Status:** Not Started
+#### ✅ Slice 5.2b: Match History Split-Panel
+**Status:** Complete
 **User Value:** Browse match history with filters and preview scoreboards by hover/click
 **Spec:** `context/slices/slice-5.2b-match-history-split-panel.md`
 **Components:** TeamsBrowserPanel (enhance)
 **Scope:**
-- Left panel (40%): Scrollable match list with map filter dropdown, up to 20 matches
-- Right panel (60%): Scoreboard preview area with mapshot background
+- Left panel (38%): Scrollable match list with map/opponent/period filters, sortable columns, up to 20 matches
+- Right panel (62%): Scoreboard preview area with mapshot background
 - Hover = instant preview (from cached Supabase data), Click = sticky + fetch ktxstats
-- Key team stats bar on click: Eff%, RL#, Dmg, LG%
+- Activity chart + map/opponent breakdown in summary view
 - "View on QW Hub" game link + "Full Stats" button
 
-#### 📅 Slice 5.2c: Match Stats Popout Modal
-**Status:** Not Started
-**User Value:** Detailed match stats in draggable popout, enabling side-by-side comparison
-**Spec:** `context/slices/slice-5.2c-stats-popout-modal.md`
-**Components:** MatchStatsModal (new), TeamsBrowserPanel (enhance)
+**Note:** Split ratio tuned from original 40/60 to 38/62 for better stats table fit at 1080p.
+
+#### ✅ Slice 5.2c: Inline Stats Table (Revised from Popout Modal)
+**Status:** Complete
+**User Value:** Per-player match stats rendered inline on map background with 3 toggleable tabs
+**Spec:** `context/slices/slice-5.2c-stats-popout-modal.md` (original spec — implementation pivoted to inline)
+**Components:** TeamsBrowserPanel (enhance), QWHubService (enhance)
 **Scope:**
-- Trimmed ktxstats table: Frags, Eff%, Kills, Deaths, RL#, LG%, SG%, Dmg, RA, YA
-- Multiple modals open simultaneously for crude H2H match comparison
-- Draggable, z-index stacking, Escape to close
-- Direct link to QW Hub game page for full stats + demo streaming
+- Unified stats-on-map view: stats table rendered on map background with dark overlay + text-outline
+- 3 tabs: Performance (Eff%, Deaths, Dmg, EWEP, ToDie), Weapons (SG%, RL t/d, LG%/t/d), Resources (GA, YA, RA, MH, Q, P, R)
+- Team aggregate rows + per-player rows grouped by team, sorted by frags
+- Hub-style colored headers (armor/powerup colors), dimmed zeros, red-to-orange team dividers
+- QW byte-encoded name rendering via new `coloredQuakeNameFromBytes()`
+- Hover shows classic scoreboard, click transitions to unified stats view
+- "View on QW Hub" + "Full Stats" links inside overlay
+
+**Note:** Originally planned as draggable popout modal for side-by-side comparison. Pivoted to inline stats-on-map view — simpler, eliminates redundant scoreboard, and the map background gives each match visual identity. Popout can be added later if comparison use case demands it.
 
 #### 📅 Slice 5.2d: Head-to-Head Tab
 **Status:** Not Started
@@ -376,6 +383,31 @@ Redesign of the team detail view with tabbed navigation, richer landing page, sp
 - Overall W/L record, per-map breakdown with win bars
 - Match list with click-to-view stats (reuses 5.2c MatchStatsModal)
 - New `getH2HMatches()` method in QWHubService (sorted cache key)
+
+---
+
+## Part 5b: Cross-Timezone Support
+
+### ✅ Slice 7.0: UTC Timezone Foundation
+**Status:** Complete
+**User Value:** Players in any timezone see local evening times while availability is stored in UTC, enabling correct cross-timezone comparison
+**Spec:** `context/slices/slice-7.0-utc-timezone-foundation.md`
+**Components:** TimezoneService (new), AvailabilityGrid (modify), WeekNavigation (modify), WeekDisplay (modify), ComparisonModal (modify), OverflowModal (modify), Cloud Functions (modify), seed scripts (modify)
+**Scope:**
+- TimezoneService with IANA timezone support, DST-aware via Intl API
+- All Firestore slot IDs stored as UTC
+- Grid displays local time labels (18:00-23:00 in user's timezone)
+- Day wrapping for negative-offset timezones (e.g., EST Mon 21:00 → UTC Tue 02:00)
+- Timezone selector UI in grid header (grouped by region)
+- Auto-detect timezone from browser, persist to user document
+- Cloud Function validation updated to accept any UTC hour (00-23)
+- Seed script generates UTC-based slot data
+- Templates store UTC slot IDs
+- Modals display times in user's local timezone
+
+**Note:** All 7 test suites pass (offset calculation, local→UTC, UTC→local, day wrapping, grid map round-trip, boundary offsets, display formatting). ComparisonEngine unchanged — already compares slot ID strings.
+
+---
 
 ### 📅 Slice 5.3: Tournament Hub Tab
 **Status:** Not Started
@@ -414,13 +446,13 @@ Redesign of the team detail view with tabbed navigation, richer landing page, sp
 ---
 
 ## Progress Summary
-**Slices Complete:** 28 / ~36 (Part 5 expanded with 5.2 cluster)
+**Slices Complete:** 31 / ~37
 
 ## Current Focus
-**Slice 5.2 - Team Detail Redesign** - Tabbed team detail view with rich landing page, split-panel match history, stats popout, and head-to-head comparison.
+**Open** - Slice 7.0 (UTC Timezone Foundation) complete. Deciding next priority.
 
 ## QW Hub Integration Path
-5.1 → 5.1a → 5.1b (basic) → **5.2a → 5.2b → 5.2c → 5.2d** (full redesign)
+5.1 → 5.1a → 5.1b (basic) → ✅ 5.2a → ✅ 5.2b → ✅ 5.2c → **5.2d** (full redesign)
 
 Each 5.2 slice builds on the previous:
 - 5.2a: Tab infrastructure + Details landing page (foundation)
@@ -430,4 +462,4 @@ Each 5.2 slice builds on the previous:
 
 ---
 
-*Last Updated: 2026-01-30*
+*Last Updated: 2026-01-31*

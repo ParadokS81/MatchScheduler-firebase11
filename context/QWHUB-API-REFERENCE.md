@@ -579,7 +579,7 @@ type Player = {
     login: string; name: string; team: string;
     stats: { frags: number; deaths: number; tk: number; "spawn-frags": number; kills: number; suicides: number; };
     dmg: { taken: number; given: number; team: number; self: number; "team-weapons": number; "enemy-weapons": number; "taken-to-die": number; };
-    xfer_rl: number; xfer_lg: number;
+    xferRL: number; xferLG: number;  // camelCase in actual JSON (not snake_case)
     spree: { max: number; quad: number; };
     control: number;
     ctf: { caps: number; "carrier-defends": number; "carrier-frags": number; defends: number; pickups: number; points: number; returns: number; runes: Record<string, number>; };

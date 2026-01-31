@@ -42,8 +42,9 @@ const updateAvailability = onCall(async (request) => {
         throw new HttpsError('invalid-argument', 'Must provide at least one slot');
     }
 
-    // Validate slot ID format (day_time, e.g., "mon_1800")
-    const validSlotPattern = /^(mon|tue|wed|thu|fri|sat|sun)_(18|19|20|21|22|23)(00|30)$/;
+    // Validate slot ID format (day_time in UTC, e.g., "mon_1800", "tue_0200")
+    // Any hour 00-23 valid since different timezones map to different UTC hours
+    const validSlotPattern = /^(mon|tue|wed|thu|fri|sat|sun)_(0[0-9]|1[0-9]|2[0-3])(00|30)$/;
     for (const slotId of slotIds) {
         if (!validSlotPattern.test(slotId)) {
             throw new HttpsError('invalid-argument', `Invalid slot format: ${slotId}`);
