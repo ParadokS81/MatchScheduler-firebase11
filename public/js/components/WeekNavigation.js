@@ -87,6 +87,18 @@ const WeekNavigation = (function() {
     }
 
     /**
+     * Navigate directly to a specific week number
+     * @param {number} weekNumber - Target week (1-52)
+     */
+    function setWeekNumber(weekNumber) {
+        if (weekNumber < 1 || weekNumber > 52) return;
+        if (_anchorWeek === weekNumber) return;
+        _anchorWeek = weekNumber;
+        _notifyListeners();
+        console.log('📅 Navigated directly to week:', _anchorWeek);
+    }
+
+    /**
      * Navigate by direction string
      * @param {string} direction - 'prev' or 'next'
      */
@@ -148,6 +160,7 @@ const WeekNavigation = (function() {
         init,
         getCurrentWeekNumber,
         getSecondWeekNumber,
+        setWeekNumber,
         navigate,
         navigatePrev,
         navigateNext,

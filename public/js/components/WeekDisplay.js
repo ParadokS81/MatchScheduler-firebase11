@@ -11,19 +11,8 @@ const WeekDisplay = (function() {
      * @returns {string} Formatted label like "Week 5: Jan 27 - Feb 2"
      */
     function getWeekLabel(weekNumber) {
-        const now = new Date();
-        const year = now.getUTCFullYear();
-
-        // Find first Monday of the year (UTC)
-        const jan1 = new Date(Date.UTC(year, 0, 1));
-        const dayOfWeek = jan1.getUTCDay();
-        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
-
-        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
-
-        // Calculate Monday of the requested week
-        const monday = new Date(firstMonday);
-        monday.setUTCDate(firstMonday.getUTCDate() + (weekNumber - 1) * 7);
+        const year = new Date().getUTCFullYear();
+        const monday = DateUtils.getMondayOfWeek(weekNumber, year);
 
         // Calculate Sunday
         const sunday = new Date(monday);
@@ -36,25 +25,6 @@ const WeekDisplay = (function() {
 
         // Spaced out format: "2026    Week 6    Feb 9 - Feb 15"
         return `${year} \u00A0\u00A0 Week ${weekNumber} \u00A0\u00A0 ${formatDate(monday)} - ${formatDate(sunday)}`;
-    }
-
-    /**
-     * Get the Monday date of a given week number
-     * @param {number} weekNumber - ISO week number
-     * @returns {Date} Monday of that week
-     */
-    function getMondayOfWeek(weekNumber) {
-        const now = new Date();
-        const year = now.getUTCFullYear();
-
-        const jan1 = new Date(Date.UTC(year, 0, 1));
-        const dayOfWeek = jan1.getUTCDay();
-        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
-        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
-
-        const monday = new Date(firstMonday);
-        monday.setUTCDate(firstMonday.getUTCDate() + (weekNumber - 1) * 7);
-        return monday;
     }
 
     /**

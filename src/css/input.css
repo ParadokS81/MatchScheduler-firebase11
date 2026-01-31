@@ -3310,3 +3310,261 @@ body {
 .tz-dropdown-item.active {
     color: var(--primary);
 }
+
+/* ─── Matches Panel (Slice 8.0b) ─────────────────────────────────── */
+
+.matches-panel {
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
+}
+
+.proposal-card {
+    transition: border-color 0.15s ease;
+}
+
+.proposal-card:hover {
+    border-color: var(--muted-foreground);
+}
+
+.proposal-card-header:hover {
+    background: var(--muted);
+    border-radius: var(--radius);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Slice 10.0a: Mobile Responsive CSS Foundation
+   All mobile styles are additive — desktop layout is untouched.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ─── Portrait Orientation Overlay ──────────────────────────────── */
+
+.portrait-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background-color: var(--background);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.portrait-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.portrait-icon {
+  font-size: 3rem;
+  animation: rotate-hint 2s ease-in-out infinite;
+}
+
+@keyframes rotate-hint {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(90deg); }
+}
+
+@media (max-width: 900px) and (orientation: portrait) {
+  .portrait-overlay {
+    display: flex;
+  }
+}
+
+/* ─── Mobile Drawer Containers ──────────────────────────────────── */
+/* Hidden on desktop, styled for mobile (populated by JS in 10.0b) */
+
+.mobile-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 70vw;
+  max-width: 20rem;
+  background-color: var(--card);
+  z-index: 45;
+  overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform 200ms ease;
+}
+
+.mobile-drawer-left {
+  left: 0;
+}
+
+.mobile-drawer-right {
+  right: 0;
+  transform: translateX(100%);
+}
+
+.mobile-drawer.open {
+  transform: translateX(0);
+}
+
+.mobile-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: oklch(0 0 0 / 0.5);
+  z-index: 44;
+}
+
+/* ─── Mobile Bottom Bar ─────────────────────────────────────────── */
+
+.mobile-bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3rem;
+  background-color: var(--muted);
+  border-top: 1px solid var(--border);
+  z-index: 43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Bottom bar content layout */
+.mobile-bottom-bar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+  padding: 0 0.25rem;
+  gap: 0.125rem;
+}
+
+/* Base button style */
+.mobile-bb-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  font-size: 1rem;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-bb-btn:active {
+  background-color: var(--accent);
+}
+
+/* Tab button group */
+.mobile-bb-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  flex: 1;
+  justify-content: center;
+}
+
+/* Active tab indicator */
+.mobile-bb-tab.active {
+  color: var(--primary);
+  border-bottom: 2px solid var(--primary);
+}
+
+/* Week navigation group */
+.mobile-bb-week-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.mobile-bb-week-label {
+  font-size: 0.75rem;
+  color: var(--foreground);
+  font-weight: 600;
+  min-width: 2rem;
+  text-align: center;
+}
+
+.mobile-bb-week-btn {
+  min-width: 2rem;
+  font-size: 0.75rem;
+}
+
+/* Drawer toggle buttons */
+.mobile-bb-drawer-toggle {
+  font-size: 1.125rem;
+}
+
+/* ─── Desktop: Hide all mobile elements ─────────────────────────── */
+
+.mobile-drawer,
+.mobile-drawer-overlay,
+.mobile-bottom-bar {
+  display: none;
+}
+
+/* ─── Mobile Landscape: Grid Collapse + Mobile Elements ─────────── */
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .app-container {
+    padding: 0;
+  }
+
+  .main-grid-v3 {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+    gap: 0;
+    height: calc(100vh - 3rem); /* Account for bottom bar */
+  }
+
+  /* Hide side panels */
+  #panel-top-left,
+  #panel-top-right,
+  #panel-mid-left,
+  #panel-mid-right,
+  #panel-bottom-left,
+  #panel-bottom-right {
+    display: none;
+  }
+
+  /* Hide desktop divider row */
+  #panel-mid-center {
+    display: none;
+  }
+
+  /* Grid panels fill width */
+  #panel-top-center,
+  #panel-bottom-center {
+    grid-column: 1;
+  }
+
+  /* Show mobile elements */
+  .mobile-drawer,
+  .mobile-bottom-bar {
+    display: flex;
+  }
+
+  /* Panels moved into drawers need to be visible */
+  .mobile-drawer-content #panel-top-left,
+  .mobile-drawer-content #panel-top-right,
+  .mobile-drawer-content #panel-mid-right {
+    display: block;
+  }
+
+  /* Ensure grid cells meet minimum touch target size */
+  .grid-cell {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  /* Slightly larger font for mobile readability */
+  .week-header-nav {
+    font-size: 0.875rem;
+  }
+
+  /* FAB repositioning above bottom bar on mobile */
+  .selection-action-btn {
+    bottom: 3.5rem; /* 3rem bottom bar + 0.5rem spacing */
+  }
+}

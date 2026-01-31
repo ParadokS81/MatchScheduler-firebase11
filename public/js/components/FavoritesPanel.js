@@ -156,28 +156,27 @@ const FavoritesPanel = (function() {
         const favorites = FavoritesService.getFavorites();
         const selectedTeams = TeamBrowserState.getSelectedTeams();
 
-        // Check if comparison is active
+        // Check comparison state (auto-mode toggle)
         const comparison = typeof ComparisonEngine !== 'undefined'
             ? ComparisonEngine.getComparisonState()
-            : { active: false };
-        _isComparing = comparison.active;
+            : { active: false, autoMode: false };
+        _isComparing = comparison.autoMode;
 
-        // Build action button based on comparison state
-        // Need at least 1 opponent selected (user team comes from grid)
-        const actionButton = _isComparing
-            ? `<button id="exit-comparison-btn"
-                       class="w-full py-2 px-4 rounded-lg font-medium transition-colors
-                              bg-muted text-foreground hover:bg-muted/80 border border-border">
-                   Exit Comparison
-               </button>`
-            : `<button id="compare-now-btn"
-                       class="w-full py-2 px-4 rounded-lg font-medium transition-colors
-                              ${selectedTeams.size >= 1
-                                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                                  : 'bg-muted text-muted-foreground cursor-not-allowed'}"
-                       ${selectedTeams.size < 1 ? 'disabled' : ''}>
-                   Compare (${selectedTeams.size})
-               </button>`;
+        // Build toggle button for comparison mode
+        const toggleOn = _isComparing;
+        const opponentCount = selectedTeams.size;
+        const statusText = toggleOn
+            ? (opponentCount > 0 ? `ON (${opponentCount})` : 'ON')
+            : 'OFF';
+        const actionButton = `
+            <button id="compare-toggle-btn"
+                    class="w-full py-2 px-4 rounded-lg font-medium transition-colors
+                           ${toggleOn
+                               ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                               : 'bg-muted text-foreground hover:bg-muted/80 border border-border'}"
+                    title="${toggleOn ? 'Click to disable live comparison' : 'Click to enable live comparison'}">
+                Compare: ${statusText}
+            </button>`;
 
         _container.innerHTML = `
             <div class="p-4 h-full flex flex-col">
@@ -278,64 +277,39 @@ const FavoritesPanel = (function() {
             favorites.forEach(teamId => TeamBrowserState.deselectTeam(teamId));
         });
 
-        // Compare Now - Start comparison (Slice 3.4)
-        document.getElementById('compare-now-btn')?.addEventListener('click', async () => {
-            const selected = TeamBrowserState.getSelectedTeams();
-            if (selected.size < 1) return;
+        // Compare Toggle - Slice 8.1b: reactive comparison mode
+        document.getElementById('compare-toggle-btn')?.addEventListener('click', () => {
+            if (typeof ComparisonEngine === 'undefined') return;
 
-            const button = document.getElementById('compare-now-btn');
-            if (button) {
-                button.disabled = true;
-                button.textContent = 'Comparing...';
-            }
+            const isAutoMode = ComparisonEngine.isAutoMode();
 
-            try {
-                // User team is ALWAYS the team displayed in the grid
-                // All selected teams in browser are opponents
+            if (isAutoMode) {
+                // Toggle OFF
+                ComparisonEngine.endComparison();
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showInfo('Comparison mode off');
+                }
+            } else {
+                // Toggle ON — need user team from grid
                 const userTeamId = typeof MatchSchedulerApp !== 'undefined'
                     ? MatchSchedulerApp.getSelectedTeam()?.id
                     : null;
 
                 if (!userTeamId) {
-                    throw new Error('No team selected in grid');
+                    if (typeof ToastService !== 'undefined') {
+                        ToastService.showError('No team selected in grid');
+                    }
+                    return;
                 }
 
-                const opponentIds = Array.from(selected).filter(id => id !== userTeamId);
-
-                // Get current filter values
-                const filters = typeof FilterService !== 'undefined'
-                    ? FilterService.getFilters()
-                    : { yourTeam: 1, opponent: 1 };
-
-                console.log('[FavoritesPanel] Starting comparison:', {
-                    userTeamId,
-                    opponentIds,
-                    filters
-                });
-
-                // Start comparison
-                await ComparisonEngine.startComparison(userTeamId, opponentIds, filters);
+                ComparisonEngine.enableAutoMode(userTeamId);
 
                 if (typeof ToastService !== 'undefined') {
                     const userTeam = TeamService.getTeamFromCache(userTeamId);
                     ToastService.showSuccess(
-                        `Comparing [${userTeam?.teamTag || '??'}] with ${opponentIds.length} opponent(s)`
+                        `Compare mode on for [${userTeam?.teamTag || '??'}]`
                     );
                 }
-            } catch (error) {
-                console.error('[FavoritesPanel] Comparison failed:', error);
-                if (typeof ToastService !== 'undefined') {
-                    ToastService.showError('Failed to start comparison. Please try again.');
-                }
-            }
-
-            // Re-render to show Exit button (via event listener)
-        });
-
-        // Exit Comparison - End comparison mode (Slice 3.4)
-        document.getElementById('exit-comparison-btn')?.addEventListener('click', () => {
-            if (typeof ComparisonEngine !== 'undefined') {
-                ComparisonEngine.endComparison();
             }
         });
 
@@ -384,9 +358,10 @@ const FavoritesPanel = (function() {
         // Listen for selection changes (from TeamBrowserState)
         window.addEventListener('team-selection-changed', _render);
 
-        // Listen for comparison events (Slice 3.4)
+        // Listen for comparison events
         window.addEventListener('comparison-started', _render);
         window.addEventListener('comparison-ended', _render);
+        window.addEventListener('comparison-mode-changed', _render);
     }
 
     async function _setupTeamListener() {
@@ -422,6 +397,7 @@ const FavoritesPanel = (function() {
         window.removeEventListener('team-selection-changed', _render);
         window.removeEventListener('comparison-started', _render);
         window.removeEventListener('comparison-ended', _render);
+        window.removeEventListener('comparison-mode-changed', _render);
         if (_unsubscribeTeams) {
             _unsubscribeTeams();
             _unsubscribeTeams = null;

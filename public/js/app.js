@@ -60,6 +60,14 @@ const MatchSchedulerApp = (function() {
         // Set up comparison event listeners (Slice 3.4)
         _setupComparisonListeners();
 
+        // Initialize MobileLayout for drawer management (Slice 10.0b)
+        if (typeof MobileLayout !== 'undefined') {
+            MobileLayout.init();
+        }
+        if (typeof MobileBottomBar !== 'undefined') {
+            MobileBottomBar.init();
+        }
+
         console.log('🧩 Components initialized');
     }
 
@@ -175,6 +183,11 @@ const MatchSchedulerApp = (function() {
         // Initialize BottomPanelController for tab switching (Slice 5.0a)
         if (typeof BottomPanelController !== 'undefined') {
             BottomPanelController.init(_weekDisplay2);
+        }
+
+        // Initialize UpcomingMatchesPanel in bottom-left panel
+        if (typeof UpcomingMatchesPanel !== 'undefined') {
+            UpcomingMatchesPanel.init('upcoming-matches-container');
         }
 
         console.log(`📅 Availability grids initialized for weeks ${currentWeek} and ${currentWeek + 1}`);
@@ -598,6 +611,10 @@ const MatchSchedulerApp = (function() {
         // Slice 5.0a: Clean up BottomPanelController
         if (typeof BottomPanelController !== 'undefined') {
             BottomPanelController.cleanup();
+        }
+        // Clean up UpcomingMatchesPanel
+        if (typeof UpcomingMatchesPanel !== 'undefined') {
+            UpcomingMatchesPanel.cleanup();
         }
     }
 

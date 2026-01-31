@@ -294,8 +294,23 @@ async function setupFakeUser(player) {
     console.log(`✓ Created Auth user: ${player.displayName}`);
 }
 
+async function clearCollection(collectionName) {
+    const snapshot = await db.collection(collectionName).get();
+    if (snapshot.empty) return;
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    console.log(`  🗑️ Cleared ${snapshot.size} docs from ${collectionName}`);
+}
+
 async function seedEmulator() {
     console.log('🌱 Seeding Firestore and Auth emulators...\n');
+
+    // Clear proposal/match data from previous runs
+    console.log('🧹 Cleaning up previous proposal data...');
+    await clearCollection('matchProposals');
+    await clearCollection('scheduledMatches');
+    console.log('');
 
     // Setup dev user with fixed UID
     const devUser = await setupDevUser();
@@ -317,7 +332,11 @@ async function seedEmulator() {
     const week1Id = getWeekId(currentWeek);
     const week2Id = getWeekId(currentWeek + 1);
 
-    console.log(`📅 Creating data for weeks: ${week1Id} and ${week2Id}\n`);
+    const week3Id = getWeekId(currentWeek + 2);
+    const week4Id = getWeekId(currentWeek + 3);
+    const weekIds = [week1Id, week2Id, week3Id, week4Id];
+
+    console.log(`📅 Creating data for weeks: ${weekIds.join(', ')}\n`);
 
     const devTeamId = 'team-dev-001';
     const batch = db.batch();
@@ -340,8 +359,10 @@ async function seedEmulator() {
 
     batch.set(db.collection('teams').doc(devTeamId), {
         teamName: 'Dev Squad',
+        teamNameLower: 'dev squad',
         teamTag: 'DEV',
         leaderId: devUser.userId,
+        schedulers: [],
         divisions: ['D1'],
         maxPlayers: 10,
         joinCode: 'DEV123',
@@ -388,7 +409,7 @@ async function seedEmulator() {
 
     // Dev Squad availability
     const devPlayers = [devUser, ...DEV_SQUAD_PLAYERS.map(p => ({ userId: p.userId }))];
-    [week1Id, week2Id].forEach(weekId => {
+    weekIds.forEach(weekId => {
         const slots = {};
         devPlayers.forEach((player, i) => {
             const playerSlots = generateRandomAvailability(i);
@@ -428,8 +449,10 @@ async function seedEmulator() {
         // Create team document
         batch.set(db.collection('teams').doc(team.id), {
             teamName: team.teamName,
+            teamNameLower: team.teamName.toLowerCase(),
             teamTag: team.teamTag,
             leaderId: leader.userId,
+            schedulers: [],
             divisions: team.divisions,
             maxPlayers: 10,
             joinCode: team.teamTag.toUpperCase() + '123',
@@ -458,7 +481,7 @@ async function seedEmulator() {
         });
 
         // Create availability for this team
-        [week1Id, week2Id].forEach(weekId => {
+        weekIds.forEach(weekId => {
             const slots = {};
             team.players.forEach((player, i) => {
                 const playerSlots = generateTeamAvailability(team.availabilityPattern, i);
@@ -475,7 +498,7 @@ async function seedEmulator() {
                 lastUpdated: Timestamp.now()
             });
         });
-        console.log(`  ✓ Availability created for weeks ${week1Id} and ${week2Id}`);
+        console.log(`  ✓ Availability created for weeks ${weekIds.join(', ')}`);
     }
 
     await batch.commit();
@@ -494,7 +517,7 @@ async function seedEmulator() {
         console.log(`    • ${t.teamName} (${t.divisions.join('/')}) - ${t.players.length} players`);
     });
     console.log(`  - ${totalPlayers} users total`);
-    console.log('  - 2 weeks of availability per team');
+    console.log('  - 4 weeks of availability per team');
     console.log('\n🎯 Availability Patterns:');
     console.log('  • Phoenix Rising: Weekday prime time (19:00-21:00 Mon-Thu)');
     console.log('  • Shadow Wolves: Late night (21:00-23:00 all week)');

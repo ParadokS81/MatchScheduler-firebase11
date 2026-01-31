@@ -30,6 +30,18 @@ const FilterService = (function() {
         _opponentMinimum = 1;
         // Don't dispatch on init - components will read initial values
         console.log('🎚️ FilterService initialized with defaults (1, 1)');
+
+        // Sync internal state when external code dispatches filter-changed directly
+        // (e.g., MatchesPanel "Load Grid View" sets filters without going through setters)
+        window.addEventListener('filter-changed', (e) => {
+            if (!e.detail) return;
+            if (e.detail.yourTeam !== undefined) {
+                _yourTeamMinimum = Math.max(1, Math.min(4, parseInt(e.detail.yourTeam) || 1));
+            }
+            if (e.detail.opponent !== undefined) {
+                _opponentMinimum = Math.max(1, Math.min(4, parseInt(e.detail.opponent) || 1));
+            }
+        });
     }
 
     /**

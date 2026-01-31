@@ -158,6 +158,21 @@ const DevToolbar = (function() {
                 opacity: 0.5;
                 pointer-events: none;
             }
+
+            .dev-toolbar-team-label {
+                color: #6b7280;
+                font-size: 0.5625rem;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                padding: 0.375rem 0.5rem 0.125rem;
+                margin-top: 0.25rem;
+                border-top: 1px solid #374151;
+            }
+
+            .dev-toolbar-team-label:first-child {
+                margin-top: 0;
+                border-top: none;
+            }
         `;
         document.head.appendChild(style);
         document.body.appendChild(_container);
@@ -185,13 +200,20 @@ const DevToolbar = (function() {
         const devUsers = AuthService.getDevUsers();
         const currentUser = AuthService.getCurrentUser();
 
-        usersContainer.innerHTML = devUsers.map(user => `
-            <button class="dev-user-btn ${currentUser?.uid === user.uid ? 'active' : ''}"
+        // Group users by team for clearer display
+        let lastTeam = '';
+        const html = devUsers.map(user => {
+            const teamLabel = user.team && user.team !== lastTeam
+                ? `<div class="dev-toolbar-team-label">${user.team}</div>`
+                : '';
+            lastTeam = user.team || '';
+            return `${teamLabel}<button class="dev-user-btn ${currentUser?.uid === user.uid ? 'active' : ''}"
                     data-uid="${user.uid}">
                 <span class="dev-user-avatar">${user.initials}</span>
                 <span class="dev-user-name">${user.displayName}</span>
-            </button>
-        `).join('');
+            </button>`;
+        }).join('');
+        usersContainer.innerHTML = html;
 
         // Add click handlers
         usersContainer.querySelectorAll('.dev-user-btn').forEach(btn => {

@@ -277,6 +277,8 @@ service cloud.firestore {
           !('lastActivityAt' in data) || isValidLastActivityAt()
         ) && (
           !('teamTag' in data) || isValidTeamTag()
+        ) && (
+          !('schedulers' in data) || isValidSchedulers()
         );
       }
 
@@ -284,6 +286,11 @@ service cloud.firestore {
         return request.resource.data.teamTag is string
           && request.resource.data.teamTag.size() >= 1
           && request.resource.data.teamTag.size() <= 4;
+      }
+
+      function isValidSchedulers() {
+        return request.resource.data.schedulers is list
+          && request.resource.data.schedulers.size() <= 10;
       }
 
       function isValidTeamName() {
@@ -368,6 +375,28 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
     
+    // Match Proposals collection (Slice 8.0a)
+    match /matchProposals/{proposalId} {
+      // READ: Authenticated users can read proposals
+      // involvedTeamMembers field is stored for future per-team restriction
+      // but Firestore list queries can't filter by array membership on a
+      // different field than the query filter, so we allow all auth reads.
+      // Frontend already filters to only show user's team proposals.
+      allow read: if request.auth != null;
+
+      // WRITE: Cloud Functions only (admin SDK bypasses rules)
+      allow write: if false;
+    }
+
+    // Scheduled Matches collection (Slice 8.0a)
+    match /scheduledMatches/{matchId} {
+      // READ: All authenticated users (community feed)
+      allow read: if request.auth != null;
+
+      // WRITE: Cloud Functions only
+      allow write: if false;
+    }
+
     // Event Log collection - Read-only for users (replaces rosterEvents)
     match /eventLog/{documentId} {
       // Anyone can read (public event history for community feed + guest browsing)

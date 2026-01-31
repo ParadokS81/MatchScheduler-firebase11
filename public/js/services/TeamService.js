@@ -349,6 +349,13 @@ const TeamService = (function() {
         }
     }
 
+    // Check if a user is a scheduler (or leader) for a team
+    function isScheduler(teamId, userId) {
+        const team = getTeamFromCache(teamId);
+        if (!team) return false;
+        return team.leaderId === userId || (team.schedulers || []).includes(userId);
+    }
+
     // Generic Cloud Function caller
     async function callFunction(functionName, data) {
         if (!_initialized || !_functions) {
@@ -395,7 +402,8 @@ const TeamService = (function() {
         validateTeamName,
         validateTeamTag,
         validateJoinCode,
-        callFunction
+        callFunction,
+        isScheduler
     };
 })();
 

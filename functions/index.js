@@ -13,6 +13,7 @@ const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings,
 const { updateAvailability } = require('./availability');
 const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 const { updateFavorites } = require('./favorites');
+const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, toggleScheduler } = require('./match-proposals');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
@@ -43,6 +44,13 @@ exports.renameTemplate = renameTemplate;
 
 // Favorites functions
 exports.updateFavorites = updateFavorites;
+
+// Match proposal functions
+exports.createProposal = createProposal;
+exports.confirmSlot = confirmSlot;
+exports.withdrawConfirmation = withdrawConfirmation;
+exports.cancelProposal = cancelProposal;
+exports.toggleScheduler = toggleScheduler;
 
 // Simple test function
 exports.helloWorld = onRequest((request, response) => {

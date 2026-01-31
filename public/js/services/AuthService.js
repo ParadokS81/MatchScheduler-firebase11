@@ -15,12 +15,17 @@ const AuthService = (function() {
     const DEV_PASSWORD = 'devmode123'; // Same password for all dev users
 
     const DEV_USERS = [
-        { uid: 'dev-user-001', email: 'dev@matchscheduler.test', displayName: 'ParadokS', initials: 'PDX' },
-        { uid: 'fake-user-001', email: 'alex@fake.test', displayName: 'Alex Storm', initials: 'AS' },
-        { uid: 'fake-user-002', email: 'bella@fake.test', displayName: 'Bella Knight', initials: 'BK' },
-        { uid: 'fake-user-003', email: 'carlos@fake.test', displayName: 'Carlos Vega', initials: 'CV' },
-        { uid: 'fake-user-004', email: 'diana@fake.test', displayName: 'Diana Cross', initials: 'DC' },
-        { uid: 'fake-user-005', email: 'erik@fake.test', displayName: 'Erik Blade', initials: 'EB' },
+        // Dev Squad
+        { uid: 'dev-user-001', email: 'dev@matchscheduler.test', displayName: 'ParadokS', initials: 'PDX', team: 'Dev Squad' },
+        { uid: 'fake-user-001', email: 'alex@fake.test', displayName: 'Alex Storm', initials: 'AS', team: 'Dev Squad' },
+        { uid: 'fake-user-002', email: 'bella@fake.test', displayName: 'Bella Knight', initials: 'BK', team: 'Dev Squad' },
+        { uid: 'fake-user-003', email: 'carlos@fake.test', displayName: 'Carlos Vega', initials: 'CV', team: 'Dev Squad' },
+        { uid: 'fake-user-004', email: 'diana@fake.test', displayName: 'Diana Cross', initials: 'DC', team: 'Dev Squad' },
+        { uid: 'fake-user-005', email: 'erik@fake.test', displayName: 'Erik Blade', initials: 'EB', team: 'Dev Squad' },
+        // Other team leaders + member (for match proposal testing)
+        { uid: 'phx-user-001', email: 'marcus@fake.test', displayName: 'Marcus Chen', initials: 'MC', team: 'Phoenix Rising' },
+        { uid: 'phx-user-002', email: 'sarah@fake.test', displayName: 'Sarah Walsh', initials: 'SW', team: 'Phoenix Rising' },
+        { uid: 'shw-user-001', email: 'ryan@fake.test', displayName: 'Ryan Cooper', initials: 'RC', team: 'Shadow Wolves' },
     ];
 
     // Default dev user (backwards compatible)

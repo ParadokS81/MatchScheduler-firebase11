@@ -21,15 +21,7 @@ const OverflowModal = (function() {
         if (!weekId) return undefined;
         const weekNum = parseInt(weekId.split('-')[1], 10);
         if (isNaN(weekNum)) return undefined;
-
-        const year = new Date().getUTCFullYear();
-        const jan1 = new Date(Date.UTC(year, 0, 1));
-        const dayOfWeek = jan1.getUTCDay();
-        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
-        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
-        const monday = new Date(firstMonday);
-        monday.setUTCDate(firstMonday.getUTCDate() + (weekNum - 1) * 7);
-        return monday;
+        return DateUtils.getMondayOfWeek(weekId);
     }
 
     function _render(utcSlotId, weekId, players, currentUserId) {

@@ -79,6 +79,8 @@ const TeamManagementModal = (function() {
                         ${_isLeader ? _renderMaxPlayersSection() : _renderMaxPlayersReadonly()}
                         ${_isLeader ? _renderLogoSection() : ''}
 
+                        ${_isLeader ? _renderSchedulerSection() : ''}
+
                         <hr class="border-border">
 
                         ${_isLeader ? _renderLeaderActions() : ''}
@@ -240,6 +242,89 @@ const TeamManagementModal = (function() {
     }
 
     /**
+     * Render scheduler delegation section (leader only)
+     * Shows toggles for each non-leader roster member
+     */
+    function _renderSchedulerSection() {
+        const members = _teamData.playerRoster.filter(p => p.userId !== _teamData.leaderId);
+
+        if (members.length === 0) {
+            return '';
+        }
+
+        const schedulers = _teamData.schedulers || [];
+
+        const memberRows = members.map(p => {
+            const isScheduler = schedulers.includes(p.userId);
+            return `
+                <div class="flex items-center justify-between py-1.5">
+                    <span class="text-sm text-foreground">${_escapeHtml(p.displayName)}</span>
+                    <button
+                        class="scheduler-toggle relative w-9 h-5 rounded-full transition-colors ${isScheduler ? 'bg-primary' : 'bg-muted-foreground/30'}"
+                        data-user-id="${p.userId}"
+                        data-enabled="${isScheduler}"
+                        title="${isScheduler ? 'Remove scheduling rights' : 'Grant scheduling rights'}"
+                    >
+                        <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all" style="left: ${isScheduler ? '1.125rem' : '0.125rem'}"></span>
+                    </button>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div>
+                <label class="text-sm font-medium text-foreground">Scheduling Permissions</label>
+                <p class="text-xs text-muted-foreground mb-2">Allow members to propose and confirm matches</p>
+                <div class="space-y-1" id="scheduler-toggles">
+                    ${memberRows}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Handle scheduler toggle click
+     */
+    async function _handleSchedulerToggle(event) {
+        const btn = event.target.closest('.scheduler-toggle');
+        if (!btn) return;
+
+        const targetUserId = btn.dataset.userId;
+        const currentlyEnabled = btn.dataset.enabled === 'true';
+        const newEnabled = !currentlyEnabled;
+
+        // Optimistic update helper
+        function _applyToggleState(button, enabled) {
+            button.dataset.enabled = String(enabled);
+            button.classList.toggle('bg-primary', enabled);
+            button.classList.toggle('bg-muted-foreground/30', !enabled);
+            const knob = button.querySelector('span');
+            if (knob) {
+                knob.style.left = enabled ? '1.125rem' : '0.125rem';
+            }
+        }
+
+        _applyToggleState(btn, newEnabled);
+
+        try {
+            const result = await TeamService.callFunction('toggleScheduler', {
+                teamId: _teamId,
+                targetUserId,
+                enabled: newEnabled
+            });
+
+            if (!result.success) {
+                _applyToggleState(btn, currentlyEnabled);
+                ToastService.showError(result.error || 'Failed to update scheduler');
+            }
+        } catch (error) {
+            console.error('Error toggling scheduler:', error);
+            _applyToggleState(btn, currentlyEnabled);
+            ToastService.showError('Network error - please try again');
+        }
+    }
+
+    /**
      * Handle team tag input changes — show/hide Save button
      */
     function _handleTeamTagInput() {
@@ -383,6 +468,10 @@ const TeamManagementModal = (function() {
         // Max players select (leader only)
         const maxPlayersSelect = document.getElementById('max-players-select');
         maxPlayersSelect?.addEventListener('change', _handleMaxPlayersChange);
+
+        // Scheduler toggles (leader only) — delegate to container
+        const schedulerToggles = document.getElementById('scheduler-toggles');
+        schedulerToggles?.addEventListener('click', _handleSchedulerToggle);
 
         // Manage logo (leader only)
         const manageLogoBtn = document.getElementById('manage-logo-btn');

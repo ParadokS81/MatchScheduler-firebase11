@@ -52,6 +52,8 @@ const BottomPanelController = (function() {
         // Cleanup previous tab's component
         if (_activeTab === 'teams' || _activeTab === 'players') {
             TeamsBrowserPanel.cleanup();
+        } else if (_activeTab === 'matches') {
+            MatchesPanel.cleanup();
         }
 
         // Handle content switching
@@ -67,6 +69,9 @@ const BottomPanelController = (function() {
                 break;
             case 'tournament':
                 _showPlaceholder('tournament', 'Tournament Hub', 'Tournament brackets and standings - coming soon');
+                break;
+            case 'matches':
+                _showMatchesPanel();
                 break;
         }
 
@@ -115,6 +120,26 @@ const BottomPanelController = (function() {
 
         // Initialize the browser with the requested view
         TeamsBrowserPanel.init('teams-browser-panel', view);
+    }
+
+    /**
+     * Show the Matches panel content
+     */
+    function _showMatchesPanel() {
+        if (!_bottomPanel) return;
+
+        // Clear panel content
+        _bottomPanel.innerHTML = '';
+        _placeholderContent = null;
+
+        // Create container for MatchesPanel
+        const container = document.createElement('div');
+        container.id = 'matches-panel';
+        container.className = 'h-full';
+        _bottomPanel.appendChild(container);
+
+        // Initialize MatchesPanel
+        MatchesPanel.init('matches-panel');
     }
 
     /**
@@ -167,6 +192,8 @@ const BottomPanelController = (function() {
     function cleanup() {
         if (_activeTab === 'teams' || _activeTab === 'players') {
             TeamsBrowserPanel.cleanup();
+        } else if (_activeTab === 'matches') {
+            MatchesPanel.cleanup();
         }
         _weekDisplay2Ref = null;
         _bottomPanel = null;

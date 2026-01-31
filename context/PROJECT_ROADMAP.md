@@ -107,6 +107,17 @@ Detailed specifications in `/context/slices/[slice-name].md`
 **Scope:** Team buttons, instant switching, cache management
 **Note:** 2-button grid when user has 2 teams, instant switch from cached _userTeams array, automatic availability listener swap
 
+### 📅 Slice 2.8: Proxy Availability
+**Status:** Not Started
+**User Value:** Leaders can fill in availability on behalf of roster members who won't use the tool
+**Components:** AvailabilityGrid (enhance), updateAvailability Cloud Function (modify), GridActionButtons (enhance)
+**Scope:**
+- Modify `updateAvailability` Cloud Function to accept optional `targetUserId` parameter
+- Validate caller is leader of a team that `targetUserId` belongs to
+- UI: dropdown in grid tools to select "filling in as: [player name]"
+- Grid writes availability as selected player instead of logged-in user
+**Note:** Independent of Slice 8.0 but enhances proposal quality (more availability data = better slot matches). Small scope — primarily a Cloud Function auth change + UI dropdown.
+
 ---
 
 ## Part 3: Team Coordination
@@ -423,6 +434,41 @@ Redesign of the team detail view with tabbed navigation, richer landing page, sp
 
 ---
 
+## Part 7: Match Scheduling
+
+### 📅 Slice 8.0: Match Proposals & Scheduling
+**Status:** Spec Complete (Revised 2026-01-31)
+**User Value:** Leaders/schedulers can propose matches to opponents, auto-see viable slots, and confirm to schedule — no more manual grid scanning
+**Spec:** `context/slices/slice-8.0-match-proposals.md`
+**Components:** MatchesPanel (new), ProposalService (new), ScheduledMatchService (new), Cloud Functions (new)
+**Sub-slices:**
+- 8.0a: Schema + Cloud Functions + Scheduler Delegation (`schedulers[]` on team doc, matchProposals + scheduledMatches collections, create/confirm/cancel)
+- 8.0b: "Matches" tab in center panel + proposal cards with live slot updates + blocked-slot filtering + countAtConfirm warnings
+- 8.0c: "Propose Match" button in ComparisonModal + Discord template generation (leaders + schedulers)
+**Key Design:** Proposals store team pairing + min-vs-min filter, slots computed LIVE from availability data. Leaders or delegated schedulers confirm slots; both sides confirm same slot → match scheduled automatically. Confirmed slot blocked for both teams in other proposals. No cooldown or rate limits (monitor first). Past slots hidden, proposals degrade gracefully.
+
+### 📅 Slice 8.1: Upcoming Matches Display
+**Status:** Not Started
+**Dependencies:** Slice 8.0
+**User Value:** See your upcoming matches and community-wide scheduled matches at a glance
+**Components:** UpcomingMatchesPanel (bottom-left), scheduled match cards
+**Scope:** "Your Matches" section + "Community Matches" feed in bottom-left panel, archived matches in Matches tab
+
+---
+
+## Part 8: Team Privacy Controls
+
+### 📅 Slice 9.0: Team Privacy Settings
+**Status:** Not Started
+**User Value:** Teams can hide roster names from comparison (strategic privacy) or hide entirely from public comparison
+**Components:** Team settings toggles, ComparisonEngine privacy filtering
+**Scope:**
+- Toggle: hide roster nicks from comparison (show "3 players" instead of names)
+- Toggle: hide team from public comparison entirely (internal-only availability tool)
+- Both are boolean flags on team document
+
+---
+
 ## Part 6: UI Polish & Refactoring
 
 ### 📅 Slice 6.0: Team Panel UI Refactor
@@ -445,11 +491,28 @@ Redesign of the team detail view with tabbed navigation, richer landing page, sp
 
 ---
 
+## Part 9: Mobile Responsive
+
+### 📅 Slice 10.0: Mobile Responsive Layout
+**Status:** Not Started
+**User Value:** Players can use MatchScheduler on mobile phones in landscape mode
+**Components:** MobileLayout (new), CSS media queries, AvailabilityGrid (touch)
+**Sub-slices:**
+- 10.0a: CSS Foundation + HTML skeleton (media queries, grid collapse, bottom bar/drawer HTML)
+- 10.0b: MobileLayout.js core + drawer management (DOM moves, toggle, overlay)
+- 10.0c: Bottom bar functionality (tab switching, week nav, panel toggle)
+- 10.0d: Swipe gestures + touch grid (edge swipe, drag-select on touch)
+- 10.0e: Right drawer tabs + polish (Fav/Div filtering, toast/button repositioning)
+
+**Key Design:** Landscape-focused single-column layout. Side panels hidden, content moved to swipe-in drawers (left=team info, right=browser+favorites). Bottom bar merges divider tabs with week navigation. Desktop layout completely untouched — purely additive CSS media queries at `max-width: 1024px`.
+
+---
+
 ## Progress Summary
-**Slices Complete:** 31 / ~37
+**Slices Complete:** 31 / ~46
 
 ## Current Focus
-**Open** - Slice 7.0 (UTC Timezone Foundation) complete. Deciding next priority.
+**Slice 8.0 - Match Proposals & Scheduling** — Spec complete, ready for implementation. Start with 8.0a (schema + Cloud Functions).
 
 ## QW Hub Integration Path
 5.1 → 5.1a → 5.1b (basic) → ✅ 5.2a → ✅ 5.2b → ✅ 5.2c → **5.2d** (full redesign)

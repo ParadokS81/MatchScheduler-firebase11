@@ -21,7 +21,7 @@ const ComparisonModal = (function() {
     }
 
     /**
-     * Get the Monday of a given week number (UTC) for DST-correct formatting.
+     * Get the Monday of a given week (UTC) for DST-correct formatting.
      * @param {string} weekId - e.g., "2026-05"
      * @returns {Date|undefined}
      */
@@ -29,15 +29,7 @@ const ComparisonModal = (function() {
         if (!weekId) return undefined;
         const weekNum = parseInt(weekId.split('-')[1], 10);
         if (isNaN(weekNum)) return undefined;
-
-        const year = new Date().getUTCFullYear();
-        const jan1 = new Date(Date.UTC(year, 0, 1));
-        const dayOfWeek = jan1.getUTCDay();
-        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
-        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
-        const monday = new Date(firstMonday);
-        monday.setUTCDate(firstMonday.getUTCDate() + (weekNum - 1) * 7);
-        return monday;
+        return DateUtils.getMondayOfWeek(weekId);
     }
 
     /**
@@ -142,6 +134,53 @@ const ComparisonModal = (function() {
 
         lines.push('');
         lines.push('Let me know what works!');
+
+        return lines.join('\n');
+    }
+
+    /**
+     * Generate a Discord template message for a match proposal.
+     * Includes team tags, all viable slot times with roster counts, and a link.
+     * @param {string} weekId - e.g., "2026-05"
+     * @param {Object} userTeamInfo - User's team info
+     * @param {Object} selectedMatch - Opponent team info
+     * @returns {string} Formatted Discord message
+     */
+    function _generateProposalDiscordTemplate(weekId, userTeamInfo, selectedMatch) {
+        const comparisonState = ComparisonEngine.getComparisonState();
+        const minFilter = comparisonState.filters || { yourTeam: 1, opponent: 1 };
+
+        // Compute viable slots from cached availability
+        const viableSlots = ProposalService.computeViableSlots(
+            userTeamInfo.teamId,
+            selectedMatch.teamId,
+            weekId,
+            minFilter
+        );
+
+        const refDate = _getRefDate(weekId);
+        const weekNum = weekId.split('-')[1];
+
+        const lines = [
+            `Match proposal: [${userTeamInfo.teamTag}] vs [${selectedMatch.teamTag}] — Week ${weekNum}`,
+            `Filter: ${minFilter.yourTeam}v${minFilter.opponent} minimum`,
+            ''
+        ];
+
+        if (viableSlots.length > 0) {
+            lines.push('Viable slots:');
+            viableSlots.forEach(slot => {
+                const formatted = _formatSlotForMessage(slot.slotId, refDate);
+                lines.push(`  ${formatted} (${slot.proposerCount}v${slot.opponentCount})`);
+            });
+        } else {
+            lines.push('No viable slots yet — check back as players fill in availability.');
+        }
+
+        lines.push('');
+        lines.push(`${window.location.origin}${window.location.pathname}`);
+        lines.push('');
+        lines.push('Confirm slots in the Matches tab. Let me know!');
 
         return lines.join('\n');
     }
@@ -379,7 +418,7 @@ const ComparisonModal = (function() {
     /**
      * Render the full modal with VS layout
      */
-    function _renderModal(weekId, slotId, userTeamInfo, matches, isLeader, leaderDiscordInfo) {
+    function _renderModal(weekId, slotId, userTeamInfo, matches, isLeader, leaderDiscordInfo, canSchedule) {
         const formattedSlot = _formatSlot(slotId, _getRefDate(weekId));
         const selectedMatch = matches[_selectedOpponentIndex] || matches[0];
 
@@ -449,8 +488,13 @@ const ComparisonModal = (function() {
                     </div>
 
                     <!-- Footer -->
-                    <div class="p-4 border-t border-border shrink-0">
-                        <button id="comparison-modal-done" class="btn btn-primary w-full">
+                    <div class="p-4 border-t border-border shrink-0 flex gap-2">
+                        ${canSchedule ? `
+                            <button id="propose-match-btn" class="btn btn-primary flex-1">
+                                Propose Match
+                            </button>
+                        ` : ''}
+                        <button id="comparison-modal-done" class="btn ${canSchedule ? 'btn-secondary' : 'btn-primary'} flex-1">
                             Close
                         </button>
                     </div>
@@ -496,11 +540,60 @@ const ComparisonModal = (function() {
                         _currentData.userTeamInfo,
                         _currentData.matches,
                         _currentData.isLeader,
-                        _currentData.leaderDiscordInfo
+                        _currentData.leaderDiscordInfo,
+                        _currentData.canSchedule
                     );
                 }
             });
         });
+
+        // Propose Match button
+        const proposeBtn = document.getElementById('propose-match-btn');
+        if (proposeBtn) {
+            proposeBtn.addEventListener('click', async () => {
+                proposeBtn.disabled = true;
+                proposeBtn.textContent = 'Creating...';
+
+                try {
+                    const selectedMatch = _currentData.matches[_selectedOpponentIndex] || _currentData.matches[0];
+                    const comparisonState = ComparisonEngine.getComparisonState();
+                    const minFilter = comparisonState.filters || { yourTeam: 1, opponent: 1 };
+
+                    const result = await ProposalService.createProposal({
+                        proposerTeamId: _currentData.userTeamInfo.teamId,
+                        opponentTeamId: selectedMatch.teamId,
+                        weekId: _currentData.weekId,
+                        minFilter
+                    });
+
+                    if (result.success) {
+                        // Copy Discord template to clipboard
+                        const template = _generateProposalDiscordTemplate(
+                            _currentData.weekId,
+                            _currentData.userTeamInfo,
+                            selectedMatch
+                        );
+                        try {
+                            await navigator.clipboard.writeText(template);
+                            ToastService.showSuccess('Proposal created! Message copied to clipboard');
+                        } catch (clipErr) {
+                            console.warn('Clipboard write failed:', clipErr);
+                            ToastService.showSuccess('Proposal created! (Clipboard copy failed)');
+                        }
+                        close();
+                    } else {
+                        ToastService.showError(result.error || 'Failed to create proposal');
+                        proposeBtn.disabled = false;
+                        proposeBtn.textContent = 'Propose Match';
+                    }
+                } catch (error) {
+                    console.error('Propose match failed:', error);
+                    ToastService.showError('Network error — please try again');
+                    proposeBtn.disabled = false;
+                    proposeBtn.textContent = 'Propose Match';
+                }
+            });
+        }
 
         // Contact on Discord button (copy + open DM)
         document.querySelectorAll('.contact-discord-btn').forEach(btn => {
@@ -587,10 +680,11 @@ const ComparisonModal = (function() {
             return;
         }
 
-        // Check if current user is a leader
+        // Check if current user is a leader or scheduler
         const currentUser = AuthService.getCurrentUser();
         const currentUserId = currentUser?.uid;
         const isLeader = userTeamInfo.leaderId === currentUserId;
+        const canSchedule = TeamService.isScheduler(userTeamInfo.teamId, currentUserId);
 
         // Store data for re-renders (tab switching)
         _currentData = {
@@ -599,11 +693,12 @@ const ComparisonModal = (function() {
             userTeamInfo,
             matches,
             isLeader,
+            canSchedule,
             leaderDiscordInfo: {}
         };
 
         // Render modal immediately
-        _renderModal(weekId, slotId, userTeamInfo, matches, isLeader, {});
+        _renderModal(weekId, slotId, userTeamInfo, matches, isLeader, {}, canSchedule);
 
         // If user is a leader, fetch leader Discord info async
         if (isLeader) {
@@ -614,7 +709,7 @@ const ComparisonModal = (function() {
 
             // Re-render with Discord info if modal still open
             if (_isOpen) {
-                _renderModal(weekId, slotId, userTeamInfo, matches, isLeader, leaderDiscordInfo);
+                _renderModal(weekId, slotId, userTeamInfo, matches, isLeader, leaderDiscordInfo, canSchedule);
             }
         }
     }

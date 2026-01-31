@@ -28,27 +28,10 @@ const AvailabilityGrid = (function() {
     }
 
     /**
-     * Get the Monday of a given week number (UTC-based)
-     */
-    function getMondayOfWeek(weekNumber) {
-        const now = new Date();
-        const year = now.getUTCFullYear();
-
-        const jan1 = new Date(Date.UTC(year, 0, 1));
-        const dayOfWeek = jan1.getUTCDay();
-        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
-        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
-
-        const monday = new Date(firstMonday);
-        monday.setUTCDate(firstMonday.getUTCDate() + (weekNumber - 1) * 7);
-        return monday;
-    }
-
-    /**
      * Get day labels with dates (e.g., "Mon 9th", "Tue 10th")
      */
     function getDayLabelsWithDates(weekNumber) {
-        const monday = getMondayOfWeek(weekNumber);
+        const monday = DateUtils.getMondayOfWeek(weekNumber);
         return DAYS.map((_, idx) => {
             const date = new Date(monday);
             date.setUTCDate(monday.getUTCDate() + idx);
@@ -109,7 +92,7 @@ const AvailabilityGrid = (function() {
          */
         function _buildUtcMaps() {
             if (typeof TimezoneService !== 'undefined') {
-                const refDate = getMondayOfWeek(_weekId);
+                const refDate = DateUtils.getMondayOfWeek(_weekId);
                 _gridToUtcMap = TimezoneService.buildGridToUtcMap(refDate);
                 _utcToGridMap = TimezoneService.buildUtcToGridMap(refDate);
             } else {

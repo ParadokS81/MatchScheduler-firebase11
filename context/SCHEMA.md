@@ -13,6 +13,8 @@ This document defines the authoritative data structures for all Firestore collec
 | `teams` | Auto-generated | Team information and rosters |
 | `availability` | `{teamId}_{weekId}` | Weekly availability per team |
 | `eventLog` | Custom format | Audit trail for team operations |
+| `matchProposals` | Auto-generated | Match proposals between teams |
+| `scheduledMatches` | Auto-generated | Confirmed scheduled matches |
 
 ---
 
@@ -120,6 +122,7 @@ interface TeamDocument {
 
   // Leadership
   leaderId: string;           // userId of team leader
+  schedulers: string[];       // userIds who can propose/confirm matches (leader is always implicit)
 
   // Configuration
   divisions: string[];        // e.g., ["D1", "D2"]
@@ -272,7 +275,8 @@ interface EventLogDocument {
 type EventCategory =
   | 'TEAM_LIFECYCLE'          // Team created, archived
   | 'TEAM_SETTINGS'           // Settings changed
-  | 'PLAYER_MOVEMENT';        // Join, leave
+  | 'PLAYER_MOVEMENT'         // Join, leave
+  | 'SCHEDULING';             // Match proposals and scheduling
 
 type EventType =
   | 'TEAM_CREATED'
@@ -280,7 +284,11 @@ type EventType =
   | 'PLAYER_JOINED'
   | 'PLAYER_LEFT'
   | 'SETTINGS_UPDATED'
-  | 'JOIN_CODE_REGENERATED';
+  | 'JOIN_CODE_REGENERATED'
+  | 'PROPOSAL_CREATED'
+  | 'SLOT_CONFIRMED'
+  | 'MATCH_SCHEDULED'
+  | 'PROPOSAL_CANCELLED';
 ```
 
 **Event ID Format:** `{date}-{time}-{teamName}-{type}_{randomId}`
@@ -290,6 +298,122 @@ type EventType =
 - NOT used for availability changes (too frequent, low audit value)
 - Used for team lifecycle and membership changes
 - `timestamp` uses regular `Date` for consistency
+
+---
+
+## `/matchProposals/{proposalId}`
+
+Match proposal between two teams for a specific week. Slots are computed live from availability data — only confirmations are stored.
+
+```typescript
+interface MatchProposalDocument {
+  // Identity
+  proposerTeamId: string;          // Team that created the proposal
+  opponentTeamId: string;          // Team being proposed to
+  weekId: string;                  // ISO week: "2026-05"
+
+  // Filter used to compute viable slots
+  minFilter: {
+    yourTeam: number;              // 1-4
+    opponent: number;              // 1-4
+  };
+
+  // Confirmations — which slots each side has confirmed
+  // Key = UTC slotId (e.g., "mon_2000"), Value = { userId, countAtConfirm }
+  proposerConfirmedSlots: {
+    [slotId: string]: {
+      userId: string;              // Who confirmed
+      countAtConfirm: number;      // Players available when confirmed
+    };
+  };
+  opponentConfirmedSlots: {
+    [slotId: string]: {
+      userId: string;
+      countAtConfirm: number;
+    };
+  };
+
+  // Result — set when both confirm same slot
+  confirmedSlotId: string | null;
+  scheduledMatchId: string | null;
+
+  // Status
+  status: 'active' | 'confirmed' | 'cancelled' | 'expired';
+  cancelledBy: string | null;      // userId who cancelled
+
+  // Denormalized display data
+  proposerTeamName: string;
+  proposerTeamTag: string;
+  opponentTeamName: string;
+  opponentTeamTag: string;
+
+  // Security: denormalized member list for read rules
+  involvedTeamMembers: string[];   // All userIds from both rosters at creation
+
+  // Metadata
+  createdBy: string;               // userId who created
+  createdAt: Date;
+  updatedAt: Date;
+  expiresAt: Date;                 // Sunday 23:59 UTC of the proposal week
+}
+```
+
+**Key Points:**
+- Slots are NOT stored — computed live from availability data
+- `countAtConfirm` enables UI warnings when availability drops
+- `involvedTeamMembers` enables Firestore security rules without extra reads
+- Authorization uses **live** team.leaderId + team.schedulers (not snapshot)
+- Document ID: auto-generated
+
+---
+
+## `/scheduledMatches/{matchId}`
+
+Confirmed match created when both sides confirm the same slot.
+
+```typescript
+interface ScheduledMatchDocument {
+  // Teams
+  teamAId: string;
+  teamAName: string;
+  teamATag: string;
+  teamBId: string;
+  teamBName: string;
+  teamBTag: string;
+
+  // Schedule
+  weekId: string;                  // "2026-05"
+  slotId: string;                  // UTC slot: "mon_2000"
+  scheduledDate: string;           // ISO date: "2026-02-02"
+
+  // Blocked slot for double-booking prevention
+  blockedSlot: string;             // Same as slotId
+  blockedTeams: string[];          // [teamAId, teamBId]
+
+  // Roster snapshot at confirmation time
+  teamARoster: string[];           // userIds available at confirmation
+  teamBRoster: string[];           // userIds available at confirmation
+
+  // Origin
+  proposalId: string;              // Reference back to matchProposal
+
+  // Status
+  status: 'upcoming' | 'completed' | 'cancelled';
+
+  // Metadata
+  confirmedAt: Date;
+  confirmedByA: string;            // userId from team A who confirmed
+  confirmedByB: string;            // userId from team B who confirmed
+  createdAt: Date;
+}
+```
+
+**Key Points:**
+- `blockedTeams` array-contains enables querying blocked slots per team
+- `scheduledDate` computed from weekId + slotId for display
+- Roster snapshots preserve who was available at confirmation time
+- All matches are publicly readable (community feed)
+- Document ID: auto-generated
 
 ---
 
@@ -358,6 +482,8 @@ const docId = `${teamId}_${weekId}`;
 | `teams` | Authenticated users | Cloud Functions only |
 | `availability` | Authenticated users | Cloud Functions only |
 | `eventLog` | Authenticated users | Cloud Functions only |
+| `matchProposals` | Involved team members only | Cloud Functions only |
+| `scheduledMatches` | Authenticated users | Cloud Functions only |
 
 ---
 
@@ -370,3 +496,4 @@ const docId = `${teamId}_${weekId}`;
 - **2026-01-28**: Added playerColors map - Slice 5.0.1
 - **2026-01-29**: Simplified avatar system - removed avatarUrls multi-size, using single photoURL (128px) with CSS sizing
 - **2026-01-31**: Added timezone field to user document, slot IDs now UTC-based (Slice 7.0a)
+- **2026-01-31**: Added matchProposals, scheduledMatches collections + schedulers field on teams (Slice 8.0a)
