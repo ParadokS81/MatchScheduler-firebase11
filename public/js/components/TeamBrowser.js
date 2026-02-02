@@ -113,8 +113,10 @@ const TeamBrowser = (function() {
                         </svg>
                     </div>
 
-                    <!-- Division Filter (toggles - none selected = show all) -->
+                    <!-- Filter Buttons (Fav toggle + Division toggles) -->
                     <div class="flex gap-1 flex-wrap">
+                        <button class="division-filter-btn fav-filter-btn ${TeamBrowserState.isFavoritesFilterActive() ? 'active' : ''}"
+                                data-filter="fav">★ Fav</button>
                         <button class="division-filter-btn" data-division="D1">Div 1</button>
                         <button class="division-filter-btn" data-division="D2">Div 2</button>
                         <button class="division-filter-btn" data-division="D3">Div 3</button>
@@ -139,8 +141,15 @@ const TeamBrowser = (function() {
             TeamBrowserState.setSearchQuery(e.target.value);
         });
 
+        // Fav filter button
+        const favBtn = _container.querySelector('.fav-filter-btn');
+        favBtn?.addEventListener('click', () => {
+            TeamBrowserState.toggleFavoritesFilter();
+            favBtn.classList.toggle('active');
+        });
+
         // Division filter buttons (toggles)
-        _container.querySelectorAll('.division-filter-btn').forEach(btn => {
+        _container.querySelectorAll('.division-filter-btn:not(.fav-filter-btn)').forEach(btn => {
             btn.addEventListener('click', () => {
                 const division = btn.dataset.division;
                 TeamBrowserState.toggleDivisionFilter(division);
@@ -157,11 +166,20 @@ const TeamBrowser = (function() {
     function _getSearchResults() {
         const searchQuery = TeamBrowserState.getSearchQuery();
         const divisionFilters = TeamBrowserState.getDivisionFilters();
+        const favoritesOnly = TeamBrowserState.isFavoritesFilterActive();
 
-        // Apply division filter first
+        // Build favorites set if filter is active
+        const favoriteTeamIds = favoritesOnly && typeof FavoritesService !== 'undefined'
+            ? new Set(FavoritesService.getFavorites())
+            : null;
+
+        // Apply filters
         const divisionFiltered = _allTeams.filter(team => {
             // Exclude current user's team
             if (team.id === _currentTeamId) return false;
+
+            // Favorites filter
+            if (favoriteTeamIds && !favoriteTeamIds.has(team.id)) return false;
 
             // Division filter (if any divisions selected, team must have at least one)
             if (divisionFilters.size > 0) {
@@ -276,18 +294,20 @@ const TeamBrowser = (function() {
                 }));
             });
 
-            // Hover handlers for player roster tooltip
-            card.addEventListener('mouseenter', (e) => {
-                const teamId = card.dataset.teamId;
-                const team = _allTeams.find(t => t.id === teamId);
-                if (team && team.playerRoster?.length > 0) {
-                    _showTeamTooltip(card, team);
-                }
-            });
+            // Hover handlers for player roster tooltip (desktop only)
+            if (typeof MobileLayout === 'undefined' || !MobileLayout.isMobile()) {
+                card.addEventListener('mouseenter', (e) => {
+                    const teamId = card.dataset.teamId;
+                    const team = _allTeams.find(t => t.id === teamId);
+                    if (team && team.playerRoster?.length > 0) {
+                        _showTeamTooltip(card, team);
+                    }
+                });
 
-            card.addEventListener('mouseleave', () => {
-                _hideTeamTooltip();
-            });
+                card.addEventListener('mouseleave', () => {
+                    _hideTeamTooltip();
+                });
+            }
         });
 
         // Attach click handlers to player results (selects their team)
@@ -297,18 +317,20 @@ const TeamBrowser = (function() {
                 TeamBrowserState.selectTeam(teamId);
             });
 
-            // Hover handlers for team roster tooltip (same as team cards)
-            item.addEventListener('mouseenter', () => {
-                const teamId = item.dataset.teamId;
-                const team = _allTeams.find(t => t.id === teamId);
-                if (team && team.playerRoster?.length > 0) {
-                    _showTeamTooltip(item, team);
-                }
-            });
+            // Hover handlers for team roster tooltip (desktop only)
+            if (typeof MobileLayout === 'undefined' || !MobileLayout.isMobile()) {
+                item.addEventListener('mouseenter', () => {
+                    const teamId = item.dataset.teamId;
+                    const team = _allTeams.find(t => t.id === teamId);
+                    if (team && team.playerRoster?.length > 0) {
+                        _showTeamTooltip(item, team);
+                    }
+                });
 
-            item.addEventListener('mouseleave', () => {
-                _hideTeamTooltip();
-            });
+                item.addEventListener('mouseleave', () => {
+                    _hideTeamTooltip();
+                });
+            }
         });
 
         // Star button handlers - integrated with FavoritesService
@@ -465,6 +487,7 @@ const TeamBrowser = (function() {
                         <div class="team-name text-sm font-medium text-foreground truncate"
                              title="${team.teamName || ''}">
                             ${displayName || 'Unknown Team'}
+                            <span class="division-pill">${normalizedDivisions[0] || ''}</span>
                         </div>
                         <div class="team-meta text-xs text-muted-foreground">
                             ${divisions} • ${playerCount} player${playerCount !== 1 ? 's' : ''}

@@ -20,8 +20,10 @@
     "test": "npm run test:functions",
     "test:functions": "cd functions && npm test",
     "logs": "firebase functions:log",
-    "seed:emulator": "node scripts/seed-emulator.js",
-    "seed:qw": "node scripts/seed-qw-teams.js"
+    "seed": "node scripts/seed.js",
+    "seed:quick": "node scripts/seed.js --quick",
+    "seed:prod": "node scripts/seed.js --production",
+    "seed:prod:quick": "node scripts/seed.js --production --quick"
   },
   "keywords": [
     "gaming",

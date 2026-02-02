@@ -21,12 +21,93 @@ const MobileLayout = (function() {
     // DOM references
     let _leftDrawer, _rightDrawer, _overlay;
 
+    // Swipe detection constants (Slice 10.0d)
+    const SWIPE_THRESHOLD = 50;        // Min horizontal distance to trigger (px)
+    const EDGE_MARGIN = 30;            // Touch zone from screen edge (px)
+    const VERTICAL_TOLERANCE = 20;     // Max vertical drift before cancel (px)
+
+    // Swipe state
+    let _swipeStartX = null;
+    let _swipeStartY = null;
+    let _swipeDistance = 0;
+    let _swipeDirection = null;        // 'left' | 'right' | null
+
     // Original parent references for DOM restoration
     let _originalParents = {};
 
     // Node relocation map
     const LEFT_DRAWER_NODES = ['panel-top-left'];
-    const RIGHT_DRAWER_NODES = ['panel-top-right', 'panel-mid-right'];
+    const RIGHT_DRAWER_NODES = ['panel-top-right', 'panel-mid-right', 'panel-bottom-right'];
+
+    // ========================================
+    // Slice 10.0d: Swipe Gesture Detection
+    // ========================================
+
+    function _setupSwipeDetection() {
+        document.addEventListener('pointerdown', _handleSwipeStart, { passive: true });
+        document.addEventListener('pointermove', _handleSwipeMove, { passive: true });
+        document.addEventListener('pointerup', _handleSwipeEnd);
+    }
+
+    function _cleanupSwipeDetection() {
+        document.removeEventListener('pointerdown', _handleSwipeStart);
+        document.removeEventListener('pointermove', _handleSwipeMove);
+        document.removeEventListener('pointerup', _handleSwipeEnd);
+    }
+
+    function _handleSwipeStart(e) {
+        if (!_isMobile || !e.isPrimary) return;
+        // Don't start swipe if drawer already open
+        if (_activeDrawer) return;
+
+        const isLeftEdge = e.clientX < EDGE_MARGIN;
+        const isRightEdge = e.clientX > (window.innerWidth - EDGE_MARGIN);
+        if (!isLeftEdge && !isRightEdge) return;
+
+        _swipeStartX = e.clientX;
+        _swipeStartY = e.clientY;
+        _swipeDistance = 0;
+        // Swipe direction is opposite of edge: left edge → swipe right → open left drawer
+        _swipeDirection = isLeftEdge ? 'right' : 'left';
+    }
+
+    function _handleSwipeMove(e) {
+        if (_swipeStartX === null || !_swipeDirection) return;
+
+        const moveX = Math.abs(e.clientX - _swipeStartX);
+        const moveY = Math.abs(e.clientY - _swipeStartY);
+
+        // Cancel if moving too much vertically (user is scrolling)
+        if (moveY > VERTICAL_TOLERANCE && moveY > moveX) {
+            _resetSwipe();
+            return;
+        }
+
+        _swipeDistance = moveX;
+    }
+
+    function _handleSwipeEnd(e) {
+        if (_swipeStartX === null || !_swipeDirection) return;
+
+        if (_swipeDistance >= SWIPE_THRESHOLD) {
+            // Left edge → swipe right → open left drawer
+            // Right edge → swipe left → open right drawer
+            if (_swipeDirection === 'right') {
+                openLeftDrawer();
+            } else {
+                openRightDrawer();
+            }
+        }
+
+        _resetSwipe();
+    }
+
+    function _resetSwipe() {
+        _swipeStartX = null;
+        _swipeStartY = null;
+        _swipeDistance = 0;
+        _swipeDirection = null;
+    }
 
     function init() {
         _leftDrawer = document.getElementById('mobile-drawer-left');
@@ -42,11 +123,14 @@ const MobileLayout = (function() {
         _storeOriginalParents();
 
         // Set up media query listener
-        _mobileQuery = window.matchMedia('(max-width: 900px) and (orientation: landscape)');
+        _mobileQuery = window.matchMedia('(max-width: 1024px) and (orientation: landscape)');
         _mobileQuery.addEventListener('change', _handleBreakpointChange);
 
         // Overlay click closes drawer
         _overlay.addEventListener('click', closeDrawer);
+
+        // Set up swipe gesture detection (Slice 10.0d)
+        _setupSwipeDetection();
 
         // Apply initial state
         _handleBreakpointChange(_mobileQuery);
@@ -78,12 +162,43 @@ const MobileLayout = (function() {
     function _enterMobile() {
         _isMobile = true;
         _moveNodesToDrawers();
+        // Apply panel toggle for current tab
+        _toggleCenterPanels(true);
     }
 
     function _exitMobile() {
         closeDrawer();
         _isMobile = false;
         _restoreNodesToOriginal();
+        // Clear inline display styles so desktop grid is unaffected
+        _toggleCenterPanels(false);
+    }
+
+    /**
+     * Manage center panel visibility during mobile/desktop transitions.
+     * @param {boolean} entering - true when entering mobile, false when exiting
+     */
+    function _toggleCenterPanels(entering) {
+        const topCenter = document.getElementById('panel-top-center');
+        const bottomCenter = document.getElementById('panel-bottom-center');
+        if (!topCenter || !bottomCenter) return;
+
+        if (entering) {
+            // On mobile: show the active tab's panel, hide the other
+            const activeTab = typeof BottomPanelController !== 'undefined'
+                ? BottomPanelController.getActiveTab() : 'calendar';
+            if (activeTab === 'calendar') {
+                topCenter.style.display = '';
+                bottomCenter.style.display = 'none';
+            } else {
+                topCenter.style.display = 'none';
+                bottomCenter.style.display = '';
+            }
+        } else {
+            // On desktop: clear all inline styles so CSS grid takes over
+            topCenter.style.display = '';
+            bottomCenter.style.display = '';
+        }
     }
 
     function _moveNodesToDrawers() {
@@ -178,6 +293,8 @@ const MobileLayout = (function() {
         if (_overlay) {
             _overlay.removeEventListener('click', closeDrawer);
         }
+        // Clean up swipe detection (Slice 10.0d)
+        _cleanupSwipeDetection();
         closeDrawer();
         _restoreNodesToOriginal();
     }

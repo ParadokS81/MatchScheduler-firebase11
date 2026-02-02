@@ -10,6 +10,7 @@ const TeamBrowserState = (function() {
     // Filter state
     let _searchQuery = '';
     let _divisionFilters = new Set(); // Empty = all, or contains 'D1', 'D2', 'D3'
+    let _favoritesFilterActive = false;
 
     // Callbacks for state changes
     let _onSelectionChange = null;
@@ -125,6 +126,17 @@ const TeamBrowserState = (function() {
         }
     }
 
+    function toggleFavoritesFilter() {
+        _favoritesFilterActive = !_favoritesFilterActive;
+        if (_onFilterChange) {
+            _onFilterChange({ search: _searchQuery, divisions: _divisionFilters });
+        }
+    }
+
+    function isFavoritesFilterActive() {
+        return _favoritesFilterActive;
+    }
+
     // ========================================
     // Event Handlers
     // ========================================
@@ -145,6 +157,7 @@ const TeamBrowserState = (function() {
         _selectedTeams.clear();
         _searchQuery = '';
         _divisionFilters.clear();
+        _favoritesFilterActive = false;
         _onSelectionChange = null;
         _onFilterChange = null;
     }
@@ -167,6 +180,8 @@ const TeamBrowserState = (function() {
         isDivisionActive,
         toggleDivisionFilter,
         clearDivisionFilters,
+        toggleFavoritesFilter,
+        isFavoritesFilterActive,
 
         // Events
         onSelectionChange,

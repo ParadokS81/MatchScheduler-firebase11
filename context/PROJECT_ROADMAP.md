@@ -436,23 +436,30 @@ Redesign of the team detail view with tabbed navigation, richer landing page, sp
 
 ## Part 7: Match Scheduling
 
-### 📅 Slice 8.0: Match Proposals & Scheduling
-**Status:** Spec Complete (Revised 2026-01-31)
+### ✅ Slice 8.0: Match Proposals & Scheduling
+**Status:** Complete
 **User Value:** Leaders/schedulers can propose matches to opponents, auto-see viable slots, and confirm to schedule — no more manual grid scanning
 **Spec:** `context/slices/slice-8.0-match-proposals.md`
-**Components:** MatchesPanel (new), ProposalService (new), ScheduledMatchService (new), Cloud Functions (new)
-**Sub-slices:**
+**Components:** MatchesPanel (new), ProposalService (new), ScheduledMatchService (new), UpcomingMatchesPanel (new), Cloud Functions (new)
+**Sub-slices (all complete):**
 - 8.0a: Schema + Cloud Functions + Scheduler Delegation (`schedulers[]` on team doc, matchProposals + scheduledMatches collections, create/confirm/cancel)
 - 8.0b: "Matches" tab in center panel + proposal cards with live slot updates + blocked-slot filtering + countAtConfirm warnings
 - 8.0c: "Propose Match" button in ComparisonModal + Discord template generation (leaders + schedulers)
+- Upcoming Matches: UpcomingMatchesPanel in bottom-left with "Your Matches" + "Community Matches" sections
 **Key Design:** Proposals store team pairing + min-vs-min filter, slots computed LIVE from availability data. Leaders or delegated schedulers confirm slots; both sides confirm same slot → match scheduled automatically. Confirmed slot blocked for both teams in other proposals. No cooldown or rate limits (monitor first). Past slots hidden, proposals degrade gracefully.
 
-### 📅 Slice 8.1: Upcoming Matches Display
-**Status:** Not Started
-**Dependencies:** Slice 8.0
-**User Value:** See your upcoming matches and community-wide scheduled matches at a glance
-**Components:** UpcomingMatchesPanel (bottom-left), scheduled match cards
-**Scope:** "Your Matches" section + "Community Matches" feed in bottom-left panel, archived matches in Matches tab
+**Note:** All 5 Cloud Functions implemented (createProposal, confirmSlot, withdrawConfirmation, cancelProposal, toggleScheduler). Full frontend integration with cache+listener pattern, loading states, error handling.
+
+### 📅 Slice 8.1: Reactive Comparison Mode + Shared DateUtils
+**Status:** Spec Complete
+**Dependencies:** Slice 8.0, Slice 3.4
+**User Value:** Comparison mode updates live as teams are selected/deselected; shared date utilities eliminate duplication bugs
+**Spec:** `context/slices/slice-8.1-comparison-refactor.md`
+**Components:** ComparisonEngine (enhance), DateUtils (new), MatchesPanel (enhance)
+**Scope:**
+- 8.1a: Extract shared DateUtils (deduplicate getMondayOfWeek across 5 files)
+- 8.1b: Reactive comparison toggle (auto-recalculate on team/filter changes)
+- 8.1c: Fix "Load Grid View" integration from MatchesPanel
 
 ---
 
@@ -493,26 +500,48 @@ Redesign of the team detail view with tabbed navigation, richer landing page, sp
 
 ## Part 9: Mobile Responsive
 
-### 📅 Slice 10.0: Mobile Responsive Layout
-**Status:** Not Started
-**User Value:** Players can use MatchScheduler on mobile phones in landscape mode
-**Components:** MobileLayout (new), CSS media queries, AvailabilityGrid (touch)
-**Sub-slices:**
-- 10.0a: CSS Foundation + HTML skeleton (media queries, grid collapse, bottom bar/drawer HTML)
-- 10.0b: MobileLayout.js core + drawer management (DOM moves, toggle, overlay)
-- 10.0c: Bottom bar functionality (tab switching, week nav, panel toggle)
-- 10.0d: Swipe gestures + touch grid (edge swipe, drag-select on touch)
-- 10.0e: Right drawer tabs + polish (Fav/Div filtering, toast/button repositioning)
+### Slice 10.0: Mobile Responsive Layout
 
-**Key Design:** Landscape-focused single-column layout. Side panels hidden, content moved to swipe-in drawers (left=team info, right=browser+favorites). Bottom bar merges divider tabs with week navigation. Desktop layout completely untouched — purely additive CSS media queries at `max-width: 1024px`.
+Landscape-focused single-column layout. Side panels hidden, content moved to swipe-in drawers (left=team info, right=browser+favorites). Bottom bar merges divider tabs with week navigation. Desktop layout completely untouched — purely additive CSS media queries.
+
+#### ✅ Slice 10.0a: CSS Foundation
+**Status:** Complete
+**User Value:** Mobile breakpoint established, grid collapses to single column
+**Spec:** `context/slices/slice-10.0a-mobile-css-foundation.md`
+**Components:** src/css/input.css, public/index.html
+**Scope:** Media queries, grid collapse, bottom bar/drawer HTML skeleton, desktop unchanged
+
+#### ✅ Slice 10.0b: Mobile Layout & Drawers
+**Status:** Complete
+**User Value:** Left/right drawers for team info and browser on mobile
+**Spec:** `context/slices/slice-10.0b-mobile-layout-drawers.md`
+**Components:** MobileLayout (new), CSS media queries
+**Scope:** DOM moves on mobile, drawer toggle/overlay, responsive detection
+
+#### ✅ Slice 10.0c: Mobile Bottom Bar
+**Status:** Complete
+**User Value:** Tab switching and week navigation on mobile
+**Spec:** `context/slices/slice-10.0c-mobile-bottom-bar.md`
+**Components:** MobileBottomBar (new), BottomPanelController (enhance)
+**Scope:** Tab buttons synced with desktop tabs, week prev/next + label, drawer toggle buttons, FAB repositioned above bar
+
+#### 📅 Slice 10.0d: Swipe Gestures & Touch Grid
+**Status:** Not Started
+**User Value:** Natural touch interactions for drawers and availability selection
+**Scope:** Edge swipe to open drawers, drag-select on touch for availability grid
+
+#### 📅 Slice 10.0e: Right Drawer Tabs & Polish
+**Status:** Not Started
+**User Value:** Full mobile feature parity with filtering and polished UX
+**Scope:** Fav/Div filtering in right drawer, toast/button repositioning
 
 ---
 
 ## Progress Summary
-**Slices Complete:** 31 / ~46
+**Slices Complete:** 35 / ~47
 
 ## Current Focus
-**Slice 8.0 - Match Proposals & Scheduling** — Spec complete, ready for implementation. Start with 8.0a (schema + Cloud Functions).
+**Slice 8.1 - Reactive Comparison Mode** — Refactor comparison to auto-update on team selection changes, extract shared DateUtils. Then continue with mobile slices 10.0d/e.
 
 ## QW Hub Integration Path
 5.1 → 5.1a → 5.1b (basic) → ✅ 5.2a → ✅ 5.2b → ✅ 5.2c → **5.2d** (full redesign)
@@ -525,4 +554,4 @@ Each 5.2 slice builds on the previous:
 
 ---
 
-*Last Updated: 2026-01-31*
+*Last Updated: 2026-02-01*

@@ -1108,6 +1108,16 @@ body {
   object-fit: contain;
 }
 
+/* Division pill (inline with team name, hidden on desktop) */
+.division-pill {
+  display: none;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  margin-left: 0.25rem;
+  vertical-align: middle;
+}
+
 /* Star Button */
 .star-btn {
   flex-shrink: 0;
@@ -3366,7 +3376,7 @@ body {
   50% { transform: rotate(90deg); }
 }
 
-@media (max-width: 900px) and (orientation: portrait) {
+@media (max-width: 1024px) and (orientation: portrait) {
   .portrait-overlay {
     display: flex;
   }
@@ -3418,7 +3428,7 @@ body {
   height: 3rem;
   background-color: var(--muted);
   border-top: 1px solid var(--border);
-  z-index: 43;
+  z-index: 46; /* Above overlay (44) and drawers (45) so buttons stay tappable */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3461,7 +3471,6 @@ body {
   display: flex;
   align-items: center;
   gap: 0.125rem;
-  flex: 1;
   justify-content: center;
 }
 
@@ -3471,7 +3480,7 @@ body {
   border-bottom: 2px solid var(--primary);
 }
 
-/* Week navigation group */
+/* Week navigation group (left side) */
 .mobile-bb-week-nav {
   display: flex;
   align-items: center;
@@ -3482,13 +3491,51 @@ body {
   font-size: 0.75rem;
   color: var(--foreground);
   font-weight: 600;
-  min-width: 2rem;
+  min-width: 1.75rem;
   text-align: center;
 }
 
 .mobile-bb-week-btn {
-  min-width: 2rem;
+  min-width: 1.75rem;
+  font-size: 0.7rem;
+}
+
+/* Compare + Filter group (right cluster) */
+.mobile-bb-compare-group {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.mobile-bb-compare-btn {
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0 0.25rem;
+  min-width: auto;
+  white-space: nowrap;
+}
+
+.mobile-bb-compare-btn.active {
+  color: var(--primary);
+  border-bottom: 2px solid var(--primary);
+}
+
+.mobile-bb-filter-num {
   font-size: 0.75rem;
+  font-weight: 600;
+  min-width: 1.5rem;
+  color: var(--foreground);
+}
+
+.mobile-bb-vs-label {
+  font-size: 0.6rem;
+  color: var(--muted-foreground);
+}
+
+/* Dimmed state for filter numbers when compare is off */
+.mobile-bb-filter-num.dimmed {
+  opacity: 0.35;
 }
 
 /* Drawer toggle buttons */
@@ -3506,16 +3553,23 @@ body {
 
 /* ─── Mobile Landscape: Grid Collapse + Mobile Elements ─────────── */
 
-@media (max-width: 900px) and (orientation: landscape) {
+@media (max-width: 1024px) and (orientation: landscape) {
   .app-container {
     padding: 0;
+    height: calc(100vh - 3rem); /* fallback: full viewport minus bottom bar */
+    height: calc(100dvh - 3rem); /* modern: dynamic viewport minus bottom bar */
+  }
+
+  /* Week header hidden on mobile - info is in the bottom bar */
+  .week-header-nav {
+    display: none;
   }
 
   .main-grid-v3 {
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
+    grid-template-rows: 1fr;
     gap: 0;
-    height: calc(100vh - 3rem); /* Account for bottom bar */
+    height: 100%; /* fill the app-container which already accounts for bottom bar */
   }
 
   /* Hide side panels */
@@ -3533,10 +3587,14 @@ body {
     display: none;
   }
 
-  /* Grid panels fill width */
+  /* Grid panels fill width, strip panel chrome on mobile */
   #panel-top-center,
   #panel-bottom-center {
     grid-column: 1;
+    overflow: hidden;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   /* Show mobile elements */
@@ -3546,21 +3604,197 @@ body {
   }
 
   /* Panels moved into drawers need to be visible */
-  .mobile-drawer-content #panel-top-left,
-  .mobile-drawer-content #panel-top-right,
-  .mobile-drawer-content #panel-mid-right {
+  .mobile-drawer-content #panel-top-left {
     display: block;
   }
 
-  /* Ensure grid cells meet minimum touch target size */
-  .grid-cell {
-    min-height: 2.75rem;
-    min-width: 2.75rem;
+  /* Right drawer: hide FilterPanel and FavoritesPanel — TeamBrowser has unified "Fav" button */
+  .mobile-drawer-content #panel-top-right,
+  .mobile-drawer-content #panel-mid-right {
+    display: none;
   }
 
-  /* Slightly larger font for mobile readability */
-  .week-header-nav {
-    font-size: 0.875rem;
+  /* Right drawer: TeamBrowser fills full drawer height */
+  .mobile-drawer-content #panel-bottom-right {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .mobile-drawer-content .team-browser {
+    height: 100%;
+  }
+
+  /* Touch-friendly filter buttons in drawer */
+  .mobile-drawer-content .division-filter-btn {
+    min-height: 2rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  /* Compact single-row team cards in drawer */
+  .mobile-drawer-content .team-card {
+    min-height: 2.25rem;
+    padding: 0.25rem 0.375rem;
+  }
+
+  /* Hide the full meta line on mobile (division shown inline via pill) */
+  .mobile-drawer-content .team-meta {
+    display: none;
+  }
+
+  /* Show inline division pill on mobile */
+  .mobile-drawer-content .division-pill {
+    display: inline;
+  }
+
+  /* Smaller badge on mobile */
+  .mobile-drawer-content .team-tag-badge {
+    width: 1.75rem;
+    height: 1.5rem;
+    font-size: 0.5rem;
+    border-radius: 0.1875rem;
+  }
+
+  /* Star button touch area in drawer */
+  .mobile-drawer-content .star-btn {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Smaller star icon on mobile */
+  .mobile-drawer-content .star-btn svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  /* Smaller team name text on mobile */
+  .mobile-drawer-content .team-name {
+    font-size: 0.75rem;
+  }
+
+  /* Hide scrollbar in mobile team list */
+  .mobile-drawer-content .team-list {
+    scrollbar-width: none;
+  }
+  .mobile-drawer-content .team-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Drawer bottom padding for bottom bar clearance */
+  .mobile-drawer-content {
+    padding-bottom: 3.5rem;
+  }
+
+  /* Reverse drawer layout: team list on top, search+filters at bottom (thumb zone) */
+  .mobile-drawer-content .team-browser {
+    flex-direction: column-reverse;
+  }
+
+  /* Merge search + filters into single row on mobile */
+  .mobile-drawer-content .browser-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.375rem;
+    margin-bottom: 0;
+    margin-top: 0.375rem;
+    flex-shrink: 0;
+  }
+
+  .mobile-drawer-content .browser-header > .relative {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+  }
+
+  .mobile-drawer-content .browser-header > .flex {
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+  }
+
+  .mobile-drawer-content .browser-header input {
+    padding: 0.25rem 2rem 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    min-height: 2rem;
+  }
+
+  /* Tighter team card spacing on mobile */
+  .mobile-drawer-content .team-list {
+    gap: 0.125rem;
+  }
+  .mobile-drawer-content .team-list > * + * {
+    margin-top: 0.125rem;
+  }
+
+  /* Remove cell min-height so rows shrink to fit viewport */
+  .grid-cell {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  /* Narrower time label column on mobile */
+  .grid-header,
+  .grid-row {
+    grid-template-columns: 2rem repeat(7, 1fr);
+  }
+
+  /* Smaller time labels on mobile */
+  .time-label {
+    font-size: 0.6rem;
+  }
+
+  /* Tighter day header */
+  .day-header {
+    padding: 0;
+    font-size: 0.65rem;
+  }
+
+  /* Switch grid body from flex to CSS grid so rows divide space equally */
+  .grid-body {
+    display: grid;
+    grid-template-rows: repeat(11, 1fr);
+    gap: 1px;
+    overflow: hidden;
+  }
+
+  /* Grid rows become grid items instead of flex items */
+  .grid-row {
+    min-height: 0;
+  }
+
+  /* Tighten week-display padding on mobile */
+  .week-display {
+    padding: 0;
+  }
+
+  /* Slice 10.0d: Touch interaction styles */
+
+  /* Prevent default browser gestures during grid interaction */
+  .availability-grid-container {
+    touch-action: manipulation;
+  }
+
+  /* Prevent text selection during drag */
+  .availability-grid-container.dragging {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Tap feedback on grid cells */
+  .grid-cell:active {
+    opacity: 0.8;
+    transition: none;
+  }
+
+  /* Bottom bar button tap feedback */
+  .mobile-bb-btn:active {
+    opacity: 0.8;
   }
 
   /* FAB repositioning above bottom bar on mobile */

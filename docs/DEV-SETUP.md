@@ -7,7 +7,7 @@
 npm run dev
 
 # Terminal 2: Seed test data (run once, or after clearing emulator data)
-npm run seed:emulator
+npm run seed:quick
 ```
 
 Then open http://localhost:5000 (or your WSL IP like http://172.x.x.x:5000)
@@ -35,20 +35,17 @@ In dev mode:
 | User | UID | Email | Password |
 |------|-----|-------|----------|
 | ParadokS (you) | `dev-user-001` | dev@matchscheduler.test | devmode123 |
-| Alex Storm | `fake-user-001` | alex@fake.test | devmode123 |
-| Bella Knight | `fake-user-002` | bella@fake.test | devmode123 |
-| Carlos Vega | `fake-user-003` | carlos@fake.test | devmode123 |
-| Diana Cross | `fake-user-004` | diana@fake.test | devmode123 |
-| Erik Blade | `fake-user-005` | erik@fake.test | devmode123 |
 
-All users share the same password for easy switching.
+All seeded users share password `devmode123`. Player UIDs follow the pattern `qw-{tag}-{name}` (e.g., `qw-sr-zero` for zero on Slackers).
 
 ### Seeded Data
 The seed script creates:
-- 1 team ("Dev Squad") with you as leader
-- 5 fake teammates with randomized availability patterns
-- 2 weeks of availability data (current + next week)
+- 24 real QuakeWorld teams across 3 divisions (you're leader of Slackers)
+- ~110 players with randomized availability patterns
+- 4 weeks of availability data
+- Discord IDs on leaders who have them (for contact feature testing)
 - Auth emulator accounts for all users (for user switching)
+- Team logos (skipped with `seed:quick`)
 
 ### Dev User Switcher
 A red "DEV" button appears in the bottom-left corner in dev mode. Click it to switch between seeded users without refreshing the page.
@@ -69,7 +66,7 @@ A red "DEV" button appears in the bottom-left corner in dev mode. Click it to sw
 ### "Must be signed in" error
 The Auth emulator user doesn't match the seeded data. Fix:
 ```bash
-npm run seed:emulator
+npm run seed:quick
 ```
 Then refresh the browser.
 
@@ -94,7 +91,15 @@ hostname -I
 
 The seed script accepts a host parameter:
 ```bash
-npm run seed:emulator -- 172.20.95.150
+npm run seed:quick -- 172.20.95.150
+```
+
+### Seed commands
+```bash
+npm run seed           # Full: 24 QW teams + logos + availability
+npm run seed:quick     # Quick: same data, skip logo downloads
+npm run seed:prod      # Production: full reseed (requires service-account.json)
+npm run seed:prod:quick # Production: skip logos
 ```
 
 ## File Locations
@@ -102,7 +107,7 @@ npm run seed:emulator -- 172.20.95.150
 | Purpose | File |
 |---------|------|
 | Emulator config | `firebase.json` |
-| Seed script | `scripts/seed-emulator.js` |
+| Seed script | `scripts/seed.js` |
 | Dev mode auth | `public/js/services/AuthService.js` (DEV_USERS array) |
 | User switcher UI | `public/js/components/DevToolbar.js` |
 | Direct Firestore writes | `public/js/services/AvailabilityService.js` (_isDevMode check) |
@@ -123,4 +128,4 @@ npm run seed:emulator -- 172.20.95.150
 To start fresh:
 1. Stop emulators (Ctrl+C)
 2. Run `npm run dev` again (emulator data is ephemeral)
-3. Run `npm run seed:emulator`
+3. Run `npm run seed:quick`

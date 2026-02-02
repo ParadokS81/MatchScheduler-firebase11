@@ -58,5 +58,6 @@ temp/
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?service-account.json
+*.sw?
+service-account.json
 functions/.env

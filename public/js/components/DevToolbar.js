@@ -159,6 +159,21 @@ const DevToolbar = (function() {
                 pointer-events: none;
             }
 
+            /* On mobile landscape, move DEV button above bottom bar and to center-left
+               so it doesn't block the left drawer or hamburger menu */
+            @media (max-width: 1024px) and (orientation: landscape) {
+                #dev-toolbar {
+                    bottom: 3.5rem;
+                    left: 50%;
+                    transform: translateX(-50%);
+                }
+
+                .dev-toolbar-panel {
+                    left: 50%;
+                    transform: translateX(-50%);
+                }
+            }
+
             .dev-toolbar-team-label {
                 color: #6b7280;
                 font-size: 0.5625rem;

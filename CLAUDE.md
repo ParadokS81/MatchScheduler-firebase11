@@ -5,6 +5,7 @@ This file reinforces critical patterns that are commonly violated during impleme
 For complete architecture specifications, refer to the Pillar documents.
 
 ## Essential References
+- **Architecture Map**: `context/ARCHITECTURE-MAP.md` - File map, module guide, subsystem overview (READ FIRST for orientation)
 - **Data Schema**: `context/SCHEMA.md` - Firestore document structures (ALWAYS check before writing backend code)
 - **Pillar Documents**: `context/Pillar*.md` - Architecture specifications
 - **Slice Specs**: `context/slices/` - Feature implementation details
@@ -270,7 +271,7 @@ function componentName() {
 - ✅ Check http://localhost:8080 for Firestore UI
 - ✅ Check http://localhost:5001 for Functions logs
 - ✅ Just refresh your browser to test changes
-- ✅ Run `npm run seed:emulator` if you need fresh test data
+- ✅ Run `npm run seed:quick` if you need fresh test data (or `npm run seed` for full with logos)
 
 **Dev Mode Details:** See `docs/DEV-SETUP.md` for complete setup including:
 - Fixed UIDs (dev-user-001 for ParadokS)

@@ -66,12 +66,15 @@ const AvailabilityGrid = (function() {
 
         // Advanced selection state
         let _isDragging = false;
+        let _pendingDrag = false; // Touch disambiguation: waiting for direction check
+        let _pointerCaptured = false; // Whether setPointerCapture is active
+        let _activePointerId = null; // Pointer ID for capture/release
         let _dragStartCell = null;
         let _dragStartPos = { x: 0, y: 0 };
         let _dragDistance = 0;
         let _lastClickedCell = null; // For shift+click
         let _lastValidDragCell = null; // Last valid cell during drag (within this grid)
-        let _documentMouseUpHandler = null;
+        let _documentPointerUpHandler = null;
 
         // Selection change callback
         let _onSelectionChangeCallback = null;
@@ -264,9 +267,33 @@ const AvailabilityGrid = (function() {
         }
 
         /**
-         * Handle mouse down for drag selection
+         * Commit to drag mode: capture pointer, show preview, prevent scroll
          */
-        function _handleMouseDown(e) {
+        function _commitDrag(e) {
+            _isDragging = true;
+            _pendingDrag = false;
+
+            const gridContainer = _container?.querySelector('.availability-grid-container');
+            if (gridContainer) gridContainer.classList.add('dragging');
+
+            // Capture pointer so touch drag tracks across cells
+            if (_activePointerId !== null && _container) {
+                try {
+                    _container.setPointerCapture(_activePointerId);
+                    _pointerCaptured = true;
+                } catch (ex) { /* ignore if capture fails */ }
+            }
+
+            _updateDragPreview(_dragStartCell, _dragStartCell);
+        }
+
+        /**
+         * Handle pointer down for drag selection (replaces mousedown)
+         */
+        function _handlePointerDown(e) {
+            // Ignore secondary pointers (multi-touch)
+            if (!e.isPrimary) return;
+
             // Don't start drag if clicking on overflow badge
             if (e.target.closest('.player-badge.overflow')) {
                 return;
@@ -275,37 +302,65 @@ const AvailabilityGrid = (function() {
             const cell = e.target.closest('.grid-cell');
             if (!cell || !cell.dataset.cellId) return;
 
-            _isDragging = true;
             _dragStartCell = cell.dataset.cellId;
             _dragStartPos = { x: e.clientX, y: e.clientY };
             _dragDistance = 0;
+            _activePointerId = e.pointerId;
 
-            // Add dragging class to prevent text selection
-            const gridContainer = _container?.querySelector('.availability-grid-container');
-            if (gridContainer) gridContainer.classList.add('dragging');
-
-            // Start preview
-            _updateDragPreview(_dragStartCell, _dragStartCell);
-
-            // Prevent text selection during drag
-            e.preventDefault();
+            // Mouse: commit to drag immediately (no disambiguation needed)
+            if (e.pointerType === 'mouse') {
+                _commitDrag(e);
+                e.preventDefault(); // Prevent text selection
+            } else {
+                // Touch/pen: wait for pointermove to check direction
+                _pendingDrag = true;
+                _isDragging = false;
+            }
         }
 
         /**
-         * Handle mouse move for drag selection
+         * Handle pointer move for drag selection (replaces mousemove)
+         * Includes touch vs scroll disambiguation on first movement.
          */
-        function _handleMouseMove(e) {
-            if (!_isDragging || !_dragStartCell) return;
+        function _handlePointerMove(e) {
+            if (!_pendingDrag && !_isDragging) return;
+            if (!_dragStartCell) return;
+
+            const dx = Math.abs(e.clientX - _dragStartPos.x);
+            const dy = Math.abs(e.clientY - _dragStartPos.y);
+
+            // Touch disambiguation: pending drag, check initial direction
+            if (_pendingDrag && !_isDragging) {
+                const totalMove = dx + dy;
+                if (totalMove < DRAG_THRESHOLD) return; // Wait for more movement
+
+                if (dy > dx) {
+                    // Vertical movement dominant → user is scrolling, cancel
+                    _pendingDrag = false;
+                    _dragStartCell = null;
+                    _activePointerId = null;
+                    return;
+                }
+
+                // Horizontal dominant → commit to drag
+                _commitDrag(e);
+            }
+
+            if (!_isDragging) return;
 
             // Track drag distance
-            _dragDistance = Math.max(
-                _dragDistance,
-                Math.abs(e.clientX - _dragStartPos.x),
-                Math.abs(e.clientY - _dragStartPos.y)
-            );
+            _dragDistance = Math.max(_dragDistance, dx, dy);
 
-            // Only accept cells within THIS grid container
-            const cell = e.target.closest('.grid-cell');
+            // When pointer is captured, e.target is always the capturing element.
+            // Use elementFromPoint to find the actual cell under the pointer.
+            let cell;
+            if (_pointerCaptured) {
+                const el = document.elementFromPoint(e.clientX, e.clientY);
+                cell = el?.closest('.grid-cell');
+            } else {
+                cell = e.target.closest('.grid-cell');
+            }
+
             if (!cell || !cell.dataset.cellId) return;
 
             // Verify the cell belongs to this grid instance
@@ -313,12 +368,29 @@ const AvailabilityGrid = (function() {
 
             _lastValidDragCell = cell.dataset.cellId;
             _updateDragPreview(_dragStartCell, cell.dataset.cellId);
+
+            // Prevent scrolling during committed drag (touch)
+            e.preventDefault();
         }
 
         /**
-         * Handle mouse up for drag selection
+         * Handle pointer up for drag selection (replaces mouseup)
          */
-        function _handleMouseUp(e) {
+        function _handlePointerUp(e) {
+            // Release pointer capture if active
+            if (_pointerCaptured && _activePointerId !== null && _container) {
+                try { _container.releasePointerCapture(_activePointerId); } catch (ex) { /* ignore */ }
+                _pointerCaptured = false;
+            }
+            _activePointerId = null;
+
+            // Cancel any pending drag that never committed
+            if (_pendingDrag) {
+                _pendingDrag = false;
+                _dragStartCell = null;
+                return;
+            }
+
             if (!_isDragging) return;
 
             // Remove dragging class
@@ -585,25 +657,25 @@ const AvailabilityGrid = (function() {
             };
             _container.addEventListener('click', _clickHandler);
 
-            // Drag selection events
-            _container.addEventListener('mousedown', _handleMouseDown);
-            _container.addEventListener('mousemove', _handleMouseMove);
+            // Drag selection events (pointer events: mouse + touch + pen)
+            _container.addEventListener('pointerdown', _handlePointerDown, { passive: false });
+            _container.addEventListener('pointermove', _handlePointerMove, { passive: false });
 
-            // Mouse up on document (in case drag ends outside grid)
-            _documentMouseUpHandler = _handleMouseUp;
-            document.addEventListener('mouseup', _documentMouseUpHandler);
+            // Pointer up on document (in case drag ends outside grid)
+            _documentPointerUpHandler = _handlePointerUp;
+            document.addEventListener('pointerup', _documentPointerUpHandler);
 
-            // Hover events for tooltip (using event capturing for mouseenter/mouseleave)
-            _container.addEventListener('mouseenter', _handleCellMouseEnter, true);
-            _container.addEventListener('mouseleave', _handleCellMouseLeave, true);
+            // Hover events for tooltip (pointerenter/pointerleave for mouse+touch compat)
+            _container.addEventListener('pointerenter', _handleCellMouseEnter, true);
+            _container.addEventListener('pointerleave', _handleCellMouseLeave, true);
 
             // Hover events for comparison match tooltip (Slice 3.4)
-            _container.addEventListener('mouseenter', _handleMatchCellMouseEnter, true);
-            _container.addEventListener('mouseleave', _handleMatchCellMouseLeave, true);
+            _container.addEventListener('pointerenter', _handleMatchCellMouseEnter, true);
+            _container.addEventListener('pointerleave', _handleMatchCellMouseLeave, true);
 
             // Hover events for header highlight (Slice 5.0.1)
-            _container.addEventListener('mouseover', _handleCellHoverHighlight);
-            _container.addEventListener('mouseout', _handleCellHoverUnhighlight);
+            _container.addEventListener('pointerover', _handleCellHoverHighlight);
+            _container.addEventListener('pointerout', _handleCellHoverUnhighlight);
         }
 
         /**
@@ -670,14 +742,20 @@ const AvailabilityGrid = (function() {
                 if (_clickHandler) {
                     _container.removeEventListener('click', _clickHandler);
                 }
-                _container.removeEventListener('mouseover', _handleCellHoverHighlight);
-                _container.removeEventListener('mouseout', _handleCellHoverUnhighlight);
+                _container.removeEventListener('pointerdown', _handlePointerDown);
+                _container.removeEventListener('pointermove', _handlePointerMove);
+                _container.removeEventListener('pointerenter', _handleCellMouseEnter, true);
+                _container.removeEventListener('pointerleave', _handleCellMouseLeave, true);
+                _container.removeEventListener('pointerenter', _handleMatchCellMouseEnter, true);
+                _container.removeEventListener('pointerleave', _handleMatchCellMouseLeave, true);
+                _container.removeEventListener('pointerover', _handleCellHoverHighlight);
+                _container.removeEventListener('pointerout', _handleCellHoverUnhighlight);
             }
 
             // Remove document-level listener for drag
-            if (_documentMouseUpHandler) {
-                document.removeEventListener('mouseup', _documentMouseUpHandler);
-                _documentMouseUpHandler = null;
+            if (_documentPointerUpHandler) {
+                document.removeEventListener('pointerup', _documentPointerUpHandler);
+                _documentPointerUpHandler = null;
             }
 
             // Clear drag preview if active
@@ -698,6 +776,9 @@ const AvailabilityGrid = (function() {
             // Reset state
             _selectedCells.clear();
             _isDragging = false;
+            _pendingDrag = false;
+            _pointerCaptured = false;
+            _activePointerId = null;
             _dragStartCell = null;
             _lastClickedCell = null;
             _lastValidDragCell = null;
