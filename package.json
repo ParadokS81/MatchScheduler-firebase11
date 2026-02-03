@@ -23,7 +23,8 @@
     "seed": "node scripts/seed.js",
     "seed:quick": "node scripts/seed.js --quick",
     "seed:prod": "node scripts/seed.js --production",
-    "seed:prod:quick": "node scripts/seed.js --production --quick"
+    "seed:prod:quick": "node scripts/seed.js --production --quick",
+    "seed:prod:leaders": "node scripts/seed.js --production --leaders-only"
   },
   "keywords": [
     "gaming",

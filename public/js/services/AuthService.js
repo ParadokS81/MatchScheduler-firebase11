@@ -15,17 +15,12 @@ const AuthService = (function() {
     const DEV_PASSWORD = 'devmode123'; // Same password for all dev users
 
     const DEV_USERS = [
-        // Dev Squad
-        { uid: 'dev-user-001', email: 'dev@matchscheduler.test', displayName: 'ParadokS', initials: 'PDX', team: 'Dev Squad' },
-        { uid: 'fake-user-001', email: 'alex@fake.test', displayName: 'Alex Storm', initials: 'AS', team: 'Dev Squad' },
-        { uid: 'fake-user-002', email: 'bella@fake.test', displayName: 'Bella Knight', initials: 'BK', team: 'Dev Squad' },
-        { uid: 'fake-user-003', email: 'carlos@fake.test', displayName: 'Carlos Vega', initials: 'CV', team: 'Dev Squad' },
-        { uid: 'fake-user-004', email: 'diana@fake.test', displayName: 'Diana Cross', initials: 'DC', team: 'Dev Squad' },
-        { uid: 'fake-user-005', email: 'erik@fake.test', displayName: 'Erik Blade', initials: 'EB', team: 'Dev Squad' },
-        // Other team leaders + member (for match proposal testing)
-        { uid: 'phx-user-001', email: 'marcus@fake.test', displayName: 'Marcus Chen', initials: 'MC', team: 'Phoenix Rising' },
-        { uid: 'phx-user-002', email: 'sarah@fake.test', displayName: 'Sarah Walsh', initials: 'SW', team: 'Phoenix Rising' },
-        { uid: 'shw-user-001', email: 'ryan@fake.test', displayName: 'Ryan Cooper', initials: 'RC', team: 'Shadow Wolves' },
+        // Slackers ]SR[ (D1) — leader + member
+        { uid: 'dev-user-001', email: 'dev@matchscheduler.test', displayName: 'ParadokS', initials: 'PDX', team: 'Slackers', role: 'leader' },
+        { uid: 'qw-sr-zero', email: 'zero@qw.test', displayName: 'Zero', initials: 'ZR', team: 'Slackers', role: 'member' },
+        // The Axemen oeks (D1) — leader + member
+        { uid: 'qw-oeks-thechosenone', email: 'thechosenone@qw.test', displayName: 'TheChosenOne', initials: 'TC', team: 'The Axemen', role: 'leader' },
+        { uid: 'qw-oeks-timmi', email: 'timmi@qw.test', displayName: 'TiMMi', initials: 'TM', team: 'The Axemen', role: 'member' },
     ];
 
     // Default dev user (backwards compatible)

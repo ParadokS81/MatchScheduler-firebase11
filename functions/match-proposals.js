@@ -119,7 +119,7 @@ function isValidWeekRange(weekId) {
 
 // ─── createProposal ─────────────────────────────────────────────────────────
 
-exports.createProposal = onCall(async (request) => {
+exports.createProposal = onCall({ region: 'europe-west10' }, async (request) => {
     try {
         if (!request.auth) {
             throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -279,7 +279,7 @@ exports.createProposal = onCall(async (request) => {
 
 // ─── confirmSlot ────────────────────────────────────────────────────────────
 
-exports.confirmSlot = onCall(async (request) => {
+exports.confirmSlot = onCall({ region: 'europe-west10' }, async (request) => {
     try {
         if (!request.auth) {
             throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -482,7 +482,7 @@ exports.confirmSlot = onCall(async (request) => {
 
 // ─── withdrawConfirmation ───────────────────────────────────────────────────
 
-exports.withdrawConfirmation = onCall(async (request) => {
+exports.withdrawConfirmation = onCall({ region: 'europe-west10' }, async (request) => {
     try {
         if (!request.auth) {
             throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -556,7 +556,7 @@ exports.withdrawConfirmation = onCall(async (request) => {
 
 // ─── cancelProposal ─────────────────────────────────────────────────────────
 
-exports.cancelProposal = onCall(async (request) => {
+exports.cancelProposal = onCall({ region: 'europe-west10' }, async (request) => {
     try {
         if (!request.auth) {
             throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -635,9 +635,125 @@ exports.cancelProposal = onCall(async (request) => {
     }
 });
 
+// ─── cancelScheduledMatch ────────────────────────────────────────────────────
+
+exports.cancelScheduledMatch = onCall({ region: 'europe-west10' }, async (request) => {
+    try {
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        }
+
+        const userId = request.auth.uid;
+        const { matchId } = request.data;
+
+        if (!matchId || typeof matchId !== 'string') {
+            throw new HttpsError('invalid-argument', 'matchId is required');
+        }
+
+        await db.runTransaction(async (transaction) => {
+            // READ PHASE
+            const matchRef = db.collection('scheduledMatches').doc(matchId);
+            const matchDoc = await transaction.get(matchRef);
+
+            if (!matchDoc.exists) {
+                throw new HttpsError('not-found', 'Match not found');
+            }
+
+            const matchData = matchDoc.data();
+
+            if (matchData.status === 'cancelled') {
+                throw new HttpsError('failed-precondition', 'Match already cancelled');
+            }
+            if (matchData.status !== 'upcoming') {
+                throw new HttpsError('failed-precondition', 'Only upcoming matches can be cancelled');
+            }
+
+            // Live authorization check — read both team docs
+            const [teamADoc, teamBDoc] = await Promise.all([
+                transaction.get(db.collection('teams').doc(matchData.teamAId)),
+                transaction.get(db.collection('teams').doc(matchData.teamBId))
+            ]);
+
+            const teamAData = teamADoc.data();
+            const teamBData = teamBDoc.data();
+
+            if (!isAuthorized(teamAData, userId) && !isAuthorized(teamBData, userId)) {
+                throw new HttpsError('permission-denied', 'Only leaders or schedulers can cancel matches');
+            }
+
+            // Read parent proposal
+            const proposalRef = db.collection('matchProposals').doc(matchData.proposalId);
+            const proposalDoc = await transaction.get(proposalRef);
+
+            // WRITE PHASE
+            const now = new Date();
+
+            // 1. Cancel the scheduled match
+            transaction.update(matchRef, {
+                status: 'cancelled',
+                cancelledBy: userId,
+                cancelledAt: now
+            });
+
+            // 2. Revert proposal to active (if it still exists)
+            if (proposalDoc.exists) {
+                const cancelledSlotId = matchData.slotId;
+
+                // Build update: revert status, clear confirmedSlotId/scheduledMatchId,
+                // and delete the confirmed slot entries from both sides
+                const proposalUpdate = {
+                    status: 'active',
+                    confirmedSlotId: null,
+                    scheduledMatchId: null,
+                    updatedAt: now
+                };
+
+                // Clear the specific slot from both confirmedSlots maps
+                if (cancelledSlotId) {
+                    proposalUpdate[`proposerConfirmedSlots.${cancelledSlotId}`] = FieldValue.delete();
+                    proposalUpdate[`opponentConfirmedSlots.${cancelledSlotId}`] = FieldValue.delete();
+                }
+
+                transaction.update(proposalRef, proposalUpdate);
+            }
+
+            // 3. Write event log
+            const eventId = generateEventId(matchData.teamAName, 'match_cancelled');
+            transaction.set(db.collection('eventLog').doc(eventId), {
+                eventId,
+                teamId: matchData.teamAId,
+                teamName: matchData.teamAName,
+                type: 'MATCH_CANCELLED',
+                category: 'SCHEDULING',
+                timestamp: now,
+                userId,
+                details: {
+                    matchId,
+                    proposalId: matchData.proposalId,
+                    teamAId: matchData.teamAId,
+                    teamAName: matchData.teamAName,
+                    teamBId: matchData.teamBId,
+                    teamBName: matchData.teamBName,
+                    slotId: matchData.slotId,
+                    weekId: matchData.weekId,
+                    cancelledBy: userId
+                }
+            });
+        });
+
+        console.log('✅ Scheduled match cancelled:', matchId);
+        return { success: true };
+
+    } catch (error) {
+        console.error('❌ Error cancelling scheduled match:', error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', 'Failed to cancel scheduled match: ' + error.message);
+    }
+});
+
 // ─── toggleScheduler ────────────────────────────────────────────────────────
 
-exports.toggleScheduler = onCall(async (request) => {
+exports.toggleScheduler = onCall({ region: 'europe-west10' }, async (request) => {
     try {
         if (!request.auth) {
             throw new HttpsError('unauthenticated', 'User must be authenticated');

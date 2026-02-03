@@ -10,7 +10,7 @@ const db = getFirestore();
  * Creates minimal user doc for new users, updates lastLogin for existing users.
  * User doc is created WITHOUT displayName/initials - those are set via profile setup.
  */
-exports.googleSignIn = onCall(async (request) => {
+exports.googleSignIn = onCall({ region: 'europe-west10' }, async (request) => {
     const { auth } = request;
 
     // Verify user is authenticated
@@ -71,7 +71,7 @@ exports.googleSignIn = onCall(async (request) => {
  * @deprecated Use updateProfile instead. This function now redirects to updateProfile logic.
  * Kept for backwards compatibility during transition.
  */
-exports.createProfile = onCall(async (request) => {
+exports.createProfile = onCall({ region: 'europe-west10' }, async (request) => {
     const { auth, data } = request;
     
     // Verify user is authenticated
@@ -97,8 +97,8 @@ exports.createProfile = onCall(async (request) => {
     }
     
     // Validate initials
-    if (!/^[A-Z]{3}$/.test(initials)) {
-        throw new HttpsError('invalid-argument', 'Initials must be exactly 3 uppercase letters');
+    if (!/^[A-Z]{1,3}$/.test(initials)) {
+        throw new HttpsError('invalid-argument', 'Initials must be 1-3 uppercase letters');
     }
     
     // Validate Discord data if provided
@@ -173,7 +173,7 @@ exports.createProfile = onCall(async (request) => {
  * Cloud Function: updateProfile
  * Updates user profile information
  */
-exports.updateProfile = onCall(async (request) => {
+exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
     const { auth, data } = request;
 
     // Verify user is authenticated
@@ -347,7 +347,7 @@ exports.updateProfile = onCall(async (request) => {
  * Cloud Function: getProfile
  * Retrieves user profile information
  */
-exports.getProfile = onCall(async (request) => {
+exports.getProfile = onCall({ region: 'europe-west10' }, async (request) => {
     const { auth } = request;
     
     // Verify user is authenticated
@@ -393,7 +393,7 @@ exports.getProfile = onCall(async (request) => {
  * Permanently deletes user's account from both Firestore and Firebase Auth.
  * Also removes user from any team rosters they were on.
  */
-exports.deleteAccount = onCall(async (request) => {
+exports.deleteAccount = onCall({ region: 'europe-west10' }, async (request) => {
     const { auth } = request;
 
     // Verify user is authenticated

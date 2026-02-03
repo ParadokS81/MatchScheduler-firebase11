@@ -14,7 +14,7 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
  * @param {Array<string>} request.data.slotIds - Array of slot IDs (e.g., ['mon_1800', 'tue_1900'])
  * @returns {Object} { success: boolean } or throws HttpsError
  */
-const updateAvailability = onCall(async (request) => {
+const updateAvailability = onCall({ region: 'europe-west10' }, async (request) => {
     const db = getFirestore();
 
     // Validate authentication

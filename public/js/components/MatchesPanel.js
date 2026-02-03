@@ -1,5 +1,5 @@
 // MatchesPanel.js - Matches tab content with proposal cards
-// Slice 8.0b: Three-section layout (Active Proposals / Upcoming / Archived)
+// Slice 8.2b: Column layout (3 week columns + upcoming matches column)
 // Follows Cache + Listener pattern: Component owns Firebase listeners, services manage cache
 
 const MatchesPanel = (function() {
@@ -11,6 +11,9 @@ const MatchesPanel = (function() {
     let _expandedProposalId = null;
     let _userTeamIds = [];
     let _initialized = false;
+    let _archivedExpanded = false;
+    let _rosterTooltip = null;
+    let _rosterTooltipHideTimeout = null;
 
     // ─── Initialization ────────────────────────────────────────────────
 
@@ -38,8 +41,10 @@ const MatchesPanel = (function() {
         // Render initial loading state
         _container.innerHTML = '<div class="flex items-center justify-center h-full text-muted-foreground text-sm">Loading proposals...</div>';
 
-        // Attach event listener ONCE (event delegation handles dynamic content)
+        // Attach event listeners ONCE (event delegation handles dynamic content)
         _container.addEventListener('click', _handleClick);
+        _container.addEventListener('pointerenter', _handleMatchRowEnter, true);
+        _container.addEventListener('pointerleave', _handleMatchRowLeave, true);
 
         // Set up Firestore listeners for proposals involving user's teams
         await _setupProposalListeners();
@@ -140,6 +145,42 @@ const MatchesPanel = (function() {
         }));
     }
 
+    // ─── Week Helpers ───────────────────────────────────────────────────
+
+    /**
+     * Get three consecutive weeks starting from current week.
+     * Returns objects with weekId, weekNumber, and dateRange for column headers.
+     */
+    function _getThreeWeeks() {
+        const currentWeek = WeekNavigation.getCurrentWeekNumber();
+        const year = new Date().getUTCFullYear();
+        return [0, 1, 2].map(offset => {
+            const weekNumber = currentWeek + offset;
+            const weekId = `${year}-${String(weekNumber).padStart(2, '0')}`;
+            const dateRange = _getWeekDateRange(weekNumber, year);
+            return { weekId, weekNumber, dateRange };
+        });
+    }
+
+    /**
+     * Get a human-readable date range for a week (e.g., "Feb 9-15")
+     */
+    function _getWeekDateRange(weekNumber, year) {
+        const monday = DateUtils.getMondayOfWeek(weekNumber, year);
+        const sunday = new Date(monday);
+        sunday.setUTCDate(monday.getUTCDate() + 6);
+
+        const monMonth = monday.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+        const sunMonth = sunday.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+        const monDay = monday.getUTCDate();
+        const sunDay = sunday.getUTCDate();
+
+        if (monMonth === sunMonth) {
+            return `${monMonth} ${monDay}-${sunDay}`;
+        }
+        return `${monMonth} ${monDay}-${sunMonth} ${sunDay}`;
+    }
+
     // ─── Rendering ─────────────────────────────────────────────────────
 
     /**
@@ -167,7 +208,7 @@ const MatchesPanel = (function() {
     }
 
     /**
-     * Render all sections
+     * Render the column layout: 3 week columns + upcoming matches column + archived section
      */
     async function _renderAll() {
         if (!_container) return;
@@ -178,55 +219,69 @@ const MatchesPanel = (function() {
         await _ensureAvailabilityLoaded(proposals);
 
         const now = new Date();
+        const weeks = _getThreeWeeks();
 
         // Categorize proposals
         const active = [];
-        const upcoming = [];
         const archived = [];
 
         for (const p of proposals) {
             if (p.status === 'active') {
-                // Check if expired (all slots past)
                 if (p.expiresAt && p.expiresAt.toDate && p.expiresAt.toDate() < now) {
                     archived.push(p);
                 } else {
                     active.push(p);
                 }
             } else if (p.status === 'confirmed') {
-                upcoming.push(p);
+                // Confirmed proposals are no longer shown as cards — their matches appear in upcoming column
             } else {
-                // cancelled, expired
                 archived.push(p);
             }
         }
 
-        _container.innerHTML = `
-            <div class="matches-panel h-full overflow-y-auto p-3 space-y-4">
-                ${_renderSection('Active Proposals', active, 'active')}
-                ${_renderSection('Upcoming Matches', upcoming, 'upcoming')}
-                ${archived.length > 0 ? _renderSection('Archived', archived, 'archived') : ''}
-            </div>
-        `;
-    }
-
-    /**
-     * Render a section with its proposals
-     */
-    function _renderSection(title, proposals, type) {
-        if (proposals.length === 0 && type !== 'active') {
-            return '';
+        // Group active proposals by weekId into columns
+        const byWeek = {};
+        weeks.forEach(w => byWeek[w.weekId] = []);
+        for (const p of active) {
+            if (byWeek[p.weekId]) {
+                byWeek[p.weekId].push(p);
+            }
+            // Proposals for weeks outside the 3-column range are not shown
         }
 
-        const cardsHtml = proposals.length > 0
-            ? proposals.map(p => _renderProposalCard(p, type)).join('')
-            : `<p class="text-xs text-muted-foreground italic px-2">No ${type} proposals</p>`;
+        // Get upcoming scheduled matches for user's teams
+        const scheduledMatches = ScheduledMatchService.getUpcomingMatchesForTeams(_userTeamIds);
+        scheduledMatches.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
 
-        return `
-            <div class="matches-section">
-                <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">${title}</h3>
-                <div class="space-y-2">
-                    ${cardsHtml}
+        _container.innerHTML = `
+            <div class="matches-panel h-full flex flex-col">
+                <div class="flex-1 flex gap-3 p-3 overflow-hidden min-h-0">
+                    ${weeks.map(w => `
+                        <div class="flex-1 min-w-0 flex flex-col">
+                            <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                                W${String(w.weekNumber).padStart(2, '0')} · ${w.dateRange}
+                            </h3>
+                            <div class="flex-1 overflow-y-auto space-y-2">
+                                ${byWeek[w.weekId].length > 0
+                                    ? byWeek[w.weekId].map(p => _renderProposalCard(p, 'active')).join('')
+                                    : '<p class="text-xs text-muted-foreground/50 italic">No proposals</p>'}
+                            </div>
+                        </div>
+                    `).join('')}
+
+                    <div class="w-72 shrink-0 flex flex-col border-l border-border pl-3">
+                        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                            Upcoming Matches
+                        </h3>
+                        <div class="flex-1 overflow-y-auto">
+                            ${scheduledMatches.length > 0
+                                ? scheduledMatches.map(m => _renderUpcomingMatchCompact(m)).join('')
+                                : '<p class="text-xs text-muted-foreground/50 italic">No scheduled matches</p>'}
+                        </div>
+                    </div>
                 </div>
+
+                ${archived.length > 0 ? _renderArchivedSection(archived) : ''}
             </div>
         `;
     }
@@ -395,6 +450,100 @@ const MatchesPanel = (function() {
     }
 
     /**
+     * Render a single upcoming match in compact format (no card border)
+     */
+    function _renderUpcomingMatchCompact(match) {
+        const teamA = TeamService.getTeamFromCache(match.teamAId);
+        const teamB = TeamService.getTeamFromCache(match.teamBId);
+        const logoA = teamA?.activeLogo?.urls?.small || '';
+        const logoB = teamB?.activeLogo?.urls?.small || '';
+        // Format slot display — extract day abbreviation + time separately
+        let dayAbbr = '';
+        let timeOnly = '';
+        if (typeof TimezoneService !== 'undefined' && TimezoneService.formatSlotForDisplay) {
+            const formatted = TimezoneService.formatSlotForDisplay(match.slotId);
+            dayAbbr = (formatted.dayLabel || '').slice(0, 3);
+            timeOnly = formatted.timeLabel || '';
+        }
+
+        // Format date
+        let dateDisplay = '';
+        if (match.scheduledDate) {
+            const d = new Date(match.scheduledDate + 'T00:00:00');
+            dateDisplay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        // Division from either team
+        const div = teamA?.divisions?.[0] || teamB?.divisions?.[0] || '';
+
+        const canCancel = _canUserCancelMatch(match);
+
+        return `
+            <div class="upcoming-match-row py-2 group"
+                 data-team-a="${match.teamAId}" data-team-b="${match.teamBId}"
+                 data-week-id="${match.weekId || ''}" data-slot-id="${match.slotId || ''}">
+                <div class="flex items-center min-w-0 gap-1">
+                    ${logoA ? `<img src="${logoA}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
+                    <span class="text-sm font-medium truncate shrink min-w-0">${_escapeHtml(match.teamAName)}</span>
+                    <span class="text-xs text-muted-foreground shrink-0 px-1">vs</span>
+                    <span class="text-sm font-medium truncate shrink min-w-0 text-right">${_escapeHtml(match.teamBName)}</span>
+                    ${logoB ? `<img src="${logoB}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
+                </div>
+                <div class="flex items-center justify-center gap-2">
+                    <span class="text-xs text-muted-foreground">${dateDisplay} ${dayAbbr} ${timeOnly}${div ? ` (${div})` : ''}</span>
+                    ${canCancel ? `
+                        <button class="text-xs text-red-400/60 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                data-action="cancel-match" data-match-id="${match.id}">
+                            Cancel
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Check if current user can cancel a scheduled match
+     */
+    function _canUserCancelMatch(match) {
+        const userId = AuthService.getCurrentUser()?.uid;
+        if (!userId) return false;
+        return TeamService.isScheduler(match.teamAId, userId) ||
+               TeamService.isScheduler(match.teamBId, userId);
+    }
+
+    /**
+     * Render the archived section (collapsed by default)
+     */
+    function _renderArchivedSection(archived) {
+        const cardsHtml = _archivedExpanded
+            ? archived.map(p => _renderProposalCard(p, 'archived')).join('')
+            : '';
+
+        return `
+            <div class="border-t border-border px-3 py-2">
+                <button class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+                        data-action="toggle-archived">
+                    <span>${_archivedExpanded ? '▼' : '▶'}</span>
+                    <span>Archived (${archived.length})</span>
+                </button>
+                ${_archivedExpanded ? `
+                    <div class="mt-2 space-y-2">
+                        ${cardsHtml}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function _escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    /**
      * Render empty states
      */
     function _renderUnauthenticated() {
@@ -443,6 +592,13 @@ const MatchesPanel = (function() {
                 break;
             case 'load-grid':
                 _handleLoadGridView(target.dataset.team, target.dataset.week, target.dataset.minYour, target.dataset.minOpp);
+                break;
+            case 'cancel-match':
+                await _handleCancelMatch(target.dataset.matchId, target);
+                break;
+            case 'toggle-archived':
+                _archivedExpanded = !_archivedExpanded;
+                _renderAll();
                 break;
         }
     }
@@ -600,6 +756,35 @@ const MatchesPanel = (function() {
     }
 
     /**
+     * Cancel a scheduled match (revert proposal to active)
+     */
+    async function _handleCancelMatch(matchId, btn) {
+        const confirmed = confirm('Cancel this scheduled match? The proposal will revert to active so you can pick a different slot.');
+        if (!confirmed) return;
+
+        btn.disabled = true;
+        btn.textContent = 'Cancelling...';
+
+        try {
+            const result = await ProposalService.cancelScheduledMatch(matchId);
+            if (result.success) {
+                ToastService.showSuccess('Match cancelled. Proposal is active again.');
+                // UI updates via listeners — match disappears from upcoming, proposal reappears in active
+            } else {
+                ToastService.showError(result.error || 'Failed to cancel match');
+            }
+        } catch (error) {
+            console.error('Cancel match failed:', error);
+            ToastService.showError('Network error — please try again');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Cancel';
+            }
+        }
+    }
+
+    /**
      * Load Grid View shortcut — switch to calendar tab with comparison set up
      * Navigates to the proposal's week, selects opponent, sets filters, activates comparison.
      */
@@ -679,6 +864,142 @@ const MatchesPanel = (function() {
         return slotDate < now;
     }
 
+    // ─── Roster Tooltip ────────────────────────────────────────────────
+
+    function _handleMatchRowEnter(e) {
+        const row = e.target.closest('.upcoming-match-row');
+        if (!row) return;
+        if (_rosterTooltipHideTimeout) {
+            clearTimeout(_rosterTooltipHideTimeout);
+            _rosterTooltipHideTimeout = null;
+        }
+        _showRosterTooltip(row);
+    }
+
+    function _handleMatchRowLeave(e) {
+        const row = e.target.closest('.upcoming-match-row');
+        if (!row) return;
+        _rosterTooltipHideTimeout = setTimeout(() => {
+            if (_rosterTooltip) _rosterTooltip.style.display = 'none';
+        }, 150);
+    }
+
+    async function _showRosterTooltip(row) {
+        const teamAId = row.dataset.teamA;
+        const teamBId = row.dataset.teamB;
+        const weekId = row.dataset.weekId;
+        const slotId = row.dataset.slotId;
+        if (!teamAId || !teamBId || !weekId || !slotId) return;
+
+        // Get roster from TeamService cache
+        const teamA = TeamService.getTeamFromCache(teamAId);
+        const teamB = TeamService.getTeamFromCache(teamBId);
+        if (!teamA || !teamB) return;
+
+        const rosterA = teamA.playerRoster || [];
+        const rosterB = teamB.playerRoster || [];
+
+        // Load availability for both teams
+        let availA = { slots: {} };
+        let availB = { slots: {} };
+        try {
+            [availA, availB] = await Promise.all([
+                AvailabilityService.loadWeekAvailability(teamAId, weekId),
+                AvailabilityService.loadWeekAvailability(teamBId, weekId)
+            ]);
+        } catch (err) {
+            console.warn('Failed to load availability for tooltip:', err);
+        }
+
+        const availableIdsA = availA.slots?.[slotId] || [];
+        const availableIdsB = availB.slots?.[slotId] || [];
+
+        // Split rosters into available/unavailable
+        const teamAAvailable = rosterA.filter(p => availableIdsA.includes(p.userId));
+        const teamAUnavailable = rosterA.filter(p => !availableIdsA.includes(p.userId));
+        const teamBAvailable = rosterB.filter(p => availableIdsB.includes(p.userId));
+        const teamBUnavailable = rosterB.filter(p => !availableIdsB.includes(p.userId));
+
+        // Build tooltip HTML using existing CSS classes
+        const currentUserId = AuthService.getCurrentUser()?.uid;
+
+        const renderPlayers = (available, unavailable, isUserTeam) => {
+            const availHtml = available.map(p => {
+                const isYou = isUserTeam && p.userId === currentUserId;
+                return `<div class="player-row player-available">
+                    <span class="player-status-dot available"></span>
+                    <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}${isYou ? ' (You)' : ''}</span>
+                </div>`;
+            }).join('');
+            const unavailHtml = unavailable.map(p =>
+                `<div class="player-row player-unavailable">
+                    <span class="player-status-dot unavailable"></span>
+                    <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}</span>
+                </div>`
+            ).join('');
+            return availHtml + unavailHtml;
+        };
+
+        const isUserTeamA = _userTeamIds.includes(teamAId);
+        const isUserTeamB = _userTeamIds.includes(teamBId);
+
+        const html = `
+            <div class="match-tooltip-grid">
+                <div class="match-column user-team-column">
+                    <div class="match-team-header">
+                        <span class="match-team-tag">[${_escapeHtml(teamA.teamTag || '')}]</span>
+                        <span class="match-player-count">${teamAAvailable.length}/${rosterA.length}</span>
+                    </div>
+                    <div class="match-roster-list">
+                        ${renderPlayers(teamAAvailable, teamAUnavailable, isUserTeamA)}
+                    </div>
+                </div>
+                <div class="match-column opponents-column">
+                    <div class="match-team-header">
+                        <span class="match-team-tag">[${_escapeHtml(teamB.teamTag || '')}]</span>
+                        <span class="match-player-count">${teamBAvailable.length}/${rosterB.length}</span>
+                    </div>
+                    <div class="match-roster-list">
+                        ${renderPlayers(teamBAvailable, teamBUnavailable, isUserTeamB)}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Create or reuse tooltip element
+        if (!_rosterTooltip) {
+            _rosterTooltip = document.createElement('div');
+            _rosterTooltip.className = 'match-tooltip';
+            document.body.appendChild(_rosterTooltip);
+        }
+
+        _rosterTooltip.innerHTML = html;
+
+        // Position tooltip near the row
+        const rowRect = row.getBoundingClientRect();
+        _rosterTooltip.style.visibility = 'hidden';
+        _rosterTooltip.style.display = 'block';
+        const ttRect = _rosterTooltip.getBoundingClientRect();
+
+        let left = rowRect.left;
+        let top = rowRect.bottom + 4;
+
+        // If tooltip would go off bottom, show above
+        if (top + ttRect.height > window.innerHeight - 8) {
+            top = rowRect.top - ttRect.height - 4;
+        }
+        // If tooltip would go off right edge, shift left
+        if (left + ttRect.width > window.innerWidth - 8) {
+            left = window.innerWidth - ttRect.width - 8;
+        }
+        if (left < 8) left = 8;
+        if (top < 8) top = 8;
+
+        _rosterTooltip.style.left = `${left}px`;
+        _rosterTooltip.style.top = `${top}px`;
+        _rosterTooltip.style.visibility = 'visible';
+    }
+
     // ─── Cleanup ───────────────────────────────────────────────────────
 
     /**
@@ -692,14 +1013,27 @@ const MatchesPanel = (function() {
         // Collapse expanded card (unsubscribes availability)
         _collapseCard();
 
-        // Remove click listener
+        // Remove event listeners
         if (_container) {
             _container.removeEventListener('click', _handleClick);
+            _container.removeEventListener('pointerenter', _handleMatchRowEnter, true);
+            _container.removeEventListener('pointerleave', _handleMatchRowLeave, true);
+        }
+
+        // Remove roster tooltip
+        if (_rosterTooltip) {
+            _rosterTooltip.remove();
+            _rosterTooltip = null;
+        }
+        if (_rosterTooltipHideTimeout) {
+            clearTimeout(_rosterTooltipHideTimeout);
+            _rosterTooltipHideTimeout = null;
         }
 
         _container = null;
         _userTeamIds = [];
         _expandedProposalId = null;
+        _archivedExpanded = false;
         _initialized = false;
 
         console.log('🧹 MatchesPanel cleaned up');

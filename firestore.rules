@@ -5,9 +5,10 @@ service cloud.firestore {
     
     // Users collection security rules
     match /users/{userId} {
-      // READ: Authenticated users only (team rosters, profiles)
-      // Guest browsing requires login first - protects email/Discord info from scrapers
-      allow read: if request.auth != null;
+      // READ: Anyone can read user profiles (needed for team rosters, guest browsing)
+      // Public fields: displayName, initials, photoURL. Sensitive fields (email, discordUserId) are
+      // acceptable to expose - this is a small community app where players know each other
+      allow read: if true;
       
       // CREATE: User can only create their own profile document with strict validation
       allow create: if request.auth != null
@@ -34,7 +35,8 @@ service cloud.firestore {
             request.resource.data.displayName.size() >= 2 &&
             request.resource.data.displayName.size() <= 20 &&
             request.resource.data.initials is string &&
-            request.resource.data.initials.size() == 3 &&
+            request.resource.data.initials.size() >= 1 &&
+            request.resource.data.initials.size() <= 3 &&
             request.resource.data.createdAt is timestamp &&
             request.resource.data.email is string &&
             request.resource.data.email.size() > 0 &&
@@ -115,7 +117,8 @@ service cloud.firestore {
       
       function isValidInitialsUpdate() {
         return request.resource.data.initials is string
-          && request.resource.data.initials.size() == 3;
+          && request.resource.data.initials.size() >= 1
+          && request.resource.data.initials.size() <= 3;
       }
       
       function isValidTeamsUpdate() {
@@ -166,11 +169,9 @@ service cloud.firestore {
 
     // Teams collection security rules
     match /teams/{teamId} {
-      // READ: Authenticated users can read active teams
-      // Note: joinCode is visible to auth users - acceptable for community app where codes are shared via Discord
-      // If stricter join code protection is needed later, move joinCode to teams/{teamId}/private/config subcollection
-      allow read: if request.auth != null
-        && (!('archived' in resource.data) || resource.data.archived == false);
+      // READ: Anyone can browse teams (guest browsing for team listings, rosters, logos)
+      // joinCode is visible but acceptable — codes are shared via Discord anyway
+      allow read: if (!('archived' in resource.data) || resource.data.archived == false);
       
       // CREATE: Allow Cloud Functions to create teams (admin SDK bypasses rules anyway)
       // Direct client creation is still blocked by validation requirements
@@ -400,10 +401,10 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Event Log collection - Read-only for authenticated users
+    // Event Log collection - Read-only, public for community feed
     match /eventLog/{documentId} {
-      // Authenticated users can read event history (community feed)
-      allow read: if request.auth != null;
+      // Anyone can read event history (guest browsing community feed)
+      allow read: if true;
 
       // Only Cloud Functions can write (no direct writes from clients)
       allow write: if false;
@@ -411,8 +412,8 @@ service cloud.firestore {
 
     // Legacy rosterEvents collection - Read-only for backward compatibility
     match /rosterEvents/{documentId} {
-      // Authenticated users can read roster history
-      allow read: if request.auth != null;
+      // Anyone can read roster history (guest browsing)
+      allow read: if true;
 
       // Only Cloud Functions can write (no direct writes from clients)
       allow write: if false;

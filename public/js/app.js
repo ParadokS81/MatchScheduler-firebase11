@@ -60,6 +60,9 @@ const MatchSchedulerApp = (function() {
         // Set up comparison event listeners (Slice 3.4)
         _setupComparisonListeners();
 
+        // Set up scheduled match highlights on grid
+        _setupScheduledMatchListener();
+
         // Initialize MobileLayout for drawer management (Slice 10.0b)
         if (typeof MobileLayout !== 'undefined') {
             MobileLayout.init();
@@ -131,6 +134,9 @@ const MatchSchedulerApp = (function() {
             if (_selectedTeam) {
                 _setupAvailabilityListeners(_selectedTeam.id);
             }
+
+            // Refresh scheduled match highlights for new weeks
+            _updateScheduledMatchHighlights();
         });
 
         // Listen for timezone changes (Slice 7.0c) - rebuild grids with new UTC mappings
@@ -142,6 +148,9 @@ const MatchSchedulerApp = (function() {
             if (_selectedTeam) {
                 _setupAvailabilityListeners(_selectedTeam.id);
             }
+
+            // Refresh scheduled match highlights after grid rebuild
+            _updateScheduledMatchHighlights();
         });
 
         // Set up overflow click handlers for both grids (Slice 2.5)
@@ -495,6 +504,64 @@ const MatchSchedulerApp = (function() {
 
         const playerRoster = _selectedTeam.playerRoster || [];
         weekDisplay.updateTeamDisplay(availabilityData, playerRoster, currentUserId);
+    }
+
+    // ========================================
+    // Scheduled Match Grid Highlights
+    // ========================================
+
+    let _scheduledMatchUnsub = null;
+
+    /**
+     * Set up Firestore listener for scheduled matches to highlight on the grid.
+     * Called once during init — updates grid highlights when matches change.
+     */
+    async function _setupScheduledMatchListener() {
+        if (_scheduledMatchUnsub) return; // Already set up
+
+        const { collection, query, where, onSnapshot } = await import(
+            'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js'
+        );
+
+        const matchesQuery = query(
+            collection(window.firebase.db, 'scheduledMatches'),
+            where('status', '==', 'upcoming')
+        );
+
+        _scheduledMatchUnsub = onSnapshot(matchesQuery, (snapshot) => {
+            // Update ScheduledMatchService cache
+            snapshot.docChanges().forEach(change => {
+                if (change.type === 'removed') {
+                    ScheduledMatchService.removeFromCache(change.doc.id);
+                } else {
+                    ScheduledMatchService.updateCache(change.doc.id, change.doc.data());
+                }
+            });
+            // Refresh grid highlights
+            _updateScheduledMatchHighlights();
+        });
+    }
+
+    /**
+     * Update scheduled match highlights on both week grids
+     */
+    function _updateScheduledMatchHighlights() {
+        if (typeof ScheduledMatchService === 'undefined') return;
+
+        const allMatches = ScheduledMatchService.getMatchesFromCache()
+            .filter(m => m.status === 'upcoming');
+
+        if (_weekDisplay1) {
+            const week1Id = _weekDisplay1.getWeekId();
+            const week1Matches = allMatches.filter(m => m.weekId === week1Id);
+            _weekDisplay1.updateScheduledMatchHighlights(week1Matches);
+        }
+
+        if (_weekDisplay2) {
+            const week2Id = _weekDisplay2.getWeekId();
+            const week2Matches = allMatches.filter(m => m.weekId === week2Id);
+            _weekDisplay2.updateScheduledMatchHighlights(week2Matches);
+        }
     }
 
     // Setup event listeners

@@ -8,7 +8,7 @@ const db = getFirestore();
  * Add or remove a team from user's favoriteTeams array
  * Uses arrayUnion/arrayRemove for atomic updates
  */
-exports.updateFavorites = onCall(async (request) => {
+exports.updateFavorites = onCall({ region: 'europe-west10' }, async (request) => {
     const { auth, data } = request;
 
     // Verify user is authenticated

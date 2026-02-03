@@ -83,7 +83,7 @@ function validateTeamData(teamData) {
 }
 
 // Create team function
-exports.createTeam = onCall(async (request) => {
+exports.createTeam = onCall({ region: 'europe-west10' }, async (request) => {
     try {
         // Check authentication
         if (!request.auth) {
@@ -167,6 +167,7 @@ exports.createTeam = onCall(async (request) => {
                 userId: userId,
                 displayName: userProfile.displayName,
                 initials: userProfile.initials,
+                photoURL: userProfile.photoURL || null,
                 joinedAt: nowDate,
                 role: 'leader'
             }],
@@ -264,7 +265,7 @@ exports.createTeam = onCall(async (request) => {
 });
 
 // Join team function
-exports.joinTeam = onCall(async (request) => {
+exports.joinTeam = onCall({ region: 'europe-west10' }, async (request) => {
     console.log('🚀 joinTeam function called');
     console.log('Request auth:', request.auth ? 'authenticated' : 'not authenticated');
     console.log('Request data:', request.data);
@@ -356,6 +357,7 @@ exports.joinTeam = onCall(async (request) => {
             userId: userId,
             displayName: userProfile.displayName,
             initials: userProfile.initials,
+            photoURL: userProfile.photoURL || null,
             joinedAt: nowDate,
             role: isUnclaimedTeam ? 'leader' : 'member'
         };
@@ -445,7 +447,7 @@ exports.joinTeam = onCall(async (request) => {
 });
 
 // Regenerate join code function
-exports.regenerateJoinCode = onCall(async (request) => {
+exports.regenerateJoinCode = onCall({ region: 'europe-west10' }, async (request) => {
     try {
         // Check authentication
         if (!request.auth) {
@@ -555,7 +557,7 @@ exports.regenerateJoinCode = onCall(async (request) => {
 });
 
 // Leave team function
-exports.leaveTeam = onCall(async (request) => {
+exports.leaveTeam = onCall({ region: 'europe-west10' }, async (request) => {
     try {
         // Check authentication
         if (!request.auth) {
@@ -712,7 +714,7 @@ exports.leaveTeam = onCall(async (request) => {
 });
 
 // Kick player function - removes a player from the team
-exports.kickPlayer = onCall(async (request) => {
+exports.kickPlayer = onCall({ region: 'europe-west10' }, async (request) => {
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Authentication required');
     }
@@ -831,7 +833,7 @@ exports.kickPlayer = onCall(async (request) => {
 });
 
 // Transfer leadership function
-exports.transferLeadership = onCall(async (request) => {
+exports.transferLeadership = onCall({ region: 'europe-west10' }, async (request) => {
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Authentication required');
     }
@@ -942,7 +944,7 @@ exports.transferLeadership = onCall(async (request) => {
 });
 
 // Update team settings function
-exports.updateTeamSettings = onCall(async (request) => {
+exports.updateTeamSettings = onCall({ region: 'europe-west10' }, async (request) => {
     try {
         // Check authentication
         if (!request.auth) {

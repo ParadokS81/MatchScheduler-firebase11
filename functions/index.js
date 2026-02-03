@@ -13,7 +13,7 @@ const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings,
 const { updateAvailability } = require('./availability');
 const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 const { updateFavorites } = require('./favorites');
-const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, toggleScheduler } = require('./match-proposals');
+const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler } = require('./match-proposals');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
@@ -50,9 +50,10 @@ exports.createProposal = createProposal;
 exports.confirmSlot = confirmSlot;
 exports.withdrawConfirmation = withdrawConfirmation;
 exports.cancelProposal = cancelProposal;
+exports.cancelScheduledMatch = cancelScheduledMatch;
 exports.toggleScheduler = toggleScheduler;
 
 // Simple test function
-exports.helloWorld = onRequest((request, response) => {
+exports.helloWorld = onRequest({ region: 'europe-west10' }, (request, response) => {
     response.json({ message: 'MatchScheduler Functions are working!' });
 });

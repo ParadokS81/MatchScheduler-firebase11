@@ -9,21 +9,9 @@ const DISCORD_API_BASE = 'https://discord.com/api/v10';
  * Environment variables take precedence for v2 functions
  */
 function getDiscordCredentials() {
-    // Try environment variables first (v2 functions)
-    let clientId = process.env.DISCORD_CLIENT_ID;
-    let clientSecret = process.env.DISCORD_CLIENT_SECRET;
-
-    // Fallback to .runtimeconfig.json format (for local emulator with legacy config)
-    if (!clientId || !clientSecret) {
-        try {
-            const functions = require('firebase-functions');
-            clientId = clientId || functions.config()?.discord?.client_id;
-            clientSecret = clientSecret || functions.config()?.discord?.client_secret;
-        } catch (e) {
-            // functions.config() not available in v2, ignore
-        }
-    }
-
+    // Environment variables (v2 functions + emulator via .env or .secret.local files)
+    const clientId = process.env.DISCORD_CLIENT_ID;
+    const clientSecret = process.env.DISCORD_CLIENT_SECRET;
     return { clientId, clientSecret };
 }
 
@@ -59,6 +47,7 @@ function getDiscordAvatarUrl(userId, avatarHash) {
  * Exchanges Discord OAuth code for user data and creates/returns Firebase custom token
  */
 exports.discordOAuthExchange = onCall({
+    region: 'europe-west10',
     // Declare secrets this function needs access to
     secrets: ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET']
 }, async (request) => {
@@ -203,13 +192,49 @@ exports.discordOAuthExchange = onCall({
             console.log(`Found existing user: ${uid}`);
 
             // Update Discord data and avatar (in case username/avatar changed)
+            const newPhotoURL = getDiscordAvatarUrl(discordUser.id, discordUser.avatar);
+            const existingUserData = existingUserQuery.docs[0].data();
+
             await usersRef.doc(uid).update({
                 discordUsername: discordUser.username,
                 discordAvatarHash: discordUser.avatar,
-                photoURL: getDiscordAvatarUrl(discordUser.id, discordUser.avatar),
+                photoURL: newPhotoURL,
                 lastUpdatedAt: FieldValue.serverTimestamp(),
                 lastLogin: FieldValue.serverTimestamp()
             });
+
+            // Propagate updated avatar to team rosters
+            const userTeams = existingUserData.teams || {};
+            const teamIds = Object.keys(userTeams);
+            if (teamIds.length > 0) {
+                const teamsRef = db.collection('teams');
+                const batch = db.batch();
+                let rosterUpdates = 0;
+
+                for (const teamId of teamIds) {
+                    const teamDoc = await teamsRef.doc(teamId).get();
+                    if (!teamDoc.exists) continue;
+
+                    const teamData = teamDoc.data();
+                    const roster = teamData.playerRoster || [];
+                    const playerIndex = roster.findIndex(p => p.userId === uid);
+
+                    if (playerIndex !== -1) {
+                        const updatedRoster = [...roster];
+                        updatedRoster[playerIndex] = {
+                            ...updatedRoster[playerIndex],
+                            photoURL: newPhotoURL
+                        };
+                        batch.update(teamDoc.ref, { playerRoster: updatedRoster });
+                        rosterUpdates++;
+                    }
+                }
+
+                if (rosterUpdates > 0) {
+                    await batch.commit();
+                    console.log(`Updated photoURL in ${rosterUpdates} team roster(s) for user: ${uid}`);
+                }
+            }
         } else {
             // 5. Check for email match (account unification) - unless forceNew is set
             if (!forceNew && discordUser.email) {

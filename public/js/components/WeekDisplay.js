@@ -270,17 +270,18 @@ const WeekDisplay = (function() {
             // Update navigation button states
             _updateNavButtons();
 
-            // Reinitialize grid with new week
+            // Reinitialize grid with new week (only if panel still has our content)
             if (_grid) {
                 _grid.cleanup();
+                _grid = null;
             }
-            const gridContainerId = `availability-grid-week-${_weekNumber}`;
             const gridContainer = _panel?.querySelector('.week-grid-container');
             if (gridContainer) {
+                const gridContainerId = `availability-grid-week-${_weekNumber}`;
                 gridContainer.id = gridContainerId;
+                _grid = AvailabilityGrid.create(gridContainerId, _weekNumber);
+                _grid.init();
             }
-            _grid = AvailabilityGrid.create(gridContainerId, _weekNumber);
-            _grid.init();
         }
 
         /**
@@ -289,14 +290,15 @@ const WeekDisplay = (function() {
         function rebuildGrid() {
             if (_grid) {
                 _grid.cleanup();
+                _grid = null;
             }
-            const gridContainerId = `availability-grid-week-${_weekNumber}`;
             const gridContainer = _panel?.querySelector('.week-grid-container');
             if (gridContainer) {
+                const gridContainerId = `availability-grid-week-${_weekNumber}`;
                 gridContainer.id = gridContainerId;
+                _grid = AvailabilityGrid.create(gridContainerId, _weekNumber);
+                _grid.init();
             }
-            _grid = AvailabilityGrid.create(gridContainerId, _weekNumber);
-            _grid.init();
         }
 
         function getGrid() {
@@ -463,6 +465,29 @@ const WeekDisplay = (function() {
             }
         }
 
+        // ========================================
+        // Scheduled Match Highlights
+        // ========================================
+
+        /**
+         * Update scheduled match highlights on grid cells
+         * @param {Array} matches - Scheduled matches for this week
+         */
+        function updateScheduledMatchHighlights(matches) {
+            if (_grid) {
+                _grid.updateScheduledMatchHighlights(matches);
+            }
+        }
+
+        /**
+         * Clear scheduled match highlights
+         */
+        function clearScheduledMatchHighlights() {
+            if (_grid) {
+                _grid.clearScheduledMatchHighlights();
+            }
+        }
+
         function cleanup() {
             document.removeEventListener('click', _handleOutsideClick);
             window.removeEventListener('timezone-changed', _handleExternalTzChange);
@@ -497,6 +522,9 @@ const WeekDisplay = (function() {
             enterComparisonMode,
             exitComparisonMode,
             updateComparisonHighlights,
+            // Scheduled match highlights
+            updateScheduledMatchHighlights,
+            clearScheduledMatchHighlights,
             cleanup
         };
 

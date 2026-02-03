@@ -12,7 +12,7 @@ const VALID_SLOT_PATTERN = /^(mon|tue|wed|thu|fri|sat|sun)_(0[0-9]|1[0-9]|2[0-3]
 /**
  * Save a new availability template
  */
-const saveTemplate = onCall(async (request) => {
+const saveTemplate = onCall({ region: 'europe-west10' }, async (request) => {
     const db = getFirestore();
 
     // Validate authentication
@@ -77,7 +77,7 @@ const saveTemplate = onCall(async (request) => {
 /**
  * Delete a user's template
  */
-const deleteTemplate = onCall(async (request) => {
+const deleteTemplate = onCall({ region: 'europe-west10' }, async (request) => {
     const db = getFirestore();
 
     // Validate authentication
@@ -111,7 +111,7 @@ const deleteTemplate = onCall(async (request) => {
 /**
  * Rename a user's template
  */
-const renameTemplate = onCall(async (request) => {
+const renameTemplate = onCall({ region: 'europe-west10' }, async (request) => {
     const db = getFirestore();
 
     // Validate authentication

@@ -122,10 +122,10 @@ const PlayerColorService = (function() {
             const userRef = doc(db, 'users', userId);
 
             if (color) {
-                // Use setDoc with merge to add/update the color
-                await setDoc(userRef, {
-                    playerColors: { [targetUserId]: color }
-                }, { merge: true });
+                // Use updateDoc with dot-notation path (not setDoc+merge which can fail on new fields)
+                await updateDoc(userRef, {
+                    [`playerColors.${targetUserId}`]: color
+                });
             } else {
                 // Use updateDoc with deleteField to remove the color
                 await updateDoc(userRef, {

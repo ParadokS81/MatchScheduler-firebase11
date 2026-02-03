@@ -15,7 +15,8 @@
  *
  * Flags:
  *   --production   Connect to production (requires service-account.json)
- *   --quick        Skip logo downloads (much faster)
+ *   --quick        Skip logo processing (much faster)
+ *   --leaders-only Seed only team leaders (no rosters, no availability)
  *   [host]         Custom emulator host (default: 127.0.0.1), ignored with --production
  */
 
@@ -28,6 +29,7 @@ const CONFIG = require('./seed-data/config');
 const args = process.argv.slice(2);
 const IS_PRODUCTION = args.includes('--production');
 const SKIP_LOGOS = args.includes('--quick');
+const LEADERS_ONLY = args.includes('--leaders-only');
 const EMULATOR_HOST = args.find(a => !a.startsWith('--')) || '127.0.0.1';
 
 // ============================================
@@ -168,11 +170,9 @@ function getWeekId(weekNumber) {
 }
 
 function generateInitials(name) {
-    const parts = name.split(/[\s-]+/);
-    if (parts.length >= 2) {
-        return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.substring(0, 2).toUpperCase();
+    // 1-3 uppercase letters from the name
+    const clean = name.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    return clean.substring(0, 3) || 'XX';
 }
 
 function generateUserId(teamTag, playerName) {
@@ -338,9 +338,10 @@ async function createAuthUser(userId, email, displayName) {
 async function seed() {
     const env = IS_PRODUCTION ? 'PRODUCTION' : 'LOCAL';
     const logoMode = SKIP_LOGOS ? 'skip logos' : 'with logos';
+    const rosterMode = LEADERS_ONLY ? ', leaders only' : '';
 
     console.log('='.repeat(55));
-    console.log(`🎮 MatchScheduler Seed — ${env} (${logoMode})`);
+    console.log(`🎮 MatchScheduler Seed — ${env} (${logoMode}${rosterMode})`);
     console.log('='.repeat(55) + '\n');
 
     if (IS_PRODUCTION) {
@@ -379,7 +380,11 @@ async function seed() {
         const roster = [];
         let leaderId = null;
 
-        for (const player of team.players) {
+        const playersToSeed = LEADERS_ONLY
+            ? team.players.filter(p => p.role === 'leader')
+            : team.players;
+
+        for (const player of playersToSeed) {
             let userId, email, displayName;
 
             if (player.isDevUser && !IS_PRODUCTION) {
@@ -470,8 +475,11 @@ async function seed() {
 
         batch.set(db.collection('teams').doc(team.id), teamDoc);
 
-        // ── Availability ──
-        for (const weekId of weekIds) {
+        // ── Availability (skip in leaders-only mode) ──
+        if (LEADERS_ONLY) {
+            // No availability data — leaders will fill it in after inviting players
+        }
+        for (const weekId of LEADERS_ONLY ? [] : weekIds) {
             const slots = {};
             roster.forEach((player, playerIndex) => {
                 const playerSlots = generateRandomAvailability(playerIndex, teamIndex);
@@ -517,7 +525,7 @@ async function seed() {
     console.log(`   ${totalPlayers} players`);
     console.log(`   ${withDiscord} leaders with Discord IDs`);
     console.log(`   ${logosProcessed} logos processed`);
-    console.log(`   ${weekIds.length} weeks of availability`);
+    console.log(`   ${LEADERS_ONLY ? 0 : weekIds.length} weeks of availability${LEADERS_ONLY ? ' (leaders-only mode)' : ''}`);
 
     if (!IS_PRODUCTION) {
         console.log(`\n🔑 Dev login: ${CONFIG.DEV_USER.email} / ${CONFIG.DEV_USER.password}`);

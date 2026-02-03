@@ -65,7 +65,7 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
         const storage = getStorage(app);
-        const functions = getFunctions(app);
+        const functions = getFunctions(app, 'europe-west10');
 
         // Check if we should use emulators (localhost development)
         const isLocalDev = window.location.hostname === 'localhost' ||
@@ -129,8 +129,7 @@
             window._pwaInstallPrompt = e;
             console.log('PWA: install prompt captured - app is installable');
             // Only show install banner on mobile/tablet (not desktop)
-            const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-                             (navigator.maxTouchPoints > 1 && window.innerWidth < 1024);
+            const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
             if (!isMobile) return;
             const btn = document.getElementById('pwa-install-btn');
             if (btn) btn.classList.remove('hidden');

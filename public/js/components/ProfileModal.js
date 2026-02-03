@@ -92,9 +92,9 @@ const ProfileModal = (function() {
                                         placeholder="ABC"
                                         class="w-full px-3 py-2 bg-input border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary uppercase text-center"
                                         required
-                                        minlength="3"
+                                        minlength="1"
                                         maxlength="3"
-                                        pattern="[A-Z]{3}"
+                                        pattern="[A-Z]{1,3}"
                                         style="text-transform: uppercase;"
                                     >
                                 </div>
@@ -742,13 +742,13 @@ const ProfileModal = (function() {
             return false;
         }
         
-        if (!initials || initials.length !== 3) {
-            _showError('Initials must be exactly 3 characters');
+        if (!initials || initials.length < 1 || initials.length > 3) {
+            _showError('Initials must be 1-3 characters');
             return false;
         }
-        
-        if (!/^[A-Z]{3}$/.test(initials)) {
-            _showError('Initials must be 3 uppercase letters');
+
+        if (!/^[A-Z]{1,3}$/.test(initials)) {
+            _showError('Initials must be 1-3 uppercase letters');
             return false;
         }
         

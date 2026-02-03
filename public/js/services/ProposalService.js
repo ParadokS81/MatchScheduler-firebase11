@@ -98,6 +98,15 @@ const ProposalService = (function() {
         return TeamService.callFunction('cancelProposal', { proposalId });
     }
 
+    /**
+     * Cancel a scheduled match and revert its proposal to active
+     * @param {string} matchId
+     * @returns {Object} { success: boolean, error?: string }
+     */
+    async function cancelScheduledMatch(matchId) {
+        return TeamService.callFunction('cancelScheduledMatch', { matchId });
+    }
+
     // ─── Viable Slot Computation ───────────────────────────────────────
 
     /**
@@ -176,6 +185,7 @@ const ProposalService = (function() {
         confirmSlot,
         withdrawConfirmation,
         cancelProposal,
+        cancelScheduledMatch,
         // Computation
         computeViableSlots
     };

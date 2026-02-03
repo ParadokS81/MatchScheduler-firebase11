@@ -54,6 +54,20 @@ const TeamsBrowserPanel = (function() {
 
         // Get initial data from cache (HOT PATH)
         _allTeams = TeamService.getAllTeams() || [];
+
+        // If cache wasn't ready yet, wait for it and re-render
+        if (_allTeams.length === 0 && !TeamService.isCacheReady()) {
+            const checkCache = setInterval(() => {
+                if (TeamService.isCacheReady()) {
+                    clearInterval(checkCache);
+                    _allTeams = TeamService.getAllTeams() || [];
+                    _allPlayers = _extractAllPlayers(_allTeams);
+                    _render();
+                }
+            }, 200);
+            setTimeout(() => clearInterval(checkCache), 10000);
+        }
+
         _allPlayers = _extractAllPlayers(_allTeams);
 
         // Check for pending cross-view team selection (e.g. players → teams)

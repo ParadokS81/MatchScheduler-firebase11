@@ -307,18 +307,22 @@ const TeamManagementModal = (function() {
         _applyToggleState(btn, newEnabled);
 
         try {
+            console.log('🔧 toggleScheduler calling:', { teamId: _teamId, targetUserId, enabled: newEnabled });
             const result = await TeamService.callFunction('toggleScheduler', {
                 teamId: _teamId,
                 targetUserId,
                 enabled: newEnabled
             });
+            console.log('🔧 toggleScheduler result:', result);
 
-            if (!result.success) {
+            if (result.success) {
+                ToastService.showSuccess(`Scheduling ${newEnabled ? 'enabled' : 'disabled'}`);
+            } else {
                 _applyToggleState(btn, currentlyEnabled);
                 ToastService.showError(result.error || 'Failed to update scheduler');
             }
         } catch (error) {
-            console.error('Error toggling scheduler:', error);
+            console.error('❌ Error toggling scheduler:', error);
             _applyToggleState(btn, currentlyEnabled);
             ToastService.showError('Network error - please try again');
         }

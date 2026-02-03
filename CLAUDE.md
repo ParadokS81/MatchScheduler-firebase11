@@ -287,6 +287,43 @@ function componentName() {
 5. Use QTEST for manual testing guide
 6. Only write automated tests if specifically requested
 
+### Deployment (Production)
+
+**Region:** All functions MUST use `europe-west10`. This is set in two places:
+- Backend: Every `onCall()` and `onRequest()` takes `{ region: 'europe-west10' }` as first arg
+- Frontend: `getFunctions(app, 'europe-west10')` in `public/index.html`
+- Storage triggers already specify region in their config objects
+
+**Never deploy all functions at once:**
+```bash
+firebase deploy --only functions          # ❌ Hits Cloud Run CPU quota (26+ simultaneous container builds)
+./scripts/deploy-functions.sh             # ✅ Deploys in batches of 5-7 with pauses
+```
+
+**Deploy individual functions or small groups:**
+```bash
+firebase deploy --only functions:updateProfile,functions:createProfile
+```
+
+**Deploy hosting + rules (no quota issues):**
+```bash
+firebase deploy --only hosting            # Frontend changes
+firebase deploy --only firestore:rules    # Security rules
+firebase deploy --only hosting,firestore:rules  # Both
+```
+
+**After adding a new Cloud Function:**
+1. Add `{ region: 'europe-west10' }` to the `onCall()`/`onRequest()` config
+2. Export it in `functions/index.js`
+3. Add it to the appropriate batch in `scripts/deploy-functions.sh`
+
+**Why batched deploys?** Firebase v2 functions each create a separate Cloud Run service. Deploying 26+ simultaneously exceeds Google Cloud's concurrent container build quota per region. This is a quota limit, not a billing limit — Blaze plan doesn't bypass it.
+
+**Cleaning up old us-central1 functions:** After the region migration, delete the old us-central1 services:
+```bash
+firebase functions:delete functionName --region us-central1
+```
+
 ### Common Integration Mistakes (Check These First!)
 
 1. **Frontend calls backend but doesn't handle errors**

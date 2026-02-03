@@ -1385,6 +1385,49 @@ body {
 }
 
 /* ========================================
+   SCHEDULED MATCH GRID HIGHLIGHTS
+   ======================================== */
+
+/* Scheduled match cell — subtle green tint with border */
+.grid-cell.has-scheduled-match {
+  position: relative;
+  border: 2px solid oklch(0.65 0.15 145 / 0.5) !important;
+  background-color: oklch(0.65 0.15 145 / 0.08) !important;
+  cursor: pointer;
+}
+
+.grid-cell.has-scheduled-match:hover {
+  background-color: oklch(0.65 0.15 145 / 0.15) !important;
+}
+
+/* Team tag label overlay inside the cell */
+.scheduled-match-label {
+  position: absolute;
+  bottom: 0.125rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.scheduled-match-label .sml-tag {
+  font-size: 0.5rem;
+  font-weight: 600;
+  color: oklch(0.8 0.12 145);
+  line-height: 1;
+}
+
+.scheduled-match-label .sml-vs {
+  font-size: 0.4375rem;
+  color: var(--muted-foreground);
+  line-height: 1;
+}
+
+/* ========================================
    SLICE 4.2: ENHANCED COMPARISON MODAL - VS LAYOUT
    ======================================== */
 

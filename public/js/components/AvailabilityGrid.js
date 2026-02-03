@@ -1133,6 +1133,189 @@ const AvailabilityGrid = (function() {
         }
 
         // ========================================
+        // Scheduled Match Highlights
+        // ========================================
+
+        let _scheduledMatchMap = new Map(); // UTC slotId → match object
+
+        /**
+         * Update cells with scheduled match highlights.
+         * Shows team tags inside cells that have a scheduled match.
+         * @param {Array} matches - Array of scheduled match objects for current week
+         */
+        function updateScheduledMatchHighlights(matches) {
+            if (!_container) return;
+
+            // Build lookup: UTC slotId → match
+            _scheduledMatchMap.clear();
+            for (const match of matches) {
+                if (match.slotId) {
+                    _scheduledMatchMap.set(match.slotId, match);
+                }
+            }
+
+            const allCells = _container.querySelectorAll('.grid-cell');
+            allCells.forEach(cell => {
+                const cellId = cell.dataset.cellId;
+                if (!cellId) return;
+
+                // Remove existing scheduled match indicator
+                cell.classList.remove('has-scheduled-match');
+                const existing = cell.querySelector('.scheduled-match-label');
+                if (existing) existing.remove();
+
+                // Check if this cell has a scheduled match (convert to UTC)
+                const utcSlotId = _localToUtc(cellId);
+                const match = _scheduledMatchMap.get(utcSlotId);
+
+                if (match) {
+                    cell.classList.add('has-scheduled-match');
+
+                    // Add team tag label overlay
+                    const label = document.createElement('div');
+                    label.className = 'scheduled-match-label';
+                    const tagA = _escapeHtml(match.teamATag || '');
+                    const tagB = _escapeHtml(match.teamBTag || '');
+                    label.innerHTML = `<span class="sml-tag">${tagA}</span><span class="sml-vs">v</span><span class="sml-tag">${tagB}</span>`;
+                    cell.appendChild(label);
+                }
+            });
+        }
+
+        /**
+         * Clear all scheduled match highlights
+         */
+        function clearScheduledMatchHighlights() {
+            _scheduledMatchMap.clear();
+            if (!_container) return;
+
+            const allCells = _container.querySelectorAll('.grid-cell');
+            allCells.forEach(cell => {
+                cell.classList.remove('has-scheduled-match');
+                const label = cell.querySelector('.scheduled-match-label');
+                if (label) label.remove();
+            });
+        }
+
+        /**
+         * Show tooltip for a scheduled match cell (roster vs roster)
+         */
+        async function _showScheduledMatchTooltip(cell, match) {
+            if (typeof TeamService === 'undefined' || typeof AvailabilityService === 'undefined') return;
+
+            const teamA = TeamService.getTeamFromCache(match.teamAId);
+            const teamB = TeamService.getTeamFromCache(match.teamBId);
+            if (!teamA || !teamB) return;
+
+            const rosterA = teamA.playerRoster || [];
+            const rosterB = teamB.playerRoster || [];
+
+            // Load availability
+            let availA = { slots: {} };
+            let availB = { slots: {} };
+            try {
+                [availA, availB] = await Promise.all([
+                    AvailabilityService.loadWeekAvailability(match.teamAId, match.weekId),
+                    AvailabilityService.loadWeekAvailability(match.teamBId, match.weekId)
+                ]);
+            } catch (err) {
+                console.warn('Failed to load availability for scheduled match tooltip:', err);
+            }
+
+            const availableIdsA = availA.slots?.[match.slotId] || [];
+            const availableIdsB = availB.slots?.[match.slotId] || [];
+
+            const teamAAvailable = rosterA.filter(p => availableIdsA.includes(p.userId));
+            const teamAUnavailable = rosterA.filter(p => !availableIdsA.includes(p.userId));
+            const teamBAvailable = rosterB.filter(p => availableIdsB.includes(p.userId));
+            const teamBUnavailable = rosterB.filter(p => !availableIdsB.includes(p.userId));
+
+            const renderPlayers = (available, unavailable, isUserTeam) => {
+                const availHtml = available.map(p => {
+                    const isYou = isUserTeam && p.userId === _currentUserId;
+                    return `<div class="player-row player-available">
+                        <span class="player-status-dot available"></span>
+                        <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}${isYou ? ' (You)' : ''}</span>
+                    </div>`;
+                }).join('');
+                const unavailHtml = unavailable.map(p =>
+                    `<div class="player-row player-unavailable">
+                        <span class="player-status-dot unavailable"></span>
+                        <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}</span>
+                    </div>`
+                ).join('');
+                return availHtml + unavailHtml;
+            };
+
+            // Determine which team is the user's
+            const userTeamIds = [];
+            try {
+                const userDoc = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js')
+                    .then(({ doc, getDoc }) => getDoc(doc(window.firebase.db, 'users', _currentUserId)));
+                if (userDoc.exists()) {
+                    userTeamIds.push(...Object.keys(userDoc.data().teams || {}));
+                }
+            } catch (err) { /* ignore */ }
+
+            const isUserTeamA = userTeamIds.includes(match.teamAId);
+            const isUserTeamB = userTeamIds.includes(match.teamBId);
+
+            const html = `
+                <div class="match-tooltip-grid">
+                    <div class="match-column user-team-column">
+                        <div class="match-team-header">
+                            <span class="match-team-tag">[${_escapeHtml(teamA.teamTag || '')}]</span>
+                            <span class="match-player-count">${teamAAvailable.length}/${rosterA.length}</span>
+                        </div>
+                        <div class="match-roster-list">
+                            ${renderPlayers(teamAAvailable, teamAUnavailable, isUserTeamA)}
+                        </div>
+                    </div>
+                    <div class="match-column opponents-column">
+                        <div class="match-team-header">
+                            <span class="match-team-tag">[${_escapeHtml(teamB.teamTag || '')}]</span>
+                            <span class="match-player-count">${teamBAvailable.length}/${rosterB.length}</span>
+                        </div>
+                        <div class="match-roster-list">
+                            ${renderPlayers(teamBAvailable, teamBUnavailable, isUserTeamB)}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            _createMatchTooltip();
+            _matchTooltipCell = cell;
+
+            if (_matchTooltipHideTimeout) {
+                clearTimeout(_matchTooltipHideTimeout);
+                _matchTooltipHideTimeout = null;
+            }
+
+            _matchTooltip.innerHTML = html;
+
+            // Position tooltip near cell
+            const cellRect = cell.getBoundingClientRect();
+            _matchTooltip.style.visibility = 'hidden';
+            _matchTooltip.style.display = 'block';
+            const tooltipRect = _matchTooltip.getBoundingClientRect();
+
+            let left = cellRect.right + 8;
+            let top = cellRect.top;
+
+            if (left + tooltipRect.width > window.innerWidth - 8) {
+                left = cellRect.left - tooltipRect.width - 8;
+            }
+            if (top + tooltipRect.height > window.innerHeight - 8) {
+                top = window.innerHeight - tooltipRect.height - 8;
+            }
+            if (top < 8) top = 8;
+
+            _matchTooltip.style.left = `${left}px`;
+            _matchTooltip.style.top = `${top}px`;
+            _matchTooltip.style.visibility = 'visible';
+        }
+
+        // ========================================
         // Slice 3.4: Match Tooltip Functions
         // ========================================
 
@@ -1324,12 +1507,32 @@ const AvailabilityGrid = (function() {
          * Handle mouse enter on match cells for tooltip
          */
         function _handleMatchCellMouseEnter(e) {
-            if (!_comparisonMode) return;
-
             const cell = e.target.closest('.grid-cell');
             if (!cell) return;
 
-            // Only show tooltip for match cells
+            // Scheduled match tooltip (works regardless of comparison mode)
+            if (cell.classList.contains('has-scheduled-match')) {
+                const cellId = cell.dataset.cellId;
+                if (cellId) {
+                    const utcSlotId = _localToUtc(cellId);
+                    const match = _scheduledMatchMap.get(utcSlotId);
+                    if (match) {
+                        if (_matchTooltipCell === cell) {
+                            if (_matchTooltipHideTimeout) {
+                                clearTimeout(_matchTooltipHideTimeout);
+                                _matchTooltipHideTimeout = null;
+                            }
+                            return;
+                        }
+                        _showScheduledMatchTooltip(cell, match);
+                        return;
+                    }
+                }
+            }
+
+            // Comparison mode tooltip
+            if (!_comparisonMode) return;
+
             if (!cell.classList.contains('comparison-match-full') &&
                 !cell.classList.contains('comparison-match-partial')) {
                 return;
@@ -1354,7 +1557,6 @@ const AvailabilityGrid = (function() {
          * Handle mouse leave on match cells
          */
         function _handleMatchCellMouseLeave(e) {
-            if (!_comparisonMode) return;
 
             const cell = e.target.closest('.grid-cell');
             if (!cell) return;
@@ -1394,7 +1596,10 @@ const AvailabilityGrid = (function() {
             exitComparisonMode,
             updateComparisonHighlights,
             clearComparisonHighlights,
-            isComparisonMode
+            isComparisonMode,
+            // Scheduled match highlights
+            updateScheduledMatchHighlights,
+            clearScheduledMatchHighlights
         };
 
         return instance;
