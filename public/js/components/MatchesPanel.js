@@ -947,7 +947,7 @@ const MatchesPanel = (function() {
             <div class="match-tooltip-grid">
                 <div class="match-column user-team-column">
                     <div class="match-team-header">
-                        <span class="match-team-tag">[${_escapeHtml(teamA.teamTag || '')}]</span>
+                        <span class="match-team-name">${_escapeHtml(teamA.teamName || teamA.teamTag || '')}</span>
                         <span class="match-player-count">${teamAAvailable.length}/${rosterA.length}</span>
                     </div>
                     <div class="match-roster-list">
@@ -956,7 +956,7 @@ const MatchesPanel = (function() {
                 </div>
                 <div class="match-column opponents-column">
                     <div class="match-team-header">
-                        <span class="match-team-tag">[${_escapeHtml(teamB.teamTag || '')}]</span>
+                        <span class="match-team-name">${_escapeHtml(teamB.teamName || teamB.teamTag || '')}</span>
                         <span class="match-player-count">${teamBAvailable.length}/${rosterB.length}</span>
                     </div>
                     <div class="match-roster-list">

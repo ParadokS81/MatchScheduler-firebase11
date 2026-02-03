@@ -1000,6 +1000,10 @@ const AvailabilityGrid = (function() {
 
                 _renderPlayerBadges(cell, playerIds, playerRoster, currentUserId, displayMode);
 
+                // Re-apply scheduled match label if this cell has one
+                // (_renderPlayerBadges overwrites innerHTML, so the label gets wiped)
+                _reapplyScheduledMatchLabel(cell);
+
                 // Update user-available state (keep existing border indicator)
                 if (playerIds.includes(currentUserId)) {
                     cell.classList.add('user-available');
@@ -1139,8 +1143,42 @@ const AvailabilityGrid = (function() {
         let _scheduledMatchMap = new Map(); // UTC slotId → match object
 
         /**
+         * Re-apply the scheduled match label to a cell after innerHTML was overwritten.
+         * Called by updateTeamDisplay after _renderPlayerBadges wipes the cell content.
+         */
+        function _reapplyScheduledMatchLabel(cell) {
+            const cellId = cell.dataset.cellId;
+            if (!cellId) return;
+
+            const utcSlotId = _localToUtc(cellId);
+            const match = _scheduledMatchMap.get(utcSlotId);
+            if (!match) return;
+
+            // Ensure class is present
+            cell.classList.add('has-scheduled-match');
+
+            // Remove any existing label (shouldn't be one, but be safe)
+            const existing = cell.querySelector('.scheduled-match-label');
+            if (existing) existing.remove();
+
+            // Re-create the label
+            const label = document.createElement('div');
+            label.className = 'scheduled-match-label';
+
+            const teamA = typeof TeamService !== 'undefined' ? TeamService.getTeamFromCache(match.teamAId) : null;
+            const teamB = typeof TeamService !== 'undefined' ? TeamService.getTeamFromCache(match.teamBId) : null;
+            const logoA = teamA?.activeLogo?.urls?.small || '';
+            const logoB = teamB?.activeLogo?.urls?.small || '';
+            const tagA = _escapeHtml(match.teamATag || '');
+            const tagB = _escapeHtml(match.teamBTag || '');
+
+            label.innerHTML = `${logoA ? `<img src="${logoA}" class="sml-logo" alt="${tagA}">` : `<span class="sml-tag">${tagA}</span>`}<span class="sml-vs">vs</span>${logoB ? `<img src="${logoB}" class="sml-logo" alt="${tagB}">` : `<span class="sml-tag">${tagB}</span>`}`;
+            cell.appendChild(label);
+        }
+
+        /**
          * Update cells with scheduled match highlights.
-         * Shows team tags inside cells that have a scheduled match.
+         * Shows team logos inside cells that have a scheduled match.
          * @param {Array} matches - Array of scheduled match objects for current week
          */
         function updateScheduledMatchHighlights(matches) {
@@ -1171,12 +1209,18 @@ const AvailabilityGrid = (function() {
                 if (match) {
                     cell.classList.add('has-scheduled-match');
 
-                    // Add team tag label overlay
+                    // Add logo vs logo overlay inside the cell
                     const label = document.createElement('div');
                     label.className = 'scheduled-match-label';
+
+                    const teamA = typeof TeamService !== 'undefined' ? TeamService.getTeamFromCache(match.teamAId) : null;
+                    const teamB = typeof TeamService !== 'undefined' ? TeamService.getTeamFromCache(match.teamBId) : null;
+                    const logoA = teamA?.activeLogo?.urls?.small || '';
+                    const logoB = teamB?.activeLogo?.urls?.small || '';
                     const tagA = _escapeHtml(match.teamATag || '');
                     const tagB = _escapeHtml(match.teamBTag || '');
-                    label.innerHTML = `<span class="sml-tag">${tagA}</span><span class="sml-vs">v</span><span class="sml-tag">${tagB}</span>`;
+
+                    label.innerHTML = `${logoA ? `<img src="${logoA}" class="sml-logo" alt="${tagA}">` : `<span class="sml-tag">${tagA}</span>`}<span class="sml-vs">vs</span>${logoB ? `<img src="${logoB}" class="sml-logo" alt="${tagB}">` : `<span class="sml-tag">${tagB}</span>`}`;
                     cell.appendChild(label);
                 }
             });
@@ -1264,7 +1308,7 @@ const AvailabilityGrid = (function() {
                 <div class="match-tooltip-grid">
                     <div class="match-column user-team-column">
                         <div class="match-team-header">
-                            <span class="match-team-tag">[${_escapeHtml(teamA.teamTag || '')}]</span>
+                            <span class="match-team-name">${_escapeHtml(teamA.teamName || teamA.teamTag || '')}</span>
                             <span class="match-player-count">${teamAAvailable.length}/${rosterA.length}</span>
                         </div>
                         <div class="match-roster-list">
@@ -1273,7 +1317,7 @@ const AvailabilityGrid = (function() {
                     </div>
                     <div class="match-column opponents-column">
                         <div class="match-team-header">
-                            <span class="match-team-tag">[${_escapeHtml(teamB.teamTag || '')}]</span>
+                            <span class="match-team-name">${_escapeHtml(teamB.teamName || teamB.teamTag || '')}</span>
                             <span class="match-player-count">${teamBAvailable.length}/${rosterB.length}</span>
                         </div>
                         <div class="match-roster-list">
@@ -1390,7 +1434,7 @@ const AvailabilityGrid = (function() {
                 userTeamHtml = `
                     <div class="match-column user-team-column">
                         <div class="match-team-header">
-                            <span class="match-team-tag">[${_escapeHtml(userTeamInfo.teamTag)}]</span>
+                            <span class="match-team-name">${_escapeHtml(userTeamInfo.teamName)}</span>
                             <span class="match-player-count">${userTeamInfo.availablePlayers.length}/${userTeamInfo.availablePlayers.length + userTeamInfo.unavailablePlayers.length}</span>
                         </div>
                         <div class="match-roster-list">
@@ -1420,7 +1464,6 @@ const AvailabilityGrid = (function() {
                 return `
                     <div class="match-team-section">
                         <div class="match-team-header">
-                            <span class="match-team-tag">[${_escapeHtml(match.teamTag)}]</span>
                             <span class="match-team-name">${_escapeHtml(match.teamName)}</span>
                             <span class="match-player-count">${match.availablePlayers.length}/${match.availablePlayers.length + match.unavailablePlayers.length}</span>
                         </div>

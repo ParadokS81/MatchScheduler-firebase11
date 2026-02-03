@@ -18,17 +18,6 @@ function getDiscordCredentials() {
 const db = getFirestore();
 
 /**
- * Helper: Generate initials from username
- * Takes first 2-3 characters and uppercases
- */
-function generateInitials(username) {
-    // Remove special characters, take first word if multiple
-    const clean = username.replace(/[^a-zA-Z0-9]/g, '');
-    // Take first 3 characters, uppercase
-    return clean.substring(0, 3).toUpperCase() || 'USR';
-}
-
-/**
  * Helper: Construct Discord avatar URL
  */
 function getDiscordAvatarUrl(userId, avatarHash) {
@@ -270,11 +259,10 @@ exports.discordOAuthExchange = onCall({
             isNewUser = true;
             console.log(`Created new user: ${uid}`);
 
-            // Create user document
+            // Create user document (no displayName/initials - user must set them in ProfileModal)
             await usersRef.doc(uid).set({
-                // Display info (can be edited later)
-                displayName: discordUser.username,
-                initials: generateInitials(discordUser.username),
+                displayName: null,
+                initials: null,
                 email: discordUser.email || null,
                 photoURL: getDiscordAvatarUrl(discordUser.id, discordUser.avatar),
 

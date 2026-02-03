@@ -79,6 +79,16 @@ const UserProfile = (function() {
                 console.log('🎨 Rendering authenticated mode...');
                 _renderAuthenticatedMode();
 
+                // Force profile setup if user hasn't set nick/initials yet
+                if (!_userProfile?.initials) {
+                    console.log('🔒 No initials set - forcing profile setup modal');
+                    setTimeout(() => {
+                        if (typeof ProfileModal !== 'undefined') {
+                            ProfileModal.show(user, _userProfile);
+                        }
+                    }, 300);
+                }
+
                 // Also update compact view if it exists (Slice 5.0a)
                 _renderCompactContent();
 
@@ -305,7 +315,8 @@ const UserProfile = (function() {
             }
 
             if (result.isNewUser) {
-                console.log('👋 New Discord user signed in - profile created automatically');
+                console.log('👋 New Discord user signed in - forcing profile setup');
+                // Profile setup will be triggered by auth state change detecting no initials
             }
 
         } catch (error) {
@@ -416,8 +427,8 @@ const UserProfile = (function() {
             const result = await AuthService.signInWithGoogle();
 
             if (result.isNewUser) {
-                // Don't auto-show profile creation - let user initiate when they want to join/create team
-                console.log('👋 New user signed in - profile creation available when needed');
+                console.log('👋 New Google user signed in - forcing profile setup');
+                // Profile setup will be triggered by auth state change detecting no initials
             }
 
         } catch (error) {
@@ -452,28 +463,12 @@ const UserProfile = (function() {
         }
     }
 
-    // Show profile setup modal (called when user needs to set up profile)
-    function _showProfileSetupModal() {
-        ProfileModal.show(_currentUser, _userProfile);
-    }
-    
     // Show error message
     function _showError(message) {
         console.error('❌ Error:', message);
         if (typeof ToastService !== 'undefined') {
             ToastService.showError(message);
         }
-    }
-    
-    // Get user initials from name
-    function _getUserInitials() {
-        if (!_currentUser?.displayName) return '?';
-        
-        const names = _currentUser.displayName.split(' ');
-        if (names.length === 1) {
-            return names[0].charAt(0).toUpperCase();
-        }
-        return (names[0].charAt(0) + names[names.length - 1].charAt(0)).toUpperCase();
     }
     
     // ========================================

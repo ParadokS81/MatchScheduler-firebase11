@@ -72,7 +72,7 @@ const ProfileModal = (function() {
                                         type="text"
                                         id="displayName"
                                         name="displayName"
-                                        value="${_userProfile?.displayName || user.displayName || ''}"
+                                        value="${_isSetupMode ? '' : (_userProfile?.displayName || user.displayName || '')}"
                                         placeholder="Your gaming name"
                                         class="w-full px-3 py-2 bg-input border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                                         required
@@ -128,6 +128,7 @@ const ProfileModal = (function() {
                     <!-- Footer -->
                     <div class="flex items-center justify-between p-4 border-t border-slate-700">
                         <div class="flex items-center gap-2">
+                            ${!_isSetupMode ? `
                             <button
                                 type="button"
                                 id="profile-logout-btn"
@@ -135,7 +136,6 @@ const ProfileModal = (function() {
                             >
                                 Sign Out
                             </button>
-                            ${!_isSetupMode ? `
                             <button
                                 type="button"
                                 id="profile-delete-btn"
@@ -143,9 +143,18 @@ const ProfileModal = (function() {
                             >
                                 Delete
                             </button>
-                            ` : ''}
+                            ` : `
+                            <button
+                                type="button"
+                                id="profile-logout-btn"
+                                class="px-3 py-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded-md transition-colors"
+                            >
+                                Sign Out
+                            </button>
+                            `}
                         </div>
                         <div class="flex items-center gap-2">
+                            ${!_isSetupMode ? `
                             <button
                                 type="button"
                                 id="profile-cancel-btn"
@@ -153,13 +162,14 @@ const ProfileModal = (function() {
                             >
                                 Cancel
                             </button>
+                            ` : ''}
                             <button
                                 type="submit"
                                 id="profile-save-btn"
                                 form="profile-form"
                                 class="px-4 py-2 text-sm bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-md transition-colors"
                             >
-                                Save
+                                ${_isSetupMode ? 'Confirm & Continue' : 'Save'}
                             </button>
                         </div>
                     </div>
@@ -234,17 +244,21 @@ const ProfileModal = (function() {
         // Attach avatar source selection listeners
         _attachAvatarListeners();
 
-        // Close on backdrop click
+        // Close on backdrop click (disabled in setup mode - must complete profile)
         const modalContainer = document.getElementById('modal-container');
-        modalContainer.addEventListener('click', (e) => {
-            if (e.target === modalContainer) {
-                _handleCancel();
-            }
-        });
+        if (!_isSetupMode) {
+            modalContainer.addEventListener('click', (e) => {
+                if (e.target === modalContainer) {
+                    _handleCancel();
+                }
+            });
+        }
 
-        // Close on escape key
-        _keydownHandler = _handleKeyDown;
-        document.addEventListener('keydown', _keydownHandler);
+        // Close on escape key (disabled in setup mode - must complete profile)
+        if (!_isSetupMode) {
+            _keydownHandler = _handleKeyDown;
+            document.addEventListener('keydown', _keydownHandler);
+        }
     }
     
     // Handle form submission
@@ -809,7 +823,7 @@ const ProfileModal = (function() {
             `;
         } else {
             button.disabled = false;
-            button.innerHTML = _isSetupMode ? 'Save Profile' : 'Save Changes';
+            button.innerHTML = _isSetupMode ? 'Confirm & Continue' : 'Save';
         }
     }
     
