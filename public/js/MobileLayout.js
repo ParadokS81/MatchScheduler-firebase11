@@ -267,6 +267,11 @@ const MobileLayout = (function() {
         _overlay.classList.add('hidden');
         document.body.style.overflow = '';
 
+        // Hide any lingering tooltips (they use mouseleave which doesn't fire on touch)
+        document.querySelectorAll('.player-tooltip').forEach(el => {
+            el.style.display = 'none';
+        });
+
         // Hide drawer element after transition completes
         drawer.addEventListener('transitionend', function handler() {
             if (!drawer.classList.contains('open')) {

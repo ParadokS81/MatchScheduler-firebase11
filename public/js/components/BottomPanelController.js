@@ -38,9 +38,17 @@ const BottomPanelController = (function() {
     /**
      * Switch to a different tab
      * @param {string} tabId - Tab identifier ('calendar', 'teams', 'tournament')
+     * @param {Object} [options] - Options
+     * @param {boolean} [options.force] - Force switch even if already on this tab (used by Router)
      */
-    function switchTab(tabId) {
-        if (_activeTab === tabId) return;
+    function switchTab(tabId, options) {
+        if (_activeTab === tabId && !(options && options.force)) {
+            // If already on teams/players tab, go back to overview (deselect team)
+            if (tabId === 'teams' || tabId === 'players') {
+                TeamsBrowserPanel.deselectTeam();
+            }
+            return;
+        }
 
         console.log('🎛️ Switching to tab:', tabId);
 

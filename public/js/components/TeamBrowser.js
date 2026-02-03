@@ -99,9 +99,14 @@ const TeamBrowser = (function() {
                 <div class="browser-header mb-2">
                     <!-- Search Input -->
                     <div class="relative mb-2">
-                        <input type="text"
+                        <input type="search"
                                id="team-search-input"
                                placeholder="Search teams or players..."
+                               inputmode="search"
+                               autocomplete="off"
+                               autocorrect="off"
+                               autocapitalize="off"
+                               spellcheck="false"
                                class="w-full px-3 py-1.5 text-sm bg-muted border border-border rounded-md
                                       focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary
                                       placeholder:text-muted-foreground"
@@ -292,6 +297,21 @@ const TeamBrowser = (function() {
                 window.dispatchEvent(new CustomEvent('team-browser-detail-select', {
                     detail: { teamId }
                 }));
+
+                // On mobile: toggle roster tooltip on tap (no hover available)
+                if (typeof MobileLayout !== 'undefined' && MobileLayout.isMobile()) {
+                    const team = _allTeams.find(t => t.id === teamId);
+                    if (team && team.playerRoster?.length > 0) {
+                        // Toggle: if tooltip is already showing for this team, hide it
+                        if (_teamTooltip && _teamTooltip.style.display !== 'none' &&
+                            _teamTooltip.dataset.teamId === teamId) {
+                            _hideTeamTooltipImmediate();
+                        } else {
+                            _showTeamTooltip(card, team);
+                            if (_teamTooltip) _teamTooltip.dataset.teamId = teamId;
+                        }
+                    }
+                }
             });
 
             // Hover handlers for player roster tooltip (desktop only)
@@ -448,6 +468,16 @@ const TeamBrowser = (function() {
                 _teamTooltip.style.display = 'none';
             }
         }, 150); // Small delay to allow moving to tooltip
+    }
+
+    function _hideTeamTooltipImmediate() {
+        if (_tooltipHideTimeout) {
+            clearTimeout(_tooltipHideTimeout);
+            _tooltipHideTimeout = null;
+        }
+        if (_teamTooltip) {
+            _teamTooltip.style.display = 'none';
+        }
     }
 
     function _renderTeamCard(team) {

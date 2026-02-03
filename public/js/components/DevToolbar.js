@@ -7,6 +7,12 @@ const DevToolbar = (function() {
     let _container = null;
     let _isExpanded = false;
 
+    function _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     function init() {
         // Only initialize in dev mode
         if (!AuthService.isDevMode()) {
@@ -219,13 +225,13 @@ const DevToolbar = (function() {
         let lastTeam = '';
         const html = devUsers.map(user => {
             const teamLabel = user.team && user.team !== lastTeam
-                ? `<div class="dev-toolbar-team-label">${user.team}</div>`
+                ? `<div class="dev-toolbar-team-label">${_escapeHtml(user.team)}</div>`
                 : '';
             lastTeam = user.team || '';
             return `${teamLabel}<button class="dev-user-btn ${currentUser?.uid === user.uid ? 'active' : ''}"
                     data-uid="${user.uid}">
-                <span class="dev-user-avatar">${user.initials}</span>
-                <span class="dev-user-name">${user.displayName}</span>
+                <span class="dev-user-avatar">${_escapeHtml(user.initials)}</span>
+                <span class="dev-user-name">${_escapeHtml(user.displayName)}</span>
             </button>`;
         }).join('');
         usersContainer.innerHTML = html;

@@ -5,9 +5,9 @@ service cloud.firestore {
     
     // Users collection security rules
     match /users/{userId} {
-      // READ: Anyone can read user profiles (needed for team rosters, guest browsing)
-      // Note: For MVP, this broad access is acceptable for guest browsing experience
-      allow read: if true;
+      // READ: Authenticated users only (team rosters, profiles)
+      // Guest browsing requires login first - protects email/Discord info from scrapers
+      allow read: if request.auth != null;
       
       // CREATE: User can only create their own profile document with strict validation
       allow create: if request.auth != null
@@ -166,9 +166,11 @@ service cloud.firestore {
 
     // Teams collection security rules
     match /teams/{teamId} {
-      // READ: Anyone can read teams (guest browsing + authenticated users)
-      // Handles cases where archived/active fields might not exist
-      allow read: if (!('archived' in resource.data) || resource.data.archived == false);
+      // READ: Authenticated users can read active teams
+      // Note: joinCode is visible to auth users - acceptable for community app where codes are shared via Discord
+      // If stricter join code protection is needed later, move joinCode to teams/{teamId}/private/config subcollection
+      allow read: if request.auth != null
+        && (!('archived' in resource.data) || resource.data.archived == false);
       
       // CREATE: Allow Cloud Functions to create teams (admin SDK bypasses rules anyway)
       // Direct client creation is still blocked by validation requirements
@@ -366,12 +368,13 @@ service cloud.firestore {
     
     // Availability collection security rules
     match /availability/{documentId} {
-      // READ: Anyone can read availability data (needed for team comparison + guest browsing)
-      allow read: if true;
+      // READ: Authenticated users only (team comparison views)
+      allow read: if request.auth != null;
 
-      // WRITE: Authenticated users can write (team membership validated by Cloud Functions in prod)
-      // In dev mode, direct writes are allowed for rapid iteration
-      // In production, Cloud Functions handle validation before writing
+      // WRITE: Authenticated users only
+      // Team membership is validated by Cloud Functions (admin SDK) in production
+      // In dev mode, direct writes go through but user must be authenticated
+      // Defense-in-depth: Cloud Function checks playerRoster membership before writing
       allow write: if request.auth != null;
     }
     
@@ -397,28 +400,29 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Event Log collection - Read-only for users (replaces rosterEvents)
+    // Event Log collection - Read-only for authenticated users
     match /eventLog/{documentId} {
-      // Anyone can read (public event history for community feed + guest browsing)
-      allow read: if true;
-      
+      // Authenticated users can read event history (community feed)
+      allow read: if request.auth != null;
+
       // Only Cloud Functions can write (no direct writes from clients)
       allow write: if false;
     }
-    
+
     // Legacy rosterEvents collection - Read-only for backward compatibility
     match /rosterEvents/{documentId} {
-      // Anyone can read (public roster history for community feed + guest browsing)
-      allow read: if true;
-      
+      // Authenticated users can read roster history
+      allow read: if request.auth != null;
+
       // Only Cloud Functions can write (no direct writes from clients)
       allow write: if false;
     }
     
     // Deny all other access by default
     match /{document=**} {
-      // Temporary: Allow admin console access for development
-      allow read: if request.auth != null && request.auth.token.email == "david.larsen.1981@gmail.com";
+      // Admin access via custom claims (set with Firebase Admin SDK)
+      // To grant: admin.auth().setCustomUserClaims(uid, { admin: true })
+      allow read: if request.auth != null && request.auth.token.admin == true;
       allow write: if false;
     }
   }

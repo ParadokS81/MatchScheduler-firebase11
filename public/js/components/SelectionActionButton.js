@@ -50,12 +50,13 @@ const SelectionActionButton = (function() {
         // Clear button (bottom-right)
         _clearButton = document.createElement('button');
         _clearButton.className = 'flex items-center justify-center gap-1 px-2 py-2 rounded-lg shadow-lg text-xs font-medium bg-destructive text-destructive-foreground hover:bg-destructive/80';
+        const clearLabel = (typeof MobileLayout !== 'undefined' && MobileLayout.isMobile()) ? 'Clear' : 'Esc';
         _clearButton.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
-            <span>Esc</span>
+            <span>${clearLabel}</span>
         `;
         _clearButton.title = 'Clear selection';
         _clearButton.addEventListener('click', _handleClear);
@@ -203,10 +204,15 @@ const SelectionActionButton = (function() {
     }
 
     /**
-     * Handle Clear button click - clear selection
+     * Handle Clear button click - clear selection.
+     * Uses GridActionButtons if available, falls back to direct event dispatch.
      */
     function _handleClear() {
-        GridActionButtons.clearAll?.();
+        if (typeof GridActionButtons !== 'undefined' && GridActionButtons.clearAll) {
+            GridActionButtons.clearAll();
+        }
+        // Fallback: dispatch event that app.js can listen for directly
+        document.dispatchEvent(new CustomEvent('clear-all-selections'));
         _hide();
     }
 

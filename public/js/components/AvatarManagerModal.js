@@ -336,7 +336,15 @@ const AvatarManagerModal = (function() {
                 // Update the custom option preview thumbnail
                 const customOption = document.querySelector('[data-source="custom"] .w-10');
                 if (customOption && previewUrl) {
-                    customOption.innerHTML = `<img src="${previewUrl}" alt="custom" class="w-full h-full object-cover">`;
+                    // Validate URL is a safe blob: or data: URL from the upload flow
+                    if (previewUrl.startsWith('blob:') || previewUrl.startsWith('data:image/')) {
+                        customOption.innerHTML = '';
+                        const img = document.createElement('img');
+                        img.src = previewUrl;
+                        img.alt = 'custom';
+                        img.className = 'w-full h-full object-cover';
+                        customOption.appendChild(img);
+                    }
                 }
             });
         } else {

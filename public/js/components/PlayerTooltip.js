@@ -8,6 +8,12 @@ const PlayerTooltip = (function() {
     let _hideTimeout = null;
     let _currentCellId = null;
 
+    function _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     function _createTooltip() {
         if (_tooltip) return;
 
@@ -59,8 +65,8 @@ const PlayerTooltip = (function() {
             const currentClass = player.isCurrentUser ? 'tooltip-current' : '';
             return `
                 <div class="tooltip-player ${currentClass}">
-                    <span class="tooltip-initials">${player.initials}</span>
-                    <span class="tooltip-name">${player.displayName}${youBadge}</span>
+                    <span class="tooltip-initials">${_escapeHtml(player.initials)}</span>
+                    <span class="tooltip-name">${_escapeHtml(player.displayName)}${youBadge}</span>
                 </div>
             `;
         }).join('');

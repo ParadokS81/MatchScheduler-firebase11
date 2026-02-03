@@ -36,9 +36,10 @@ exports.processAvatarUpload = onObjectFinalized({
 
     // --- Basic validation and exit conditions ---
 
-    // Exit if this is not an image
-    if (!contentType || !contentType.startsWith('image/')) {
-        console.log('This is not an image.');
+    // Whitelist safe image MIME types only (no SVG - can contain embedded JavaScript)
+    const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!contentType || !ALLOWED_MIME_TYPES.includes(contentType)) {
+        console.log(`Rejected file with content type: ${contentType}. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}`);
         return null;
     }
 

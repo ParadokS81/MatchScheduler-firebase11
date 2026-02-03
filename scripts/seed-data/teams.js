@@ -3,7 +3,7 @@
  *
  * Data source: https://www.thebig4.se/api/teams (scraped 2026-02-02)
  * Logos: https://www.thebig4.se/teams/{name}.png
- * 31 teams, ~180 players
+ * 30 teams, ~170 players
  *
  * Edit THIS file when:
  * - Rosters change
@@ -29,7 +29,6 @@ const CAPTAIN_DISCORD = {
     "Mille": { username: "mille", discordId: "801726266431635466" },
     "Splash": { username: "splash", discordId: "196229216373571593" },
     "ParadokS": { username: "paradoks", discordId: "140268554816716800" },
-    "veggie": { username: "veggie", discordId: "1127113677749887057" },
     "Oddjob": { username: "oddjob", discordId: "835415147040079913" },
     "jOn": { username: "jon", discordId: "808346233256017973" },
     "gLAd": { username: "glad", discordId: "311446450871599104" },
@@ -58,11 +57,11 @@ const CAPTAIN_DISCORD = {
 // BIG4 SEASON 2 TEAMS
 // Data source: https://www.thebig4.se/api/teams
 // Logos: https://www.thebig4.se/teams/{name}.png
-// Divisions: rough estimation for testing
+// Divisions: official Big4 Season 2 divisions
 // ============================================
 const QW_TEAMS = [
     // ═══════════════════════════════════════════
-    //  DIVISION 1 (8 teams)
+    //  DIVISION 1 (11 teams)
     // ═══════════════════════════════════════════
     {
         id: 'team-pol-001',
@@ -180,34 +179,20 @@ const QW_TEAMS = [
             { name: 'Mythic', role: 'member' },
         ]
     },
-
-    // ═══════════════════════════════════════════
-    //  DIVISION 2 (6 teams)
-    // ═══════════════════════════════════════════
     {
-        id: 'team-gof-001',
-        teamName: 'Good Old Friends',
-        teamTag: null,
-        divisions: ['D2'],
-        logoUrl: 'https://www.thebig4.se/teams/goodoldfriends.png',
+        id: 'team-3b-001',
+        teamName: 'Bear Beer Balalaika',
+        teamTag: '3b',
+        divisions: ['D1'],
+        logoUrl: 'https://www.thebig4.se/teams/bearbeerbalalaika.png',
         players: [
-            { name: 'jOn', role: 'leader' },
-            { name: 'Ekz', role: 'member' },
-            { name: 'Tumult', role: 'member' },
-            { name: 'Bass', role: 'member' },
-        ]
-    },
-    {
-        id: 'team-d2-001',
-        teamName: 'Death Dealers',
-        teamTag: 'd2',
-        divisions: ['D2'],
-        logoUrl: 'https://www.thebig4.se/teams/deathdealers.png',
-        players: [
-            { name: 'Plast', role: 'leader' },
-            { name: 'Hammer', role: 'member' },
-            { name: 'Raket', role: 'member' },
-            { name: 'Coj', role: 'member' },
+            { name: 'gLAd', role: 'leader' },
+            { name: 'gor', role: 'member' },
+            { name: 'Zepp', role: 'member' },
+            { name: 'max_power', role: 'member' },
+            { name: 'SS', role: 'member' },
+            { name: 'Ass', role: 'member' },
+            { name: 'rusty-q', role: 'member' },
         ]
     },
     {
@@ -226,33 +211,65 @@ const QW_TEAMS = [
         ]
     },
     {
-        id: 'team-3b-001',
-        teamName: 'Bear Beer Balalaika',
-        teamTag: '3b',
+        id: 'team-tsq-001',
+        teamName: 'the Suicide Quad',
+        teamTag: 'tSQ',
         divisions: ['D1'],
-        logoUrl: 'https://www.thebig4.se/teams/bearbeerbalalaika.png',
+        logoUrl: 'https://www.thebig4.se/teams/thesuicidequad.png',
         players: [
-            { name: 'gLAd', role: 'leader' },
-            { name: 'gor', role: 'member' },
-            { name: 'Zepp', role: 'member' },
-            { name: 'max_power', role: 'member' },
-            { name: 'SS', role: 'member' },
-            { name: 'Ass', role: 'member' },
-            { name: 'rusty-q', role: 'member' },
+            { name: 'conan', role: 'leader' },
+            { name: 'djevulsk', role: 'member' },
+            { name: 'elguapo', role: 'member' },
+            { name: 'nas', role: 'member' },
+            { name: 'peppe', role: 'member' },
+            { name: 'phrenic', role: 'member' },
+            { name: 'mutilator', role: 'member' },
+        ]
+    },
+
+    // ═══════════════════════════════════════════
+    //  DIVISION 2 (10 teams)
+    // ═══════════════════════════════════════════
+    {
+        id: 'team-afk-001',
+        teamName: 'Aim For Kill',
+        teamTag: null,
+        divisions: ['D2'],
+        logoUrl: 'https://www.thebig4.se/teams/aimforkill.png',
+        players: [
+            { name: 'Mushi', role: 'leader' },
+            { name: 'Rotker', role: 'member' },
+            { name: 'Gawlo', role: 'member' },
+            { name: 'Darff', role: 'member' },
+            { name: 'Aki', role: 'member' },
+            { name: 'eQu', role: 'member' },
         ]
     },
     {
-        id: 'team-tot-001',
-        teamName: 'Tribe of Tjernobyl',
-        teamTag: 'tot',
+        id: 'team-d2-001',
+        teamName: 'Death Dealers',
+        teamTag: 'd2',
         divisions: ['D2'],
-        logoUrl: 'https://www.thebig4.se/teams/tribeoftjernobyl.png',
+        logoUrl: 'https://www.thebig4.se/teams/deathdealers.png',
         players: [
-            { name: 'Oddjob', role: 'leader' },
-            { name: 'Slime', role: 'member' },
-            { name: 'LethalWiz', role: 'member' },
-            { name: 'Fix', role: 'member' },
-            { name: 'Sassa', role: 'member' },
+            { name: 'Plast', role: 'leader' },
+            { name: 'Hammer', role: 'member' },
+            { name: 'Raket', role: 'member' },
+            { name: 'Coj', role: 'member' },
+        ]
+    },
+    {
+        id: 'team-dds-001',
+        teamName: 'Death Dealers Shadows',
+        teamTag: null,
+        divisions: ['D2'],
+        logoUrl: 'https://www.thebig4.se/teams/deathdealers.png',
+        players: [
+            { name: 'spokz', role: 'leader' },
+            { name: 'myca', role: 'member' },
+            { name: 'pitbull', role: 'member' },
+            { name: 'frame', role: 'member' },
+            { name: 'flamer', role: 'member' },
         ]
     },
     {
@@ -270,9 +287,92 @@ const QW_TEAMS = [
             { name: 'Slaughter', role: 'member' },
         ]
     },
+    {
+        id: 'team-gof-001',
+        teamName: 'Good Old Friends',
+        teamTag: null,
+        divisions: ['D2'],
+        logoUrl: 'https://www.thebig4.se/teams/goodoldfriends.png',
+        players: [
+            { name: 'jOn', role: 'leader' },
+            { name: 'Ekz', role: 'member' },
+            { name: 'Tumult', role: 'member' },
+            { name: 'Bass', role: 'member' },
+        ]
+    },
+    {
+        id: 'team-pe-001',
+        teamName: 'Pineapple Express',
+        teamTag: null,
+        divisions: ['D2'],
+        logoUrl: 'https://www.thebig4.se/teams/pineappleexpress.png',
+        players: [
+            { name: 'blaze', role: 'leader' },
+            { name: 'Namtsui', role: 'member' },
+            { name: 'Dusty', role: 'member' },
+            { name: 'GND', role: 'member' },
+            { name: 'Viag', role: 'member' },
+        ]
+    },
+    {
+        id: 'team-rs-001',
+        teamName: 'Rebel Souls',
+        teamTag: null,
+        divisions: ['D2'],
+        logoUrl: 'https://www.thebig4.se/teams/rebelsouls.png',
+        players: [
+            { name: 'Szturm', role: 'leader' },
+            { name: 'hangtime', role: 'member' },
+            { name: 'riki', role: 'member' },
+            { name: 'rokky', role: 'member' },
+            { name: 'splif', role: 'member' },
+        ]
+    },
+    {
+        id: 'team-rrg-001',
+        teamName: 'Retrorockets Green',
+        teamTag: null,
+        divisions: ['D2'],
+        logoUrl: 'https://www.thebig4.se/teams/oneretrorocket.png',
+        players: [
+            { name: 'paniagua', role: 'leader' },
+            { name: 'N3ophyt3', role: 'member' },
+            { name: 'biggz', role: 'member' },
+            { name: 'nexus', role: 'member' },
+            { name: 'DobeZz', role: 'member' },
+        ]
+    },
+    {
+        id: 'team-rry-001',
+        teamName: 'Retrorockets Yellow',
+        teamTag: null,
+        divisions: ['D2'],
+        logoUrl: 'https://www.thebig4.se/teams/oneretrorocket.png',
+        players: [
+            { name: 'ocoini', role: 'leader' },
+            { name: 'gore', role: 'member' },
+            { name: 'robin', role: 'member' },
+            { name: 'Vukmir', role: 'member' },
+            { name: 'anni', role: 'member' },
+        ]
+    },
+    {
+        id: 'team-tot-001',
+        teamName: 'Tribe of Tjernobyl',
+        teamTag: 'tot',
+        divisions: ['D2'],
+        logoUrl: 'https://www.thebig4.se/teams/tribeoftjernobyl.png',
+        players: [
+            { name: 'Oddjob', role: 'leader' },
+            { name: 'Slime', role: 'member' },
+            { name: 'LethalWiz', role: 'member' },
+            { name: 'Fix', role: 'member' },
+            { name: 'Sassa', role: 'member' },
+        ]
+    },
 
     // ═══════════════════════════════════════════
-    //  DIVISION 3 (17 teams)
+    //  DIVISION 3 (9 teams)
     // ═══════════════════════════════════════════
     {
         id: 'team-boom-001',
@@ -286,37 +386,6 @@ const QW_TEAMS = [
             { name: 'Kreator', role: 'member' },
             { name: 'Le1no', role: 'member' },
             { name: 'Bill', role: 'member' },
-        ]
-    },
-    {
-        id: 'team-tsq-001',
-        teamName: 'the Suicide Squad',
-        teamTag: 'tSQ',
-        divisions: ['D1'],
-        logoUrl: 'https://www.thebig4.se/teams/thesuicidequad.png',
-        players: [
-            { name: 'conan', role: 'leader' },
-            { name: 'djevulsk', role: 'member' },
-            { name: 'elguapo', role: 'member' },
-            { name: 'nas', role: 'member' },
-            { name: 'peppe', role: 'member' },
-            { name: 'phrenic', role: 'member' },
-            { name: 'mutilator', role: 'member' },
-        ]
-    },
-    {
-        id: 'team-nw-001',
-        teamName: 'night Wolves',
-        teamTag: null,
-        divisions: ['D3'],
-        logoUrl: 'https://www.thebig4.se/teams/nightwolves.png',
-        players: [
-            { name: 'veggie', role: 'leader' },
-            { name: 'Coinz', role: 'member' },
-            { name: 'Toes', role: 'member' },
-            { name: 'R1zla', role: 'member' },
-            { name: 'Stm', role: 'member' },
-            { name: 'Nightfall', role: 'member' },
         ]
     },
     {
@@ -335,21 +404,6 @@ const QW_TEAMS = [
         ]
     },
     {
-        id: 'team-snow-001',
-        teamName: 'Snowflakes',
-        teamTag: null,
-        divisions: ['D3'],
-        logoUrl: 'https://www.thebig4.se/teams/snowflakes.png',
-        players: [
-            { name: 'Link', role: 'leader' },
-            { name: 'Alice', role: 'member' },
-            { name: 'Zalon', role: 'member' },
-            { name: 'Dape', role: 'member' },
-            { name: 'FinalExit', role: 'member' },
-            { name: 'Duce', role: 'member' },
-        ]
-    },
-    {
         id: 'team-fir-001',
         teamName: 'Falling in Reverse',
         teamTag: null,
@@ -362,6 +416,42 @@ const QW_TEAMS = [
             { name: 'hemp', role: 'member' },
             { name: 'gflip', role: 'member' },
             { name: 'guns', role: 'member' },
+        ]
+    },
+    {
+        id: 'team-orr-001',
+        teamName: 'One RetroRocket',
+        teamTag: null,
+        divisions: ['D3'],
+        logoUrl: 'https://www.thebig4.se/teams/oneretrorocket.png',
+        players: [
+            { name: 'AHemlocksLie', role: 'leader' },
+            { name: 'Evil_ua', role: 'member' },
+            { name: 'Gandi', role: 'member' },
+            { name: 'GRID', role: 'member' },
+            { name: 'Flash', role: 'member' },
+            { name: 'ibsen', role: 'member' },
+            { name: 'multibear', role: 'member' },
+            { name: 'naleksi', role: 'member' },
+            { name: 'sickness', role: 'member' },
+        ]
+    },
+    {
+        id: 'team-osams-001',
+        teamName: 'oSaMs sm/osams',
+        teamTag: null,
+        divisions: ['D3'],
+        logoUrl: 'https://www.thebig4.se/teams/osams.png',
+        players: [
+            { name: 'apa', role: 'leader' },
+            { name: 'blaps', role: 'member' },
+            { name: 'whyz', role: 'member' },
+            { name: 'clox', role: 'member' },
+            { name: 'marksuzu', role: 'member' },
+            { name: 'steppa', role: 'member' },
+            { name: 'gorbatjevtarzan', role: 'member' },
+            { name: 'lakso', role: 'member' },
+            { name: 'zne', role: 'member' },
         ]
     },
     {
@@ -381,50 +471,18 @@ const QW_TEAMS = [
         ]
     },
     {
-        id: 'team-osams-001',
-        teamName: 'oSaMs sm/osams',
-        teamTag: null,
-        divisions: ['D2'],
-        logoUrl: 'https://www.thebig4.se/teams/osams.png',
-        players: [
-            { name: 'apa', role: 'leader' },
-            { name: 'blaps', role: 'member' },
-            { name: 'whyz', role: 'member' },
-            { name: 'clox', role: 'member' },
-            { name: 'marksuzu', role: 'member' },
-            { name: 'steppa', role: 'member' },
-            { name: 'gorbatjevtarzan', role: 'member' },
-            { name: 'lakso', role: 'member' },
-            { name: 'zne', role: 'member' },
-        ]
-    },
-    {
-        id: 'team-afk-001',
-        teamName: 'Aim For Kill',
+        id: 'team-snow-001',
+        teamName: 'Snowflakes',
         teamTag: null,
         divisions: ['D3'],
-        logoUrl: 'https://www.thebig4.se/teams/aimforkill.png',
+        logoUrl: 'https://www.thebig4.se/teams/snowflakes.png',
         players: [
-            { name: 'Mushi', role: 'leader' },
-            { name: 'Rotker', role: 'member' },
-            { name: 'Gawlo', role: 'member' },
-            { name: 'Darff', role: 'member' },
-            { name: 'Aki', role: 'member' },
-            { name: 'eQu', role: 'member' },
-        ]
-    },
-    {
-        id: 'team-dds-001',
-        teamName: 'Death Dealers Shadows',
-        teamTag: null,
-        divisions: ['D3'],
-        logoUrl: 'https://www.thebig4.se/teams/deathdealers.png',
-        players: [
-            { name: 'spokz', role: 'leader' },
-            { name: 'myca', role: 'member' },
-            { name: 'pitbull', role: 'member' },
-            { name: 'frame', role: 'member' },
-            { name: 'flamer', role: 'member' },
+            { name: 'Link', role: 'leader' },
+            { name: 'Alice', role: 'member' },
+            { name: 'Zalon', role: 'member' },
+            { name: 'Dape', role: 'member' },
+            { name: 'FinalExit', role: 'member' },
+            { name: 'Duce', role: 'member' },
         ]
     },
     {
@@ -455,80 +513,6 @@ const QW_TEAMS = [
             { name: 'Ledge', role: 'member' },
             { name: 'nTr', role: 'member' },
             { name: 'GooroL', role: 'member' },
-        ]
-    },
-    {
-        id: 'team-orr-001',
-        teamName: 'One RetroRocket',
-        teamTag: null,
-        divisions: ['D3'],
-        logoUrl: 'https://www.thebig4.se/teams/oneretrorocket.png',
-        players: [
-            { name: 'AHemlocksLie', role: 'leader' },
-            { name: 'Evil_ua', role: 'member' },
-            { name: 'Gandi', role: 'member' },
-            { name: 'GRID', role: 'member' },
-            { name: 'Flash', role: 'member' },
-            { name: 'ibsen', role: 'member' },
-            { name: 'multibear', role: 'member' },
-            { name: 'naleksi', role: 'member' },
-            { name: 'sickness', role: 'member' },
-        ]
-    },
-    {
-        id: 'team-pe-001',
-        teamName: 'Pineapple Express',
-        teamTag: null,
-        divisions: ['D3'],
-        logoUrl: 'https://www.thebig4.se/teams/pineappleexpress.png',
-        players: [
-            { name: 'blaze', role: 'leader' },
-            { name: 'Namtsui', role: 'member' },
-            { name: 'Dusty', role: 'member' },
-            { name: 'GND', role: 'member' },
-            { name: 'Viag', role: 'member' },
-        ]
-    },
-    {
-        id: 'team-rry-001',
-        teamName: 'Retrorockets Yellow',
-        teamTag: null,
-        divisions: ['D3'],
-        logoUrl: 'https://www.thebig4.se/teams/oneretrorocket.png',
-        players: [
-            { name: 'ocoini', role: 'leader' },
-            { name: 'gore', role: 'member' },
-            { name: 'robin', role: 'member' },
-            { name: 'Vukmir', role: 'member' },
-            { name: 'anni', role: 'member' },
-        ]
-    },
-    {
-        id: 'team-rrg-001',
-        teamName: 'Retrorockets Green',
-        teamTag: null,
-        divisions: ['D2'],
-        logoUrl: 'https://www.thebig4.se/teams/oneretrorocket.png',
-        players: [
-            { name: 'paniagua', role: 'leader' },
-            { name: 'N3ophyt3', role: 'member' },
-            { name: 'biggz', role: 'member' },
-            { name: 'nexus', role: 'member' },
-            { name: 'DobeZz', role: 'member' },
-        ]
-    },
-    {
-        id: 'team-rs-001',
-        teamName: 'Rebel Souls',
-        teamTag: null,
-        divisions: ['D2'],
-        logoUrl: 'https://www.thebig4.se/teams/rebelsouls.png',
-        players: [
-            { name: 'Szturm', role: 'leader' },
-            { name: 'hangtime', role: 'member' },
-            { name: 'riki', role: 'member' },
-            { name: 'rokky', role: 'member' },
-            { name: 'splif', role: 'member' },
         ]
     },
 ];

@@ -6,10 +6,10 @@
     <title>MatchScheduler - Gaming Community Match Scheduling</title>
     
     <!-- CSS -->
-    <link href="css/main.css" rel="stylesheet">
+    <link href="css/main.css?v=20260202i" rel="stylesheet">
 
     <!-- Cropper.js for image cropping -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" integrity="sha384-AMJcAgMUmNt1Zo4ranquGLeT5m7yOrVbtNsNk0oZohvxqKk6RRzXHqlEaS9gFXR7" crossorigin="anonymous">
     
     <!-- Meta Tags -->
     <meta name="description" content="Gaming community match scheduling platform for tournaments and clan matches">
@@ -17,7 +17,31 @@
     
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="img/favicon.ico">
+
+    <!-- PWA Manifest - enables "Add to Home Screen" on Android (hides address bar) -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0a0a0f">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
+    <!-- Production console guard: suppress debug output in production -->
+    <script>
+        (function() {
+            var isLocalDev = ['localhost', '127.0.0.1'].includes(location.hostname)
+                || location.hostname.startsWith('192.168.')
+                || location.hostname.startsWith('172.')
+                || location.hostname.startsWith('100.');
+            if (!isLocalDev) {
+                var noop = function() {};
+                console.log = noop;
+                console.debug = noop;
+                console.info = noop;
+                // Keep console.warn and console.error for production issue debugging
+            }
+        })();
+    </script>
+
     <!-- Firebase v11 SDK -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
@@ -90,6 +114,34 @@
             DISCORD_CLIENT_ID: '1465332663152808031',
             DEV_MODE: isLocalDev
         };
+    </script>
+
+    <!-- Register service worker + PWA install handling -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+        }
+
+        // Capture install prompt for custom install button
+        window._pwaInstallPrompt = null;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            window._pwaInstallPrompt = e;
+            console.log('PWA: install prompt captured - app is installable');
+            // Only show install banner on mobile/tablet (not desktop)
+            const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                             (navigator.maxTouchPoints > 1 && window.innerWidth < 1024);
+            if (!isMobile) return;
+            const btn = document.getElementById('pwa-install-btn');
+            if (btn) btn.classList.remove('hidden');
+        });
+
+        window.addEventListener('appinstalled', () => {
+            console.log('PWA: app installed successfully');
+            window._pwaInstallPrompt = null;
+            const btn = document.getElementById('pwa-install-btn');
+            if (btn) btn.classList.add('hidden');
+        });
     </script>
 </head>
 <body>
@@ -223,6 +275,17 @@
         <!-- Toast notifications will be dynamically inserted here -->
     </div>
 
+    <!-- PWA Install Banner (hidden until beforeinstallprompt fires) -->
+    <div id="pwa-install-btn" class="hidden fixed top-2 left-1/2 -translate-x-1/2 z-50">
+        <button onclick="window._pwaInstallPrompt?.prompt().then(()=>{this.parentElement.classList.add('hidden')})"
+                class="flex items-center gap-2 px-4 py-2 rounded-lg shadow-lg text-sm font-medium"
+                style="background-color: #5865F2; color: white;">
+            Install App (hide address bar)
+            <span onclick="event.stopPropagation();this.parentElement.parentElement.classList.add('hidden')"
+                  class="ml-2 opacity-70 hover:opacity-100 cursor-pointer">✕</span>
+        </button>
+    </div>
+
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="fixed inset-0 bg-background/80 backdrop-blur-sm z-30 hidden">
         <div class="flex items-center justify-center h-full">
@@ -234,62 +297,63 @@
     </div>
     
     <!-- Alpine.js -->
-    <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js" integrity="sha384-Rpe/8orFUm5Q1GplYBHxbuA8Az8O8C5sAoOsdbRWkqPjKFaxPgGZipj4zeHL7lxX" crossorigin="anonymous"></script>
 
     <!-- Cropper.js for image cropping -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js" integrity="sha384-jzwsV9ieM/KUDMeo+d8dc+jm0GEl7ywPNwg10alB5BodVuC/Kx9RpEnyrl2Om9zH" crossorigin="anonymous"></script>
 
     <!-- JavaScript Modules -->
-    <script src="js/utils/DateUtils.js"></script>
-    <script src="js/services/TimezoneService.js"></script>
-    <script src="js/services/AuthService.js"></script>
-    <script src="js/services/TeamService.js"></script>
-    <script src="js/services/AvailabilityService.js"></script>
-    <script src="js/services/TemplateService.js"></script>
-    <script src="js/services/PlayerDisplayService.js"></script>
-    <script src="js/services/PlayerColorService.js"></script>
-    <script src="js/services/ConfirmationModal.js"></script>
-    <script src="js/components/ToastService.js"></script>
-    <script src="js/components/UserProfile.js"></script>
-    <script src="js/components/ProfileModal.js"></script>
-    <script src="js/components/OnboardingModal.js"></script>
-    <script src="js/components/TeamManagementDrawer.js"></script>
-    <script src="js/components/KickPlayerModal.js"></script>
-    <script src="js/components/TransferLeadershipModal.js"></script>
-    <script src="js/components/TeamManagementModal.js"></script>
-    <script src="js/components/TeamInfo.js"></script>
-    <script src="js/components/AvailabilityGrid.js"></script>
-    <script src="js/components/WeekDisplay.js"></script>
-    <script src="js/components/WeekNavigation.js"></script>
-    <script src="js/components/GridActionButtons.js"></script>
-    <script src="js/components/SelectionActionButton.js"></script>
-    <script src="js/components/PlayerTooltip.js"></script>
-    <script src="js/components/ColorPickerPopover.js"></script>
-    <script src="js/components/OverflowModal.js"></script>
-    <script src="js/components/DevToolbar.js"></script>
-    <script src="js/services/TeamBrowserState.js"></script>
-    <script src="js/services/FavoritesService.js"></script>
-    <script src="js/components/TeamBrowser.js"></script>
-    <script src="js/components/FavoritesPanel.js"></script>
-    <script src="js/services/FilterService.js"></script>
-    <script src="js/components/FilterPanel.js"></script>
-    <script src="js/services/ComparisonEngine.js"></script>
-    <script src="js/components/ComparisonModal.js"></script>
-    <script src="js/services/LogoUploadService.js"></script>
-    <script src="js/components/LogoUploadModal.js"></script>
-    <script src="js/services/AvatarUploadService.js"></script>
-    <script src="js/components/AvatarUploadModal.js"></script>
-    <script src="js/components/AvatarManagerModal.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <script src="js/services/QWHubService.js"></script>
-    <script src="js/components/TeamsBrowserPanel.js"></script>
-    <script src="js/services/ProposalService.js"></script>
-    <script src="js/services/ScheduledMatchService.js"></script>
-    <script src="js/components/UpcomingMatchesPanel.js"></script>
-    <script src="js/components/MatchesPanel.js"></script>
-    <script src="js/components/BottomPanelController.js"></script>
-    <script src="js/MobileLayout.js"></script>
-    <script src="js/MobileBottomBar.js"></script>
-    <script src="js/app.js" type="module"></script>
+    <script src="js/utils/DateUtils.js?v=20260202i"></script>
+    <script src="js/services/TimezoneService.js?v=20260202i"></script>
+    <script src="js/services/AuthService.js?v=20260202i"></script>
+    <script src="js/services/TeamService.js?v=20260202i"></script>
+    <script src="js/services/AvailabilityService.js?v=20260202i"></script>
+    <script src="js/services/TemplateService.js?v=20260202i"></script>
+    <script src="js/services/PlayerDisplayService.js?v=20260202i"></script>
+    <script src="js/services/PlayerColorService.js?v=20260202i"></script>
+    <script src="js/services/ConfirmationModal.js?v=20260202i"></script>
+    <script src="js/components/ToastService.js?v=20260202i"></script>
+    <script src="js/components/UserProfile.js?v=20260202i"></script>
+    <script src="js/components/ProfileModal.js?v=20260202i"></script>
+    <script src="js/components/OnboardingModal.js?v=20260202i"></script>
+    <script src="js/components/TeamManagementDrawer.js?v=20260202i"></script>
+    <script src="js/components/KickPlayerModal.js?v=20260202i"></script>
+    <script src="js/components/TransferLeadershipModal.js?v=20260202i"></script>
+    <script src="js/components/TeamManagementModal.js?v=20260202i"></script>
+    <script src="js/components/TeamInfo.js?v=20260202i"></script>
+    <script src="js/components/AvailabilityGrid.js?v=20260202i"></script>
+    <script src="js/components/WeekDisplay.js?v=20260202i"></script>
+    <script src="js/components/WeekNavigation.js?v=20260202i"></script>
+    <script src="js/components/GridActionButtons.js?v=20260202i"></script>
+    <script src="js/components/SelectionActionButton.js?v=20260202i"></script>
+    <script src="js/components/PlayerTooltip.js?v=20260202i"></script>
+    <script src="js/components/ColorPickerPopover.js?v=20260202i"></script>
+    <script src="js/components/OverflowModal.js?v=20260202i"></script>
+    <script src="js/components/DevToolbar.js?v=20260202i"></script>
+    <script src="js/services/TeamBrowserState.js?v=20260202i"></script>
+    <script src="js/services/FavoritesService.js?v=20260202i"></script>
+    <script src="js/components/TeamBrowser.js?v=20260202i"></script>
+    <script src="js/components/FavoritesPanel.js?v=20260202i"></script>
+    <script src="js/services/FilterService.js?v=20260202i"></script>
+    <script src="js/components/FilterPanel.js?v=20260202i"></script>
+    <script src="js/services/ComparisonEngine.js?v=20260202i"></script>
+    <script src="js/components/ComparisonModal.js?v=20260202i"></script>
+    <script src="js/services/LogoUploadService.js?v=20260202i"></script>
+    <script src="js/components/LogoUploadModal.js?v=20260202i"></script>
+    <script src="js/services/AvatarUploadService.js?v=20260202i"></script>
+    <script src="js/components/AvatarUploadModal.js?v=20260202i"></script>
+    <script src="js/components/AvatarManagerModal.js?v=20260202i"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts@5.3.6/dist/apexcharts.min.js" integrity="sha384-mrR3K8Jvv+o9bZ6Yu9HWI0M8tuzo5VWNi4fWcmmbFq3NbB+WvjW/tF/wnELivEnc" crossorigin="anonymous"></script>
+    <script src="js/services/QWHubService.js?v=20260202i"></script>
+    <script src="js/components/TeamsBrowserPanel.js?v=20260202i"></script>
+    <script src="js/services/ProposalService.js?v=20260202i"></script>
+    <script src="js/services/ScheduledMatchService.js?v=20260202i"></script>
+    <script src="js/components/UpcomingMatchesPanel.js?v=20260202i"></script>
+    <script src="js/components/MatchesPanel.js?v=20260202i"></script>
+    <script src="js/components/BottomPanelController.js?v=20260202i"></script>
+    <script src="js/Router.js?v=20260202i"></script>
+    <script src="js/MobileLayout.js?v=20260202i"></script>
+    <script src="js/MobileBottomBar.js?v=20260202i"></script>
+    <script src="js/app.js?v=20260202i" type="module"></script>
 </body>
 </html>

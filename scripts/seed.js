@@ -3,10 +3,10 @@
  * Unified Seed Script for MatchScheduler
  *
  * Usage:
- *   npm run seed              # Local emulator, full (with logos)
- *   npm run seed:quick        # Local emulator, skip logo downloads
+ *   npm run seed              # Local emulator, full (with logos from scripts/seed-data/logos/)
+ *   npm run seed:quick        # Local emulator, skip logo processing
  *   npm run seed:prod         # Production, full (with logos)
- *   npm run seed:prod:quick   # Production, skip logo downloads
+ *   npm run seed:prod:quick   # Production, skip logo processing
  *
  * What it does:
  *   1. Connects to emulator or production (based on --production flag)
@@ -228,12 +228,28 @@ function generateRandomAvailability(playerIndex, teamIndex) {
 // Logo processing
 // ============================================
 
-async function downloadImage(url) {
+async function loadLogoImage(url) {
+    const fs = require('fs');
+    const path = require('path');
+    const filename = url.split('/').pop();
+    const localPath = path.join(__dirname, 'seed-data', 'logos', filename);
+
+    // Try local file first
+    if (fs.existsSync(localPath)) {
+        return fs.readFileSync(localPath);
+    }
+
+    // Fallback: download from remote
+    console.warn(`   ⚠️  Local logo not found (${filename}), downloading...`);
     try {
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const arrayBuffer = await response.arrayBuffer();
-        return Buffer.from(arrayBuffer);
+        const buffer = Buffer.from(arrayBuffer);
+        // Cache locally for next time
+        fs.mkdirSync(path.dirname(localPath), { recursive: true });
+        fs.writeFileSync(localPath, buffer);
+        return buffer;
     } catch (error) {
         console.error(`   ⚠️  Logo download failed: ${error.message}`);
         return null;
@@ -256,7 +272,7 @@ async function processAndUploadLogo(teamId, imageBuffer) {
         try {
             const resizedBuffer = await sharp(imageBuffer)
                 .resize(size.width, size.width, {
-                    fit: 'cover',
+                    fit: 'contain',
                     background: { r: 0, g: 0, b: 0, alpha: 0 },
                 })
                 .png()
@@ -352,7 +368,7 @@ async function seed() {
         // ── Logo ──
         let activeLogo = null;
         if (!SKIP_LOGOS && team.logoUrl && sharp) {
-            const imageBuffer = await downloadImage(team.logoUrl);
+            const imageBuffer = await loadLogoImage(team.logoUrl);
             if (imageBuffer) {
                 activeLogo = await processAndUploadLogo(team.id, imageBuffer);
                 if (activeLogo) logosProcessed++;

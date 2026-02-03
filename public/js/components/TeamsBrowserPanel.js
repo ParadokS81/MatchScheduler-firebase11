@@ -18,6 +18,8 @@ const TeamsBrowserPanel = (function() {
     let _allPlayers = [];
     let _tooltip = null;
     let _tooltipHideTimeout = null;
+    let _playersSortMode = 'alpha'; // 'alpha' | 'teams'
+    let _pendingTeamId = null;       // Survives cleanup for cross-view navigation
 
     // Slice 5.2b: Match History split-panel state
     let _historyMatches = [];        // Full fetched match list (all within period)
@@ -54,8 +56,21 @@ const TeamsBrowserPanel = (function() {
         _allTeams = TeamService.getAllTeams() || [];
         _allPlayers = _extractAllPlayers(_allTeams);
 
+        // Check for pending cross-view team selection (e.g. players → teams)
+        if (_pendingTeamId) {
+            _selectedTeamId = _pendingTeamId;
+            _activeTab = 'details';
+            _pendingTeamId = null;
+        }
+
         // Render initial UI
         _render();
+
+        // Load map stats if team was pre-selected
+        if (_selectedTeamId) {
+            const team = _allTeams.find(t => t.id === _selectedTeamId);
+            if (team?.teamTag) _loadMapStats(team.teamTag);
+        }
 
         // Set up real-time listener for team updates
         await _subscribeToTeams();
@@ -234,39 +249,83 @@ const TeamsBrowserPanel = (function() {
 
     function _renderToolbar() {
         // Teams mode: no toolbar needed (Browse Teams panel handles search/filters)
-        // Players mode: search + division filters
         if (_currentView === 'teams') return '';
 
+        // Players mode: sort toggle (A-Z vs By Team)
         return `
-            <div class="teams-browser-toolbar flex-shrink-0 p-3 border-b border-border">
-                <div class="flex items-center gap-3 mb-2">
-                    <!-- Search Input -->
-                    <div class="relative flex-1">
-                        <input type="text"
-                               id="teams-browser-search"
-                               placeholder="Search players..."
-                               value="${_escapeHtml(_searchQuery)}"
-                               class="w-full px-3 py-1.5 pr-8 text-sm bg-muted border border-border rounded-md
-                                      focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary
-                                      placeholder:text-muted-foreground"
-                        />
-                        <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
-                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                        </svg>
-                    </div>
-                </div>
-
-                <!-- Division Filters -->
-                <div class="flex items-center gap-2">
-                    <span class="text-xs text-muted-foreground">Filter:</span>
+            <div class="teams-browser-toolbar flex-shrink-0 px-4 py-2 border-b border-border">
+                <div class="flex items-center gap-3">
+                    <span class="text-xs text-muted-foreground">Sort:</span>
                     <div class="flex gap-1">
-                        <button class="division-filter-btn ${_divisionFilters.has('D1') ? 'active' : ''}" data-division="D1">D1</button>
-                        <button class="division-filter-btn ${_divisionFilters.has('D2') ? 'active' : ''}" data-division="D2">D2</button>
-                        <button class="division-filter-btn ${_divisionFilters.has('D3') ? 'active' : ''}" data-division="D3">D3</button>
+                        <button class="division-filter-btn ${_playersSortMode === 'alpha' ? 'active' : ''}" data-sort-mode="alpha">A-Z</button>
+                        <button class="division-filter-btn ${_playersSortMode === 'teams' ? 'active' : ''}" data-sort-mode="teams">By Team</button>
                     </div>
                 </div>
+            </div>
+        `;
+    }
+
+    // ========================================
+    // Division Overview (No team selected)
+    // ========================================
+
+    function _renderDivisionOverview() {
+        const divisions = { 'D1': [], 'D2': [], 'D3': [] };
+
+        _allTeams.forEach(team => {
+            const norms = _normalizeDivisions(team.divisions);
+            norms.forEach(div => {
+                if (divisions[div]) {
+                    divisions[div].push(team);
+                }
+            });
+        });
+
+        // Sort each division alphabetically
+        Object.values(divisions).forEach(list =>
+            list.sort((a, b) => (a.teamName || '').localeCompare(b.teamName || ''))
+        );
+
+        function renderColumn(divLabel, teams) {
+            const rows = teams.map(team => {
+                const logoUrl = team.activeLogo?.urls?.small;
+                const tag = team.teamTag || '??';
+                const badgeContent = logoUrl
+                    ? `<img src="${logoUrl}" alt="${tag}" class="w-full h-full object-contain">`
+                    : `<span>${tag}</span>`;
+                const playerCount = (team.playerRoster || []).length;
+
+                return `
+                    <tr class="division-overview-row" data-team-id="${team.id}">
+                        <td class="division-overview-badge">
+                            <div class="team-tag-badge">${badgeContent}</div>
+                        </td>
+                        <td class="division-overview-name">${team.teamName || tag}</td>
+                        <td class="division-overview-players">${playerCount}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            return `
+                <div class="division-overview-column">
+                    <div class="division-overview-header">
+                        <span>${divLabel}</span>
+                        <svg class="header-players-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                    <div class="division-overview-scroll">
+                        <table class="division-overview-table">
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="division-overview">
+                ${renderColumn('Division 1', divisions['D1'])}
+                ${renderColumn('Division 2', divisions['D2'])}
+                ${renderColumn('Division 3', divisions['D3'])}
             </div>
         `;
     }
@@ -277,13 +336,7 @@ const TeamsBrowserPanel = (function() {
 
     function _renderTeamsView() {
         if (!_selectedTeamId) {
-            return `
-                <div class="team-detail-empty">
-                    <p class="text-muted-foreground text-sm">
-                        Select a team from Browse Teams to view details
-                    </p>
-                </div>
-            `;
+            return _renderDivisionOverview();
         }
 
         const team = _allTeams.find(t => t.id === _selectedTeamId);
@@ -1945,17 +1998,19 @@ const TeamsBrowserPanel = (function() {
         const { teamId } = event.detail;
         if (!teamId) return;
 
+        // Hide any visible tooltip
+        _hideTooltip();
+
         // Reset match history state for new team
         _resetHistoryState();
 
         // If not in teams view, switch to it via the BottomPanelController
         if (_currentView !== 'teams') {
             if (typeof BottomPanelController !== 'undefined') {
-                // Store the pending team selection for after tab switch
-                _selectedTeamId = teamId;
-                _activeTab = 'details'; // Reset to Details on new team
+                // Store pending team ID (survives cleanup/re-init cycle)
+                _pendingTeamId = teamId;
                 BottomPanelController.switchTab('teams');
-                return; // switchTab will re-init us in teams mode
+                return; // switchTab will re-init us in teams mode; init() picks up _pendingTeamId
             }
         }
 
@@ -1979,78 +2034,175 @@ const TeamsBrowserPanel = (function() {
         if (!_selectedTeamId) return;
         _activeTab = tabName;
         _renderCurrentView();
+        // Notify router of sub-tab change
+        if (typeof Router !== 'undefined') {
+            Router.pushTeamSubTab(_selectedTeamId, tabName);
+        }
     }
 
     // ========================================
-    // Players View (Grid) - UNCHANGED from Slice 5.1
+    // Players View (3-column division layout)
     // ========================================
 
     function _renderPlayersView() {
-        const filteredPlayers = _getFilteredPlayers();
-
-        return `
-            <div class="players-grid-container overflow-y-auto h-full p-3">
-                ${filteredPlayers.length > 0 ? `
-                    <div class="players-grid">
-                        ${filteredPlayers.map(player => _renderPlayerCard(player)).join('')}
-                    </div>
-                ` : `
-                    <div class="empty-state flex flex-col items-center justify-center h-full text-center">
-                        <p class="text-sm text-muted-foreground">No players found</p>
-                        <p class="text-xs text-muted-foreground mt-1">Try adjusting your search or filters</p>
-                    </div>
-                `}
-            </div>
-        `;
+        if (_playersSortMode === 'teams') {
+            return _renderPlayersGroupedByTeam();
+        }
+        return _renderPlayersAlphabetical();
     }
 
-    function _renderPlayerCard(player) {
-        const primaryTeam = player.primaryTeam || {};
-        const logoUrl = primaryTeam.logoUrl;
+    function _renderPlayersAlphabetical() {
+        // Group players by division (player's primary team division)
+        const divisions = { 'D1': [], 'D2': [], 'D3': [] };
 
-        return `
-            <div class="player-card" data-player-key="${_escapeHtml(player.key)}">
-                <!-- Team Logo -->
-                <div class="player-card-logo flex-shrink-0">
-                    ${logoUrl
-                        ? `<img src="${logoUrl}" alt="${primaryTeam.teamTag}" class="w-full h-full object-cover">`
-                        : `<span class="text-xs font-bold text-muted-foreground">${primaryTeam.teamTag || '??'}</span>`
+        _allPlayers.forEach(player => {
+            // Add player to each division they belong to
+            const addedDivs = new Set();
+            player.teams.forEach(team => {
+                (team.divisions || []).forEach(div => {
+                    if (divisions[div] && !addedDivs.has(div)) {
+                        divisions[div].push(player);
+                        addedDivs.add(div);
                     }
+                });
+            });
+        });
+
+        // Sort each division alphabetically
+        Object.values(divisions).forEach(list =>
+            list.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''))
+        );
+
+        return _renderPlayersDivisionColumns(divisions);
+    }
+
+    function _renderPlayersGroupedByTeam() {
+        const divisions = { 'D1': [], 'D2': [], 'D3': [] };
+
+        _allTeams.forEach(team => {
+            const norms = _normalizeDivisions(team.divisions);
+            norms.forEach(div => {
+                if (divisions[div]) {
+                    divisions[div].push(team);
+                }
+            });
+        });
+
+        // Sort teams alphabetically within each division
+        Object.values(divisions).forEach(list =>
+            list.sort((a, b) => (a.teamName || '').localeCompare(b.teamName || ''))
+        );
+
+        function renderColumn(divLabel, teams) {
+            const sections = teams.map(team => {
+                const roster = team.playerRoster || [];
+                const sorted = [...roster].sort((a, b) => {
+                    if (a.role === 'leader') return -1;
+                    if (b.role === 'leader') return 1;
+                    return (a.displayName || '').localeCompare(b.displayName || '');
+                });
+
+                const logoUrl = team.activeLogo?.urls?.small;
+                const tag = team.teamTag || '??';
+                const badgeContent = logoUrl
+                    ? `<img src="${logoUrl}" alt="${tag}" class="w-full h-full object-contain">`
+                    : `<span>${tag}</span>`;
+
+                const rows = sorted.map(player => {
+                    const avatarUrl = player.photoURL;
+                    const initials = (player.displayName || '??').substring(0, 2).toUpperCase();
+                    const avatarContent = avatarUrl
+                        ? `<span class="avatar-initials-fallback">${initials}</span><img src="${avatarUrl}" alt="" class="avatar-img-layer" onerror="this.style.display='none'">`
+                        : `<span class="avatar-initials-fallback">${initials}</span>`;
+                    const leaderIcon = player.role === 'leader' ? '<span class="text-primary text-xs ml-0.5">★</span>' : '';
+
+                    return `
+                        <tr class="player-overview-row" data-player-key="${_escapeHtml(player.userId || player.displayName || '')}">
+                            <td class="player-overview-avatar">
+                                <div class="player-avatar-badge">${avatarContent}</div>
+                            </td>
+                            <td class="player-overview-name">${_escapeHtml(player.displayName || 'Unknown')}${leaderIcon}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="players-team-group">
+                        <div class="players-team-group-header" data-team-id="${_escapeHtml(team.id)}" style="cursor:pointer" title="View ${_escapeHtml(team.teamName)} details">
+                            <div class="team-tag-badge" style="width:1.5rem;height:1.25rem;font-size:0.5rem">${badgeContent}</div>
+                            <span>${_escapeHtml(team.teamName)}</span>
+                            <span class="text-muted-foreground ml-auto">${roster.length}</span>
+                        </div>
+                        <table class="division-overview-table"><tbody>${rows}</tbody></table>
+                    </div>
+                `;
+            }).join('');
+
+            const playersIcon = `<svg class="header-players-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
+
+            return `
+                <div class="division-overview-column">
+                    <div class="division-overview-header">
+                        <span>${divLabel}</span>
+                        ${playersIcon}
+                    </div>
+                    <div class="division-overview-scroll">${sections}</div>
                 </div>
-                <!-- Player Name -->
-                <div class="player-card-name" title="${_escapeHtml(player.displayName || '')}">
-                    ${_escapeHtml(player.displayName || 'Unknown')}
-                </div>
-                ${player.teams.length > 1 ? `<div class="player-card-multi-badge">+${player.teams.length - 1}</div>` : ''}
+            `;
+        }
+
+        return `
+            <div class="division-overview">
+                ${renderColumn('Division 1', divisions['D1'])}
+                ${renderColumn('Division 2', divisions['D2'])}
+                ${renderColumn('Division 3', divisions['D3'])}
             </div>
         `;
     }
 
-    // ========================================
-    // Filtering (Players view only now)
-    // ========================================
+    function _renderPlayersDivisionColumns(divisions) {
+        function renderColumn(divLabel, players) {
+            const rows = players.map(player => {
+                const avatarUrl = player.photoURL;
+                const initials = (player.displayName || '??').substring(0, 2).toUpperCase();
+                const avatarContent = avatarUrl
+                    ? `<span class="avatar-initials-fallback">${initials}</span><img src="${avatarUrl}" alt="" class="avatar-img-layer" onerror="this.style.display='none'">`
+                    : `<span class="avatar-initials-fallback">${initials}</span>`;
+                const multiTeam = player.teams.length > 1
+                    ? `<span class="player-multi-badge">+${player.teams.length - 1}</span>` : '';
 
-    function _getFilteredPlayers() {
-        const query = _searchQuery.toLowerCase();
+                return `
+                    <tr class="player-overview-row" data-player-key="${_escapeHtml(player.key)}">
+                        <td class="player-overview-avatar">
+                            <div class="player-avatar-badge">${avatarContent}</div>
+                        </td>
+                        <td class="player-overview-name">${_escapeHtml(player.displayName || 'Unknown')}${multiTeam}</td>
+                    </tr>
+                `;
+            }).join('');
 
-        return _allPlayers.filter(player => {
-            // Division filter: show player if ANY of their teams match
-            if (_divisionFilters.size > 0) {
-                const hasMatchingTeam = player.teams.some(team => {
-                    const teamDivisions = team.divisions || [];
-                    return teamDivisions.some(d => _divisionFilters.has(d));
-                });
-                if (!hasMatchingTeam) return false;
-            }
+            const playersIcon = `<svg class="header-players-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
 
-            // Search filter
-            if (query) {
-                const nameMatch = (player.displayName || '').toLowerCase().includes(query);
-                if (!nameMatch) return false;
-            }
+            return `
+                <div class="division-overview-column">
+                    <div class="division-overview-header">
+                        <span>${divLabel}</span>
+                        ${playersIcon}
+                    </div>
+                    <div class="division-overview-scroll">
+                        <table class="division-overview-table"><tbody>${rows}</tbody></table>
+                    </div>
+                </div>
+            `;
+        }
 
-            return true;
-        });
+        return `
+            <div class="division-overview">
+                ${renderColumn('Division 1', divisions['D1'])}
+                ${renderColumn('Division 2', divisions['D2'])}
+                ${renderColumn('Division 3', divisions['D3'])}
+            </div>
+        `;
     }
 
     // ========================================
@@ -2058,25 +2210,18 @@ const TeamsBrowserPanel = (function() {
     // ========================================
 
     function _attachListeners() {
-        // Search input (only present in Players mode)
-        const searchInput = _container.querySelector('#teams-browser-search');
-        searchInput?.addEventListener('input', (e) => {
-            _searchQuery = e.target.value.trim();
-            _renderCurrentView();
-        });
-
-        // Division filters (only present in Players mode)
-        _container.querySelectorAll('.division-filter-btn').forEach(btn => {
+        // Sort mode toggle (Players mode)
+        _container.querySelectorAll('[data-sort-mode]').forEach(btn => {
             btn.addEventListener('click', () => {
-                const division = btn.dataset.division;
-                if (_divisionFilters.has(division)) {
-                    _divisionFilters.delete(division);
-                    btn.classList.remove('active');
-                } else {
-                    _divisionFilters.add(division);
-                    btn.classList.add('active');
+                const mode = btn.dataset.sortMode;
+                if (mode && mode !== _playersSortMode) {
+                    _playersSortMode = mode;
+                    _render(); // Full re-render to update toolbar + content
+                    // Notify router of sort change
+                    if (typeof Router !== 'undefined') {
+                        Router.pushPlayerSort(mode);
+                    }
                 }
-                _renderCurrentView();
             });
         });
 
@@ -2092,6 +2237,29 @@ const TeamsBrowserPanel = (function() {
     }
 
     function _attachTeamsViewListeners() {
+        // Division overview row clicks + hover tooltip (when no team selected)
+        _container.querySelectorAll('.division-overview-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const teamId = row.dataset.teamId;
+                if (teamId) {
+                    // Dispatch event so Router can track this navigation
+                    window.dispatchEvent(new CustomEvent('team-browser-detail-select', {
+                        detail: { teamId }
+                    }));
+                }
+            });
+
+            row.addEventListener('mouseenter', () => {
+                const teamId = row.dataset.teamId;
+                const team = _allTeams.find(t => t.id === teamId);
+                if (team) _showRosterTooltip(row, team);
+            });
+
+            row.addEventListener('mouseleave', () => {
+                _hideTooltip();
+            });
+        });
+
         // Tab click listeners
         _container.querySelectorAll('.team-detail-tab').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -2104,17 +2272,31 @@ const TeamsBrowserPanel = (function() {
     }
 
     function _attachPlayersViewListeners() {
-        // Player cards with tooltip
-        _container.querySelectorAll('.player-card').forEach(card => {
-            card.addEventListener('mouseenter', () => {
-                const playerKey = card.dataset.playerKey;
+        // Team group headers are clickable in by-team mode → navigate to team details
+        if (_playersSortMode === 'teams') {
+            _container.querySelectorAll('.players-team-group-header[data-team-id]').forEach(header => {
+                header.addEventListener('click', () => {
+                    const teamId = header.dataset.teamId;
+                    if (teamId) {
+                        window.dispatchEvent(new CustomEvent('team-browser-detail-select', {
+                            detail: { teamId }
+                        }));
+                    }
+                });
+            });
+            return;
+        }
+
+        _container.querySelectorAll('.player-overview-row').forEach(row => {
+            row.addEventListener('mouseenter', () => {
+                const playerKey = row.dataset.playerKey;
                 const player = _allPlayers.find(p => p.key === playerKey);
                 if (player && player.teams.length > 0) {
-                    _showPlayerTooltip(card, player);
+                    _showPlayerTooltip(row, player);
                 }
             });
 
-            card.addEventListener('mouseleave', () => {
+            row.addEventListener('mouseleave', () => {
                 _hideTooltip();
             });
         });
@@ -2127,6 +2309,64 @@ const TeamsBrowserPanel = (function() {
     // ========================================
     // Player Tooltip
     // ========================================
+
+    function _showRosterTooltip(row, team) {
+        _createTooltip();
+
+        if (_tooltipHideTimeout) {
+            clearTimeout(_tooltipHideTimeout);
+            _tooltipHideTimeout = null;
+        }
+
+        const roster = team.playerRoster || [];
+        const sorted = [...roster].sort((a, b) => {
+            if (a.role === 'leader') return -1;
+            if (b.role === 'leader') return 1;
+            return (a.displayName || '').localeCompare(b.displayName || '');
+        });
+
+        const rosterHtml = sorted.map(player => {
+            const initials = (player.displayName || '??').substring(0, 2).toUpperCase();
+            const leaderBadge = player.role === 'leader' ? ' <span class="tooltip-you">(Leader)</span>' : '';
+            const leaderClass = player.role === 'leader' ? 'tooltip-current' : '';
+            return `
+                <div class="tooltip-player ${leaderClass}">
+                    <span class="tooltip-initials">${initials}</span>
+                    <span class="tooltip-name">${_escapeHtml(player.displayName || 'Unknown')}${leaderBadge}</span>
+                </div>
+            `;
+        }).join('');
+
+        _tooltip.innerHTML = `
+            <div class="tooltip-list">${rosterHtml}</div>
+        `;
+
+        // Position: right-aligned within the column, first player aligned with team name
+        const rowRect = row.getBoundingClientRect();
+        const column = row.closest('.division-overview-column');
+        const columnRect = column ? column.getBoundingClientRect() : rowRect;
+
+        _tooltip.style.visibility = 'hidden';
+        _tooltip.style.display = 'block';
+        const tooltipRect = _tooltip.getBoundingClientRect();
+
+        // Right-align tooltip with column right edge
+        let left = columnRect.right - tooltipRect.width;
+        let top = rowRect.top;
+
+        // If goes off bottom, show above instead
+        if (top + tooltipRect.height > window.innerHeight - 8) {
+            top = rowRect.top - tooltipRect.height - 4;
+        }
+
+        // Keep within viewport
+        if (left < 8) left = 8;
+        if (top < 8) top = 8;
+
+        _tooltip.style.left = `${left}px`;
+        _tooltip.style.top = `${top}px`;
+        _tooltip.style.visibility = 'visible';
+    }
 
     function _createTooltip() {
         if (_tooltip) return;
@@ -2147,9 +2387,21 @@ const TeamsBrowserPanel = (function() {
         _tooltip.addEventListener('mouseleave', () => {
             _hideTooltip();
         });
+
+        // Delegated click on team name headers → navigate to team
+        _tooltip.addEventListener('click', (e) => {
+            const header = e.target.closest('.tooltip-team-link[data-team-id]');
+            if (header) {
+                const teamId = header.dataset.teamId;
+                _hideTooltipImmediate();
+                window.dispatchEvent(new CustomEvent('team-browser-detail-select', {
+                    detail: { teamId }
+                }));
+            }
+        });
     }
 
-    function _showPlayerTooltip(card, player) {
+    function _showPlayerTooltip(row, player) {
         _createTooltip();
 
         if (_tooltipHideTimeout) {
@@ -2157,46 +2409,66 @@ const TeamsBrowserPanel = (function() {
             _tooltipHideTimeout = null;
         }
 
-        // Build tooltip content
-        const teamsHtml = player.teams.map((team, index) => {
-            const isPrimary = index === 0;
-            const roleText = team.role === 'leader' ? ' (Leader)' : '';
-            return `
-                <div class="tooltip-team-entry ${isPrimary ? 'tooltip-primary-team' : ''}">
-                    <div class="tooltip-team-name">
-                        ${team.teamName || 'Unknown'} (${team.division || 'No div'})${roleText}
+        // Build tooltip: show full roster for each team, highlight this player
+        const playerKey = player.key;
+        const sectionsHtml = player.teams.map(teamInfo => {
+            const team = _allTeams.find(t => t.id === teamInfo.teamId);
+            const roster = team ? (team.playerRoster || []) : [];
+            const sorted = [...roster].sort((a, b) => {
+                if (a.role === 'leader') return -1;
+                if (b.role === 'leader') return 1;
+                return (a.displayName || '').localeCompare(b.displayName || '');
+            });
+
+            const rosterHtml = sorted.map(p => {
+                const initials = (p.displayName || '??').substring(0, 2).toUpperCase();
+                const isHighlighted = (p.userId || p.displayName) === playerKey;
+                const leaderBadge = p.role === 'leader' ? ' <span class="tooltip-you">(Leader)</span>' : '';
+                const classes = [
+                    'tooltip-player',
+                    isHighlighted ? 'tooltip-current' : '',
+                ].filter(Boolean).join(' ');
+                return `
+                    <div class="${classes}">
+                        <span class="tooltip-initials">${initials}</span>
+                        <span class="tooltip-name">${_escapeHtml(p.displayName || 'Unknown')}${leaderBadge}</span>
                     </div>
-                </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="tooltip-header tooltip-team-link" data-team-id="${_escapeHtml(teamInfo.teamId)}" style="cursor:pointer" title="View ${_escapeHtml(teamInfo.teamName)}">${_escapeHtml(teamInfo.teamName)} (${teamInfo.division || '?'}) - ${roster.length} players</div>
+                <div class="tooltip-list">${rosterHtml}</div>
             `;
         }).join('');
 
-        _tooltip.innerHTML = `
-            <div class="tooltip-header">${_escapeHtml(player.displayName || 'Unknown')} plays for:</div>
-            <div class="tooltip-list">
-                ${teamsHtml}
-            </div>
-        `;
+        _tooltip.innerHTML = sectionsHtml;
 
-        // Position tooltip
-        const cardRect = card.getBoundingClientRect();
+        // Position: to the right of the row, header aligned with the clicked row
+        // so the user can slide their mouse horizontally into the tooltip
+        const rowRect = row.getBoundingClientRect();
+        const column = row.closest('.division-overview-column');
+        const columnRect = column ? column.getBoundingClientRect() : rowRect;
 
         _tooltip.style.visibility = 'hidden';
         _tooltip.style.display = 'block';
         const tooltipRect = _tooltip.getBoundingClientRect();
 
-        // Show above the card if there's room, otherwise below
-        let left = cardRect.left + (cardRect.width / 2) - (tooltipRect.width / 2);
-        let top = cardRect.top - tooltipRect.height - 8;
+        // Right-align tooltip within the column (same as teams view)
+        let left = columnRect.right - tooltipRect.width;
+        // Align tooltip top with the hovered row
+        let top = rowRect.top;
 
-        if (top < 8) {
-            top = cardRect.bottom + 8;
-        }
-
-        // Keep within viewport horizontally
+        // Keep within viewport
         if (left < 8) left = 8;
-        if (left + tooltipRect.width > window.innerWidth - 8) {
-            left = window.innerWidth - tooltipRect.width - 8;
+
+        // If tooltip goes off the bottom, shift it up
+        if (top + tooltipRect.height > window.innerHeight - 8) {
+            top = window.innerHeight - tooltipRect.height - 8;
         }
+
+        if (left < 8) left = 8;
+        if (top < 8) top = 8;
 
         _tooltip.style.left = `${left}px`;
         _tooltip.style.top = `${top}px`;
@@ -2211,6 +2483,16 @@ const TeamsBrowserPanel = (function() {
         }, 150);
     }
 
+    function _hideTooltipImmediate() {
+        if (_tooltipHideTimeout) {
+            clearTimeout(_tooltipHideTimeout);
+            _tooltipHideTimeout = null;
+        }
+        if (_tooltip) {
+            _tooltip.style.display = 'none';
+        }
+    }
+
     // ========================================
     // Utilities
     // ========================================
@@ -2219,6 +2501,48 @@ const TeamsBrowserPanel = (function() {
         const div = document.createElement('div');
         div.textContent = text || '';
         return div.innerHTML;
+    }
+
+    // ========================================
+    // Router Integration
+    // ========================================
+
+    /**
+     * Programmatically select a team and show its details.
+     * Used by Router for deep-link restoration.
+     */
+    function selectTeam(teamId) {
+        if (!teamId) return;
+        _resetHistoryState();
+        _activeTab = 'details';
+        _selectedTeamId = teamId;
+        _render();
+        const team = _allTeams.find(t => t.id === teamId);
+        if (team?.teamTag) {
+            _loadMapStats(team.teamTag);
+        }
+    }
+
+    /**
+     * Deselect current team and return to division overview.
+     * Used by Router when navigating back to #/teams.
+     */
+    function deselectTeam() {
+        if (!_selectedTeamId) return;
+        _resetHistoryState();
+        _selectedTeamId = null;
+        _activeTab = 'details';
+        if (_container) _render();
+    }
+
+    /**
+     * Programmatically set players sort mode.
+     * Used by Router for deep-link restoration.
+     */
+    function setPlayersSortMode(mode) {
+        if (!mode || mode === _playersSortMode) return;
+        _playersSortMode = mode;
+        if (_container) _render();
     }
 
     // ========================================
@@ -2252,6 +2576,7 @@ const TeamsBrowserPanel = (function() {
         _selectedTeamId = null;
         _activeTab = 'details';
         _searchQuery = '';
+        _playersSortMode = 'alpha';
         _divisionFilters.clear();
         _allTeams = [];
         _allPlayers = [];
@@ -2276,6 +2601,10 @@ const TeamsBrowserPanel = (function() {
         changePeriod,
         openFullStats,
         sortByColumn,
-        switchStatsTab
+        switchStatsTab,
+        // Router integration
+        selectTeam,
+        deselectTeam,
+        setPlayersSortMode
     };
 })();

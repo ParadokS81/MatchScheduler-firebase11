@@ -176,7 +176,11 @@ exports.createProposal = onCall(async (request) => {
             throw new HttpsError('failed-precondition', 'Opponent team is not active');
         }
 
-        // Authorization: live check on team doc
+        // Authorization: verify user is a member of the proposing team AND is leader/scheduler
+        const isMember = proposerTeam.playerRoster?.some(p => p.userId === userId);
+        if (!isMember) {
+            throw new HttpsError('permission-denied', 'You must be a member of the proposing team');
+        }
         if (!isAuthorized(proposerTeam, userId)) {
             throw new HttpsError('permission-denied', 'Only leaders or schedulers can create proposals');
         }

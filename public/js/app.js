@@ -68,6 +68,11 @@ const MatchSchedulerApp = (function() {
             MobileBottomBar.init();
         }
 
+        // Initialize hash-based router for back/forward navigation
+        if (typeof Router !== 'undefined') {
+            Router.init();
+        }
+
         console.log('🧩 Components initialized');
     }
 
@@ -169,6 +174,17 @@ const MatchSchedulerApp = (function() {
         if (typeof SelectionActionButton !== 'undefined') {
             SelectionActionButton.init();
         }
+
+        // Fallback clear-all listener (mobile: GridActionButtons may not be initialized yet)
+        document.addEventListener('clear-all-selections', _handleClearAll);
+
+        // Mobile bottom bar: load-template event (templates popup)
+        window.addEventListener('load-template', (e) => {
+            const { slots, weekIndex } = e.detail;
+            if (slots && weekIndex !== undefined) {
+                _handleLoadTemplate(slots, weekIndex);
+            }
+        });
 
         // Slice 5.0.1: Refresh grids when player colors change
         window.addEventListener('player-colors-changed', () => {
@@ -395,6 +411,11 @@ const MatchSchedulerApp = (function() {
 
         _selectedTeam = team;
 
+        // Notify components that the user's own team changed
+        window.dispatchEvent(new CustomEvent('user-team-changed', {
+            detail: { teamId: team?.id || null }
+        }));
+
         if (team) {
             // Set up new availability listeners
             _setupAvailabilityListeners(team.id);
@@ -611,6 +632,10 @@ const MatchSchedulerApp = (function() {
         // Slice 5.0a: Clean up BottomPanelController
         if (typeof BottomPanelController !== 'undefined') {
             BottomPanelController.cleanup();
+        }
+        // Clean up Router
+        if (typeof Router !== 'undefined') {
+            Router.cleanup();
         }
         // Clean up UpcomingMatchesPanel
         if (typeof UpcomingMatchesPanel !== 'undefined') {

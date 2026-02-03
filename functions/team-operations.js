@@ -713,19 +713,19 @@ exports.leaveTeam = onCall(async (request) => {
 
 // Kick player function - removes a player from the team
 exports.kickPlayer = onCall(async (request) => {
-    const { teamId, playerToKickId } = request.data;
-    const callerId = request.auth?.uid;
-
-    if (!callerId) {
-        return { success: false, error: 'Authentication required' };
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
+    const { teamId, playerToKickId } = request.data;
+    const callerId = request.auth.uid;
+
     if (!teamId || !playerToKickId) {
-        return { success: false, error: 'Missing required parameters' };
+        throw new HttpsError('invalid-argument', 'Missing required parameters');
     }
 
     if (callerId === playerToKickId) {
-        return { success: false, error: 'Cannot remove yourself. Use "Leave Team" instead.' };
+        throw new HttpsError('invalid-argument', 'Cannot remove yourself. Use "Leave Team" instead.');
     }
 
     try {
@@ -825,25 +825,26 @@ exports.kickPlayer = onCall(async (request) => {
         return { success: true };
     } catch (error) {
         console.error('❌ kickPlayer error:', error);
-        return { success: false, error: error.message };
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', 'Failed to kick player: ' + error.message);
     }
 });
 
 // Transfer leadership function
 exports.transferLeadership = onCall(async (request) => {
-    const { teamId, newLeaderId } = request.data;
-    const callerId = request.auth?.uid;
-
-    if (!callerId) {
-        return { success: false, error: 'Authentication required' };
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
+    const { teamId, newLeaderId } = request.data;
+    const callerId = request.auth.uid;
+
     if (!teamId || !newLeaderId) {
-        return { success: false, error: 'Missing required parameters' };
+        throw new HttpsError('invalid-argument', 'Missing required parameters');
     }
 
     if (callerId === newLeaderId) {
-        return { success: false, error: 'You are already the leader' };
+        throw new HttpsError('invalid-argument', 'You are already the leader');
     }
 
     try {
@@ -935,7 +936,8 @@ exports.transferLeadership = onCall(async (request) => {
         return { success: true };
     } catch (error) {
         console.error('❌ transferLeadership error:', error);
-        return { success: false, error: error.message };
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', 'Failed to transfer leadership: ' + error.message);
     }
 });
 

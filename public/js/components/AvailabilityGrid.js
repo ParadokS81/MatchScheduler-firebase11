@@ -66,9 +66,6 @@ const AvailabilityGrid = (function() {
 
         // Advanced selection state
         let _isDragging = false;
-        let _pendingDrag = false; // Touch disambiguation: waiting for direction check
-        let _pointerCaptured = false; // Whether setPointerCapture is active
-        let _activePointerId = null; // Pointer ID for capture/release
         let _dragStartCell = null;
         let _dragStartPos = { x: 0, y: 0 };
         let _dragDistance = 0;
@@ -267,28 +264,10 @@ const AvailabilityGrid = (function() {
         }
 
         /**
-         * Commit to drag mode: capture pointer, show preview, prevent scroll
-         */
-        function _commitDrag(e) {
-            _isDragging = true;
-            _pendingDrag = false;
-
-            const gridContainer = _container?.querySelector('.availability-grid-container');
-            if (gridContainer) gridContainer.classList.add('dragging');
-
-            // Capture pointer so touch drag tracks across cells
-            if (_activePointerId !== null && _container) {
-                try {
-                    _container.setPointerCapture(_activePointerId);
-                    _pointerCaptured = true;
-                } catch (ex) { /* ignore if capture fails */ }
-            }
-
-            _updateDragPreview(_dragStartCell, _dragStartCell);
-        }
-
-        /**
-         * Handle pointer down for drag selection (replaces mousedown)
+         * Handle pointer down for drag selection.
+         * Commits to drag immediately for all pointer types.
+         * On mobile, CSS touch-action:none on the grid prevents browser
+         * scroll, so no disambiguation needed.
          */
         function _handlePointerDown(e) {
             // Ignore secondary pointers (multi-touch)
@@ -302,64 +281,40 @@ const AvailabilityGrid = (function() {
             const cell = e.target.closest('.grid-cell');
             if (!cell || !cell.dataset.cellId) return;
 
+            _isDragging = true;
             _dragStartCell = cell.dataset.cellId;
             _dragStartPos = { x: e.clientX, y: e.clientY };
             _dragDistance = 0;
-            _activePointerId = e.pointerId;
 
-            // Mouse: commit to drag immediately (no disambiguation needed)
-            if (e.pointerType === 'mouse') {
-                _commitDrag(e);
-                e.preventDefault(); // Prevent text selection
-            } else {
-                // Touch/pen: wait for pointermove to check direction
-                _pendingDrag = true;
-                _isDragging = false;
-            }
+            // Add dragging class to prevent text selection
+            const gridContainer = _container?.querySelector('.availability-grid-container');
+            if (gridContainer) gridContainer.classList.add('dragging');
+
+            // Start preview
+            _updateDragPreview(_dragStartCell, _dragStartCell);
+
+            // Prevent text selection and browser scroll
+            e.preventDefault();
         }
 
         /**
-         * Handle pointer move for drag selection (replaces mousemove)
-         * Includes touch vs scroll disambiguation on first movement.
+         * Handle pointer move for drag selection.
+         * Always uses elementFromPoint for reliable cross-cell detection
+         * on both mouse and touch.
          */
         function _handlePointerMove(e) {
-            if (!_pendingDrag && !_isDragging) return;
-            if (!_dragStartCell) return;
+            if (!_isDragging || !_dragStartCell) return;
 
             const dx = Math.abs(e.clientX - _dragStartPos.x);
             const dy = Math.abs(e.clientY - _dragStartPos.y);
 
-            // Touch disambiguation: pending drag, check initial direction
-            if (_pendingDrag && !_isDragging) {
-                const totalMove = dx + dy;
-                if (totalMove < DRAG_THRESHOLD) return; // Wait for more movement
-
-                if (dy > dx) {
-                    // Vertical movement dominant → user is scrolling, cancel
-                    _pendingDrag = false;
-                    _dragStartCell = null;
-                    _activePointerId = null;
-                    return;
-                }
-
-                // Horizontal dominant → commit to drag
-                _commitDrag(e);
-            }
-
-            if (!_isDragging) return;
-
             // Track drag distance
             _dragDistance = Math.max(_dragDistance, dx, dy);
 
-            // When pointer is captured, e.target is always the capturing element.
-            // Use elementFromPoint to find the actual cell under the pointer.
-            let cell;
-            if (_pointerCaptured) {
-                const el = document.elementFromPoint(e.clientX, e.clientY);
-                cell = el?.closest('.grid-cell');
-            } else {
-                cell = e.target.closest('.grid-cell');
-            }
+            // Use elementFromPoint for reliable cell detection on touch
+            // (e.target may not update on touch devices without pointer capture)
+            const el = document.elementFromPoint(e.clientX, e.clientY);
+            const cell = el?.closest('.grid-cell');
 
             if (!cell || !cell.dataset.cellId) return;
 
@@ -369,7 +324,6 @@ const AvailabilityGrid = (function() {
             _lastValidDragCell = cell.dataset.cellId;
             _updateDragPreview(_dragStartCell, cell.dataset.cellId);
 
-            // Prevent scrolling during committed drag (touch)
             e.preventDefault();
         }
 
@@ -377,20 +331,6 @@ const AvailabilityGrid = (function() {
          * Handle pointer up for drag selection (replaces mouseup)
          */
         function _handlePointerUp(e) {
-            // Release pointer capture if active
-            if (_pointerCaptured && _activePointerId !== null && _container) {
-                try { _container.releasePointerCapture(_activePointerId); } catch (ex) { /* ignore */ }
-                _pointerCaptured = false;
-            }
-            _activePointerId = null;
-
-            // Cancel any pending drag that never committed
-            if (_pendingDrag) {
-                _pendingDrag = false;
-                _dragStartCell = null;
-                return;
-            }
-
             if (!_isDragging) return;
 
             // Remove dragging class
@@ -776,9 +716,6 @@ const AvailabilityGrid = (function() {
             // Reset state
             _selectedCells.clear();
             _isDragging = false;
-            _pendingDrag = false;
-            _pointerCaptured = false;
-            _activePointerId = null;
             _dragStartCell = null;
             _lastClickedCell = null;
             _lastValidDragCell = null;

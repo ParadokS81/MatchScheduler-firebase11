@@ -9,6 +9,12 @@ const FavoritesPanel = (function() {
     let _unsubscribeTeams = null;
     let _isComparing = false;
 
+    function _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     // ========================================
     // Helpers
     // ========================================
@@ -75,14 +81,14 @@ const FavoritesPanel = (function() {
             const leaderClass = player.role === 'leader' ? 'tooltip-current' : '';
             return `
                 <div class="tooltip-player ${leaderClass}">
-                    <span class="tooltip-initials">${player.initials || '??'}</span>
-                    <span class="tooltip-name">${player.displayName || 'Unknown'}${leaderBadge}</span>
+                    <span class="tooltip-initials">${_escapeHtml(player.initials || '??')}</span>
+                    <span class="tooltip-name">${_escapeHtml(player.displayName || 'Unknown')}${leaderBadge}</span>
                 </div>
             `;
         }).join('');
 
         _teamTooltip.innerHTML = `
-            <div class="tooltip-header">${team.teamName} - ${roster.length} players</div>
+            <div class="tooltip-header">${_escapeHtml(team.teamName)} - ${roster.length} players</div>
             <div class="tooltip-list">
                 ${rosterHtml}
             </div>
@@ -323,18 +329,20 @@ const FavoritesPanel = (function() {
                 TeamBrowserState.toggleTeamSelection(teamId);
             });
 
-            // Hover handlers for player roster tooltip
-            card.addEventListener('mouseenter', () => {
-                const teamId = card.dataset.teamId;
-                const team = TeamService.getTeamFromCache(teamId);
-                if (team && team.playerRoster?.length > 0) {
-                    _showTeamTooltip(card, team);
-                }
-            });
+            // Hover handlers for player roster tooltip (desktop only)
+            if (typeof MobileLayout === 'undefined' || !MobileLayout.isMobile()) {
+                card.addEventListener('mouseenter', () => {
+                    const teamId = card.dataset.teamId;
+                    const team = TeamService.getTeamFromCache(teamId);
+                    if (team && team.playerRoster?.length > 0) {
+                        _showTeamTooltip(card, team);
+                    }
+                });
 
-            card.addEventListener('mouseleave', () => {
-                _hideTeamTooltip();
-            });
+                card.addEventListener('mouseleave', () => {
+                    _hideTeamTooltip();
+                });
+            }
         });
 
         // Unfavorite buttons

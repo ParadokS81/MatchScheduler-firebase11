@@ -6,24 +6,37 @@ const UpcomingMatchesPanel = (function() {
     'use strict';
 
     let _container = null;
+    let _containerId = null;
     let _unsubscribe = null;
+    let _unsubscribeAuth = null;
     let _userTeamIds = [];
     let _initialized = false;
 
     // ─── Initialization ────────────────────────────────────────────────
 
     async function init(containerId) {
+        _containerId = containerId;
         _container = document.getElementById(containerId);
         if (!_container) return;
 
-        const currentUser = AuthService.getCurrentUser();
-        if (!currentUser) {
-            _renderEmpty('Sign in to see upcoming matches');
-            return;
-        }
+        // Listen for auth state changes so panel updates when dev mode sign-in completes
+        _unsubscribeAuth = AuthService.onAuthStateChange((user) => {
+            if (user && !_initialized) {
+                _initWithUser(user);
+            } else if (!user) {
+                _teardownListener();
+                _initialized = false;
+                _userTeamIds = [];
+                _renderEmpty('Sign in to see upcoming matches');
+            }
+        });
+    }
+
+    async function _initWithUser(user) {
+        if (!_container) return;
 
         // Get user's team IDs
-        _userTeamIds = await _getUserTeamIds(currentUser.uid);
+        _userTeamIds = await _getUserTeamIds(user.uid);
 
         // Render loading state
         _container.innerHTML = '<div class="flex items-center justify-center h-full text-muted-foreground text-xs">Loading matches...</div>';
@@ -173,14 +186,23 @@ const UpcomingMatchesPanel = (function() {
 
     // ─── Cleanup ────────────────────────────────────────────────────────
 
-    function cleanup() {
+    function _teardownListener() {
         if (_unsubscribe) {
             _unsubscribe();
             _unsubscribe = null;
         }
+    }
+
+    function cleanup() {
+        _teardownListener();
+        if (_unsubscribeAuth) {
+            _unsubscribeAuth();
+            _unsubscribeAuth = null;
+        }
         _userTeamIds = [];
         _initialized = false;
         _container = null;
+        _containerId = null;
     }
 
     // ─── Public API ─────────────────────────────────────────────────────

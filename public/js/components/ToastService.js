@@ -8,6 +8,12 @@ const ToastService = (function() {
     let _container = null;
     let _toastCounter = 0;
     let _initialized = false;
+
+    function _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
     
     // Initialize toast service
     function init() {
@@ -64,7 +70,7 @@ const ToastService = (function() {
         toast.innerHTML = `
             <div class="flex items-center gap-2">
                 ${_getToastIcon(type)}
-                <span class="text-sm font-medium">${message}</span>
+                <span class="text-sm font-medium">${_escapeHtml(message)}</span>
                 <button class="ml-auto text-current opacity-70 hover:opacity-100 transition-opacity" onclick="ToastService.hide('${toastId}')">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>

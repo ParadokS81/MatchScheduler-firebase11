@@ -215,8 +215,6 @@ const TeamService = (function() {
             if (!existingData || JSON.stringify(existingData) !== JSON.stringify(teamData)) {
                 _allTeamsCache.set(teamId, teamData);
                 console.log('🔄 Cache updated for team:', teamData.teamName);
-            } else {
-                console.log('📦 Cache update skipped - no change for team:', teamData.teamName);
             }
         } else if (_cacheInitialized && !teamData) {
             // Team was deleted
