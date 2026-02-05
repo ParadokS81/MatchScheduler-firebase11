@@ -292,9 +292,6 @@ const FavoritesPanel = (function() {
             if (isAutoMode) {
                 // Toggle OFF
                 ComparisonEngine.endComparison();
-                if (typeof ToastService !== 'undefined') {
-                    ToastService.showInfo('Comparison mode off');
-                }
             } else {
                 // Toggle ON — need user team from grid
                 const userTeamId = typeof MatchSchedulerApp !== 'undefined'
@@ -309,13 +306,6 @@ const FavoritesPanel = (function() {
                 }
 
                 ComparisonEngine.enableAutoMode(userTeamId);
-
-                if (typeof ToastService !== 'undefined') {
-                    const userTeam = TeamService.getTeamFromCache(userTeamId);
-                    ToastService.showSuccess(
-                        `Compare mode on for [${userTeam?.teamTag || '??'}]`
-                    );
-                }
             }
         });
 

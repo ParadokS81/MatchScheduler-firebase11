@@ -376,8 +376,6 @@ const GridActionButtons = (function() {
             // Clear selections on success
             if (_clearSelections) _clearSelections();
 
-            ToastService.showSuccess('Added to selected slots!');
-
         } catch (error) {
             console.error('Add me failed:', error);
             ToastService.showError(error.message || 'Failed to add availability');
@@ -414,8 +412,6 @@ const GridActionButtons = (function() {
             }
 
             if (_clearSelections) _clearSelections();
-
-            ToastService.showSuccess('Removed from selected slots!');
 
         } catch (error) {
             console.error('Remove me failed:', error);
