@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
 
@@ -10,15 +10,15 @@ const db = getFirestore();
  * Creates minimal user doc for new users, updates lastLogin for existing users.
  * User doc is created WITHOUT displayName/initials - those are set via profile setup.
  */
-exports.googleSignIn = onCall({ region: 'europe-west10' }, async (request) => {
-    const { auth } = request;
-
+exports.googleSignIn = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     // Verify user is authenticated
-    if (!auth) {
-        throw new HttpsError('unauthenticated', 'User must be authenticated');
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { uid } = auth;
+    const { uid } = context.auth;
 
     try {
         const userRef = db.collection('users').doc(uid);
@@ -62,7 +62,7 @@ exports.googleSignIn = onCall({ region: 'europe-west10' }, async (request) => {
 
     } catch (error) {
         console.error('❌ Error in googleSignIn:', error);
-        throw new HttpsError('internal', 'Failed to process sign-in');
+        throw new functions.https.HttpsError('internal', 'Failed to process sign-in');
     }
 });
 
@@ -71,15 +71,15 @@ exports.googleSignIn = onCall({ region: 'europe-west10' }, async (request) => {
  * @deprecated Use updateProfile instead. This function now redirects to updateProfile logic.
  * Kept for backwards compatibility during transition.
  */
-exports.createProfile = onCall({ region: 'europe-west10' }, async (request) => {
-    const { auth, data } = request;
-    
+exports.createProfile = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     // Verify user is authenticated
-    if (!auth) {
-        throw new HttpsError('unauthenticated', 'User must be authenticated to create profile');
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to create profile');
     }
-    
-    const { uid } = auth;
+
+    const { uid } = context.auth;
 
     // Get user info from Auth to get email
     const userRecord = await getAuth().getUser(uid);
@@ -88,31 +88,31 @@ exports.createProfile = onCall({ region: 'europe-west10' }, async (request) => {
     
     // Validate input
     if (!displayName || !initials) {
-        throw new HttpsError('invalid-argument', 'Display name and initials are required');
+        throw new functions.https.HttpsError('invalid-argument', 'Display name and initials are required');
     }
-    
+
     // Validate display name
     if (displayName.length < 2 || displayName.length > 30) {
-        throw new HttpsError('invalid-argument', 'Display name must be 2-30 characters');
+        throw new functions.https.HttpsError('invalid-argument', 'Display name must be 2-30 characters');
     }
-    
+
     // Validate initials
     if (!/^[A-Z]{1,3}$/.test(initials)) {
-        throw new HttpsError('invalid-argument', 'Initials must be 1-3 uppercase letters');
+        throw new functions.https.HttpsError('invalid-argument', 'Initials must be 1-3 uppercase letters');
     }
-    
+
     // Validate Discord data if provided
     if (discordUsername || discordUserId) {
         if (!discordUsername || !discordUserId) {
-            throw new HttpsError('invalid-argument', 'Both Discord username and user ID must be provided together');
+            throw new functions.https.HttpsError('invalid-argument', 'Both Discord username and user ID must be provided together');
         }
-        
+
         if (discordUsername.length > 50) {
-            throw new HttpsError('invalid-argument', 'Discord username is too long');
+            throw new functions.https.HttpsError('invalid-argument', 'Discord username is too long');
         }
-        
+
         if (!/^[0-9]+$/.test(discordUserId) || discordUserId.length < 17 || discordUserId.length > 19) {
-            throw new HttpsError('invalid-argument', 'Discord user ID must be 17-19 digits');
+            throw new functions.https.HttpsError('invalid-argument', 'Discord user ID must be 17-19 digits');
         }
     }
     
@@ -162,10 +162,10 @@ exports.createProfile = onCall({ region: 'europe-west10' }, async (request) => {
         
         // Handle specific errors
         if (error.code === 'auth/user-not-found') {
-            throw new HttpsError('not-found', 'User not found');
+            throw new functions.https.HttpsError('not-found', 'User not found');
         }
-        
-        throw new HttpsError('internal', 'Failed to create profile');
+
+        throw new functions.https.HttpsError('internal', 'Failed to create profile');
     }
 });
 
@@ -173,15 +173,15 @@ exports.createProfile = onCall({ region: 'europe-west10' }, async (request) => {
  * Cloud Function: updateProfile
  * Updates user profile information
  */
-exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
-    const { auth, data } = request;
-
+exports.updateProfile = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     // Verify user is authenticated
-    if (!auth) {
-        throw new HttpsError('unauthenticated', 'User must be authenticated to update profile');
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to update profile');
     }
 
-    const { uid } = auth;
+    const { uid } = context.auth;
     const { displayName, initials, discordUsername, discordUserId, avatarSource, photoURL, timezone, hiddenTimeSlots } = data;
 
     // Validate input - at least one field must be provided
@@ -191,7 +191,7 @@ exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
         timezone !== undefined || hiddenTimeSlots !== undefined;
 
     if (!hasAnyField) {
-        throw new HttpsError('invalid-argument', 'At least one field must be provided');
+        throw new functions.https.HttpsError('invalid-argument', 'At least one field must be provided');
     }
 
     const updates = {};
@@ -199,19 +199,19 @@ exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
     // Validate and add display name
     if (displayName) {
         if (displayName.length < 2 || displayName.length > 30) {
-            throw new HttpsError('invalid-argument', 'Display name must be 2-30 characters');
+            throw new functions.https.HttpsError('invalid-argument', 'Display name must be 2-30 characters');
         }
         updates.displayName = displayName.trim();
     }
-    
+
     // Validate and add initials
     if (initials) {
         if (!/^[A-Z]{3}$/.test(initials)) {
-            throw new HttpsError('invalid-argument', 'Initials must be exactly 3 uppercase letters');
+            throw new functions.https.HttpsError('invalid-argument', 'Initials must be exactly 3 uppercase letters');
         }
         updates.initials = initials.toUpperCase();
     }
-    
+
     // Handle Discord data
     if (discordUsername !== undefined || discordUserId !== undefined) {
         // If either is being updated, validate both
@@ -224,15 +224,15 @@ exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
         } else if (discordUsername && discordUserId) {
             // Update Discord data
             if (discordUsername.length > 50) {
-                throw new HttpsError('invalid-argument', 'Discord username is too long');
+                throw new functions.https.HttpsError('invalid-argument', 'Discord username is too long');
             }
             if (!/^[0-9]+$/.test(discordUserId) || discordUserId.length < 17 || discordUserId.length > 19) {
-                throw new HttpsError('invalid-argument', 'Discord user ID must be 17-19 digits');
+                throw new functions.https.HttpsError('invalid-argument', 'Discord user ID must be 17-19 digits');
             }
             updates.discordUsername = discordUsername.trim();
             updates.discordUserId = discordUserId.trim();
         } else {
-            throw new HttpsError('invalid-argument', 'Both Discord username and user ID must be provided together');
+            throw new functions.https.HttpsError('invalid-argument', 'Both Discord username and user ID must be provided together');
         }
     }
 
@@ -240,7 +240,7 @@ exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
     if (avatarSource !== undefined) {
         const validSources = ['custom', 'discord', 'google', 'initials'];
         if (!validSources.includes(avatarSource)) {
-            throw new HttpsError('invalid-argument', 'Invalid avatar source');
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid avatar source');
         }
         updates.avatarSource = avatarSource;
     }
@@ -253,7 +253,7 @@ exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
     // Handle timezone update (Slice 7.0c)
     if (timezone !== undefined) {
         if (typeof timezone !== 'string' || timezone.length < 3 || timezone.length > 50) {
-            throw new HttpsError('invalid-argument', 'Invalid timezone format');
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid timezone format');
         }
         updates.timezone = timezone;
     }
@@ -261,16 +261,16 @@ exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
     // Handle hiddenTimeSlots update (Slice 12.0c)
     if (hiddenTimeSlots !== undefined) {
         if (!Array.isArray(hiddenTimeSlots)) {
-            throw new HttpsError('invalid-argument', 'hiddenTimeSlots must be an array');
+            throw new functions.https.HttpsError('invalid-argument', 'hiddenTimeSlots must be an array');
         }
         const validSlots = ['1800', '1830', '1900', '1930', '2000', '2030', '2100', '2130', '2200', '2230', '2300'];
         for (const slot of hiddenTimeSlots) {
             if (!validSlots.includes(slot)) {
-                throw new HttpsError('invalid-argument', `Invalid time slot: ${slot}`);
+                throw new functions.https.HttpsError('invalid-argument', `Invalid time slot: ${slot}`);
             }
         }
         if (hiddenTimeSlots.length > 7) {
-            throw new HttpsError('invalid-argument', 'At least 4 time slots must remain visible');
+            throw new functions.https.HttpsError('invalid-argument', 'At least 4 time slots must remain visible');
         }
         updates.hiddenTimeSlots = hiddenTimeSlots;
     }
@@ -353,10 +353,10 @@ exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
         console.error('Error code:', error.code);
         
         if (error.code === 'not-found') {
-            throw new HttpsError('not-found', 'User profile not found');
+            throw new functions.https.HttpsError('not-found', 'User profile not found');
         }
-        
-        throw new HttpsError('internal', `Failed to update profile: ${error.message}`);
+
+        throw new functions.https.HttpsError('internal', `Failed to update profile: ${error.message}`);
     }
 });
 
@@ -364,21 +364,21 @@ exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
  * Cloud Function: getProfile
  * Retrieves user profile information
  */
-exports.getProfile = onCall({ region: 'europe-west10' }, async (request) => {
-    const { auth } = request;
-    
+exports.getProfile = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     // Verify user is authenticated
-    if (!auth) {
-        throw new HttpsError('unauthenticated', 'User must be authenticated to get profile');
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to get profile');
     }
-    
-    const { uid } = auth;
+
+    const { uid } = context.auth;
     
     try {
         const userDoc = await db.collection('users').doc(uid).get();
         
         if (!userDoc.exists) {
-            throw new HttpsError('not-found', 'User profile not found');
+            throw new functions.https.HttpsError('not-found', 'User profile not found');
         }
         
         const userData = userDoc.data();
@@ -396,12 +396,12 @@ exports.getProfile = onCall({ region: 'europe-west10' }, async (request) => {
         
     } catch (error) {
         console.error('❌ Error getting profile:', error);
-        
-        if (error instanceof HttpsError) {
+
+        if (error instanceof functions.https.HttpsError) {
             throw error;
         }
-        
-        throw new HttpsError('internal', 'Failed to get profile');
+
+        throw new functions.https.HttpsError('internal', 'Failed to get profile');
     }
 });
 
@@ -410,15 +410,15 @@ exports.getProfile = onCall({ region: 'europe-west10' }, async (request) => {
  * Permanently deletes user's account from both Firestore and Firebase Auth.
  * Also removes user from any team rosters they were on.
  */
-exports.deleteAccount = onCall({ region: 'europe-west10' }, async (request) => {
-    const { auth } = request;
-
+exports.deleteAccount = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     // Verify user is authenticated
-    if (!auth) {
-        throw new HttpsError('unauthenticated', 'User must be authenticated to delete account');
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to delete account');
     }
 
-    const { uid } = auth;
+    const { uid } = context.auth;
 
     try {
         // Get user profile to find their teams
@@ -482,7 +482,7 @@ exports.deleteAccount = onCall({ region: 'europe-west10' }, async (request) => {
 
     } catch (error) {
         console.error('❌ Error deleting account:', error);
-        throw new HttpsError('internal', 'Failed to delete account: ' + error.message);
+        throw new functions.https.HttpsError('internal', 'Failed to delete account: ' + error.message);
     }
 });
 

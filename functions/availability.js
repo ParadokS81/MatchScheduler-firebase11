@@ -1,45 +1,47 @@
 // Availability Cloud Functions
 // Following PRD v2 Architecture with Firebase v11
 
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 /**
  * Update user availability - add or remove from time slots
  *
- * @param {Object} request.data - Function parameters
- * @param {string} request.data.teamId - Team ID
- * @param {string} request.data.weekId - Week ID in ISO format (YYYY-WW)
- * @param {string} request.data.action - "add" or "remove"
- * @param {Array<string>} request.data.slotIds - Array of slot IDs (e.g., ['mon_1800', 'tue_1900'])
+ * @param {Object} data - Function parameters
+ * @param {string} data.teamId - Team ID
+ * @param {string} data.weekId - Week ID in ISO format (YYYY-WW)
+ * @param {string} data.action - "add" or "remove"
+ * @param {Array<string>} data.slotIds - Array of slot IDs (e.g., ['mon_1800', 'tue_1900'])
  * @returns {Object} { success: boolean } or throws HttpsError
  */
-const updateAvailability = onCall({ region: 'europe-west10' }, async (request) => {
+const updateAvailability = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     const db = getFirestore();
 
     // Validate authentication
-    if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'Must be signed in');
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
     }
 
-    const userId = request.auth.uid;
-    const { teamId, weekId, action, slotIds } = request.data;
+    const userId = context.auth.uid;
+    const { teamId, weekId, action, slotIds } = data;
 
     // Validate inputs
     if (!teamId || typeof teamId !== 'string') {
-        throw new HttpsError('invalid-argument', 'Invalid team ID');
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid team ID');
     }
 
     if (!weekId || typeof weekId !== 'string') {
-        throw new HttpsError('invalid-argument', 'Invalid week ID');
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid week ID');
     }
 
     if (!['add', 'remove'].includes(action)) {
-        throw new HttpsError('invalid-argument', 'Action must be "add" or "remove"');
+        throw new functions.https.HttpsError('invalid-argument', 'Action must be "add" or "remove"');
     }
 
     if (!Array.isArray(slotIds) || slotIds.length === 0) {
-        throw new HttpsError('invalid-argument', 'Must provide at least one slot');
+        throw new functions.https.HttpsError('invalid-argument', 'Must provide at least one slot');
     }
 
     // Validate slot ID format (day_time in UTC, e.g., "mon_1800", "tue_0200")
@@ -47,20 +49,20 @@ const updateAvailability = onCall({ region: 'europe-west10' }, async (request) =
     const validSlotPattern = /^(mon|tue|wed|thu|fri|sat|sun)_(0[0-9]|1[0-9]|2[0-3])(00|30)$/;
     for (const slotId of slotIds) {
         if (!validSlotPattern.test(slotId)) {
-            throw new HttpsError('invalid-argument', `Invalid slot format: ${slotId}`);
+            throw new functions.https.HttpsError('invalid-argument', `Invalid slot format: ${slotId}`);
         }
     }
 
     // Validate week ID format (ISO week: "2026-05")
     const weekPattern = /^\d{4}-\d{2}$/;
     if (!weekPattern.test(weekId)) {
-        throw new HttpsError('invalid-argument', 'Invalid week format. Use YYYY-WW');
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid week format. Use YYYY-WW');
     }
 
     // Verify user is member of team
     const teamDoc = await db.collection('teams').doc(teamId).get();
     if (!teamDoc.exists) {
-        throw new HttpsError('not-found', 'Team not found');
+        throw new functions.https.HttpsError('not-found', 'Team not found');
     }
 
     const teamData = teamDoc.data();
@@ -69,7 +71,7 @@ const updateAvailability = onCall({ region: 'europe-west10' }, async (request) =
     // Check if user is in the playerRoster array
     const isMember = playerRoster.some(player => player.userId === userId);
     if (!isMember) {
-        throw new HttpsError('permission-denied', 'You are not a member of this team');
+        throw new functions.https.HttpsError('permission-denied', 'You are not a member of this team');
     }
 
     // Build update object for atomic operations

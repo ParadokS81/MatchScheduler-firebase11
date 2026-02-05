@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const db = getFirestore();
@@ -8,24 +8,22 @@ const db = getFirestore();
  * Add or remove a team from user's favoriteTeams array
  * Uses arrayUnion/arrayRemove for atomic updates
  */
-exports.updateFavorites = onCall({ region: 'europe-west10' }, async (request) => {
-    const { auth, data } = request;
-
+exports.updateFavorites = functions.region('europe-west3').https.onCall(async (data, context) => {
     // Verify user is authenticated
-    if (!auth) {
-        throw new HttpsError('unauthenticated', 'Must be logged in');
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
     }
 
-    const { uid } = auth;
+    const { uid } = context.auth;
     const { teamId, action } = data;
 
     // Validate input
     if (!teamId || typeof teamId !== 'string') {
-        throw new HttpsError('invalid-argument', 'Invalid teamId');
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid teamId');
     }
 
     if (!['add', 'remove'].includes(action)) {
-        throw new HttpsError('invalid-argument', 'Action must be "add" or "remove"');
+        throw new functions.https.HttpsError('invalid-argument', 'Action must be "add" or "remove"');
     }
 
     const userRef = db.collection('users').doc(uid);
@@ -35,7 +33,7 @@ exports.updateFavorites = onCall({ region: 'europe-west10' }, async (request) =>
             // Verify team exists before adding
             const teamDoc = await db.collection('teams').doc(teamId).get();
             if (!teamDoc.exists) {
-                throw new HttpsError('not-found', 'Team not found');
+                throw new functions.https.HttpsError('not-found', 'Team not found');
             }
 
             // Add to favorites using arrayUnion (atomic, no duplicates)
@@ -65,15 +63,15 @@ exports.updateFavorites = onCall({ region: 'europe-west10' }, async (request) =>
     } catch (error) {
         console.error('❌ Error updating favorites:', error);
 
-        if (error instanceof HttpsError) {
+        if (error instanceof functions.https.HttpsError) {
             throw error;
         }
 
         // Handle case where user document doesn't exist
         if (error.code === 5 || error.message?.includes('NOT_FOUND')) {
-            throw new HttpsError('not-found', 'User profile not found');
+            throw new functions.https.HttpsError('not-found', 'User profile not found');
         }
 
-        throw new HttpsError('internal', 'Failed to update favorites');
+        throw new functions.https.HttpsError('internal', 'Failed to update favorites');
     }
 });

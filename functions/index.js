@@ -1,4 +1,4 @@
-const { onRequest } = require('firebase-functions/v2/https');
+const functions = require('firebase-functions');
 const { initializeApp } = require('firebase-admin/app');
 
 // Initialize Firebase Admin SDK
@@ -54,6 +54,6 @@ exports.cancelScheduledMatch = cancelScheduledMatch;
 exports.toggleScheduler = toggleScheduler;
 
 // Simple test function
-exports.helloWorld = onRequest({ region: 'europe-west10' }, (request, response) => {
+exports.helloWorld = functions.region('europe-west3').https.onRequest((request, response) => {
     response.json({ message: 'MatchScheduler Functions are working!' });
 });

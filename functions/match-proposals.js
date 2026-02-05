@@ -1,7 +1,7 @@
 // Match Proposal Cloud Functions
 // Slice 8.0a: Schema + Cloud Functions + Scheduler Delegation
 
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const db = getFirestore();
@@ -119,41 +119,43 @@ function isValidWeekRange(weekId) {
 
 // ─── createProposal ─────────────────────────────────────────────────────────
 
-exports.createProposal = onCall({ region: 'europe-west10' }, async (request) => {
+exports.createProposal = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     try {
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
         }
 
-        const userId = request.auth.uid;
-        const { proposerTeamId, opponentTeamId, weekId, minFilter } = request.data;
+        const userId = context.auth.uid;
+        const { proposerTeamId, opponentTeamId, weekId, minFilter } = data;
 
         // Validate inputs
         if (!proposerTeamId || typeof proposerTeamId !== 'string') {
-            throw new HttpsError('invalid-argument', 'proposerTeamId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'proposerTeamId is required');
         }
         if (!opponentTeamId || typeof opponentTeamId !== 'string') {
-            throw new HttpsError('invalid-argument', 'opponentTeamId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'opponentTeamId is required');
         }
         if (proposerTeamId === opponentTeamId) {
-            throw new HttpsError('invalid-argument', 'Cannot propose a match against your own team');
+            throw new functions.https.HttpsError('invalid-argument', 'Cannot propose a match against your own team');
         }
         if (!weekId || !isValidWeekId(weekId)) {
-            throw new HttpsError('invalid-argument', 'Invalid week format. Use YYYY-WW');
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid week format. Use YYYY-WW');
         }
         if (!isValidWeekRange(weekId)) {
-            throw new HttpsError('invalid-argument', 'Week must be current or up to 4 weeks in the future');
+            throw new functions.https.HttpsError('invalid-argument', 'Week must be current or up to 4 weeks in the future');
         }
         if (!minFilter || typeof minFilter !== 'object') {
-            throw new HttpsError('invalid-argument', 'minFilter is required');
+            throw new functions.https.HttpsError('invalid-argument', 'minFilter is required');
         }
         const yourTeam = parseInt(minFilter.yourTeam);
         const opponent = parseInt(minFilter.opponent);
         if (isNaN(yourTeam) || yourTeam < 1 || yourTeam > 4) {
-            throw new HttpsError('invalid-argument', 'minFilter.yourTeam must be 1-4');
+            throw new functions.https.HttpsError('invalid-argument', 'minFilter.yourTeam must be 1-4');
         }
         if (isNaN(opponent) || opponent < 1 || opponent > 4) {
-            throw new HttpsError('invalid-argument', 'minFilter.opponent must be 1-4');
+            throw new functions.https.HttpsError('invalid-argument', 'minFilter.opponent must be 1-4');
         }
 
         // Read team docs
@@ -163,26 +165,26 @@ exports.createProposal = onCall({ region: 'europe-west10' }, async (request) => 
         ]);
 
         if (!proposerDoc.exists) {
-            throw new HttpsError('not-found', 'Proposer team not found');
+            throw new functions.https.HttpsError('not-found', 'Proposer team not found');
         }
         if (!opponentDoc.exists) {
-            throw new HttpsError('not-found', 'Opponent team not found');
+            throw new functions.https.HttpsError('not-found', 'Opponent team not found');
         }
 
         const proposerTeam = proposerDoc.data();
         const opponentTeam = opponentDoc.data();
 
         if (opponentTeam.status !== 'active') {
-            throw new HttpsError('failed-precondition', 'Opponent team is not active');
+            throw new functions.https.HttpsError('failed-precondition', 'Opponent team is not active');
         }
 
         // Authorization: verify user is a member of the proposing team AND is leader/scheduler
         const isMember = proposerTeam.playerRoster?.some(p => p.userId === userId);
         if (!isMember) {
-            throw new HttpsError('permission-denied', 'You must be a member of the proposing team');
+            throw new functions.https.HttpsError('permission-denied', 'You must be a member of the proposing team');
         }
         if (!isAuthorized(proposerTeam, userId)) {
-            throw new HttpsError('permission-denied', 'Only leaders or schedulers can create proposals');
+            throw new functions.https.HttpsError('permission-denied', 'Only leaders or schedulers can create proposals');
         }
 
         // Check for duplicate proposal (bidirectional: A→B or B→A for same week)
@@ -204,7 +206,7 @@ exports.createProposal = onCall({ region: 'europe-west10' }, async (request) => 
         ]);
 
         if (!proposerAsProposer.empty || !proposerAsOpponent.empty) {
-            throw new HttpsError('already-exists', 'An active proposal already exists between these teams for this week');
+            throw new functions.https.HttpsError('already-exists', 'An active proposal already exists between these teams for this week');
         }
 
         // Build involved team members for security rules (Option A from spec)
@@ -272,27 +274,29 @@ exports.createProposal = onCall({ region: 'europe-west10' }, async (request) => 
 
     } catch (error) {
         console.error('❌ Error creating proposal:', error);
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError('internal', 'Failed to create proposal: ' + error.message);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to create proposal: ' + error.message);
     }
 });
 
 // ─── confirmSlot ────────────────────────────────────────────────────────────
 
-exports.confirmSlot = onCall({ region: 'europe-west10' }, async (request) => {
+exports.confirmSlot = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     try {
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
         }
 
-        const userId = request.auth.uid;
-        const { proposalId, slotId } = request.data;
+        const userId = context.auth.uid;
+        const { proposalId, slotId } = data;
 
         if (!proposalId || typeof proposalId !== 'string') {
-            throw new HttpsError('invalid-argument', 'proposalId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'proposalId is required');
         }
         if (!slotId || !isValidSlotId(slotId)) {
-            throw new HttpsError('invalid-argument', 'Invalid slotId format');
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid slotId format');
         }
 
         const result = await db.runTransaction(async (transaction) => {
@@ -301,13 +305,13 @@ exports.confirmSlot = onCall({ region: 'europe-west10' }, async (request) => {
             const proposalDoc = await transaction.get(proposalRef);
 
             if (!proposalDoc.exists) {
-                throw new HttpsError('not-found', 'Proposal not found');
+                throw new functions.https.HttpsError('not-found', 'Proposal not found');
             }
 
             const proposal = proposalDoc.data();
 
             if (proposal.status !== 'active') {
-                throw new HttpsError('failed-precondition', 'Proposal is no longer active');
+                throw new functions.https.HttpsError('failed-precondition', 'Proposal is no longer active');
             }
 
             // Read both team docs for live authorization
@@ -326,7 +330,7 @@ exports.confirmSlot = onCall({ region: 'europe-west10' }, async (request) => {
             const isOpponentSide = isAuthorized(opponentTeam, userId);
 
             if (!isProposerSide && !isOpponentSide) {
-                throw new HttpsError('permission-denied', 'Only leaders or schedulers can confirm slots');
+                throw new functions.https.HttpsError('permission-denied', 'Only leaders or schedulers can confirm slots');
             }
 
             const side = isProposerSide ? 'proposer' : 'opponent';
@@ -351,7 +355,7 @@ exports.confirmSlot = onCall({ region: 'europe-west10' }, async (request) => {
                 .get();
 
             if (!blockedQuery1.empty || !blockedQuery2.empty) {
-                throw new HttpsError('failed-precondition', 'This slot is already blocked by a scheduled match');
+                throw new functions.https.HttpsError('failed-precondition', 'This slot is already blocked by a scheduled match');
             }
 
             // Read ALL availability docs upfront (transaction requires reads before writes)
@@ -494,27 +498,29 @@ exports.confirmSlot = onCall({ region: 'europe-west10' }, async (request) => {
 
     } catch (error) {
         console.error('❌ Error confirming slot:', error);
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError('internal', 'Failed to confirm slot: ' + error.message);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to confirm slot: ' + error.message);
     }
 });
 
 // ─── withdrawConfirmation ───────────────────────────────────────────────────
 
-exports.withdrawConfirmation = onCall({ region: 'europe-west10' }, async (request) => {
+exports.withdrawConfirmation = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     try {
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
         }
 
-        const userId = request.auth.uid;
-        const { proposalId, slotId } = request.data;
+        const userId = context.auth.uid;
+        const { proposalId, slotId } = data;
 
         if (!proposalId || typeof proposalId !== 'string') {
-            throw new HttpsError('invalid-argument', 'proposalId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'proposalId is required');
         }
         if (!slotId || !isValidSlotId(slotId)) {
-            throw new HttpsError('invalid-argument', 'Invalid slotId format');
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid slotId format');
         }
 
         await db.runTransaction(async (transaction) => {
@@ -523,13 +529,13 @@ exports.withdrawConfirmation = onCall({ region: 'europe-west10' }, async (reques
             const proposalDoc = await transaction.get(proposalRef);
 
             if (!proposalDoc.exists) {
-                throw new HttpsError('not-found', 'Proposal not found');
+                throw new functions.https.HttpsError('not-found', 'Proposal not found');
             }
 
             const proposal = proposalDoc.data();
 
             if (proposal.status !== 'active') {
-                throw new HttpsError('failed-precondition', 'Can only withdraw from active proposals');
+                throw new functions.https.HttpsError('failed-precondition', 'Can only withdraw from active proposals');
             }
 
             // Live authorization check
@@ -545,7 +551,7 @@ exports.withdrawConfirmation = onCall({ region: 'europe-west10' }, async (reques
             const isOpponentSide = isAuthorized(opponentTeam, userId);
 
             if (!isProposerSide && !isOpponentSide) {
-                throw new HttpsError('permission-denied', 'Only leaders or schedulers can withdraw confirmations');
+                throw new functions.https.HttpsError('permission-denied', 'Only leaders or schedulers can withdraw confirmations');
             }
 
             const side = isProposerSide ? 'proposer' : 'opponent';
@@ -553,7 +559,7 @@ exports.withdrawConfirmation = onCall({ region: 'europe-west10' }, async (reques
             const confirmedSlots = proposal[confirmField] || {};
 
             if (!confirmedSlots[slotId]) {
-                throw new HttpsError('failed-precondition', 'This slot has not been confirmed by your side');
+                throw new functions.https.HttpsError('failed-precondition', 'This slot has not been confirmed by your side');
             }
 
             // WRITE PHASE — use FieldValue.delete() to remove the nested key
@@ -568,24 +574,26 @@ exports.withdrawConfirmation = onCall({ region: 'europe-west10' }, async (reques
 
     } catch (error) {
         console.error('❌ Error withdrawing confirmation:', error);
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError('internal', 'Failed to withdraw confirmation: ' + error.message);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to withdraw confirmation: ' + error.message);
     }
 });
 
 // ─── cancelProposal ─────────────────────────────────────────────────────────
 
-exports.cancelProposal = onCall({ region: 'europe-west10' }, async (request) => {
+exports.cancelProposal = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     try {
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
         }
 
-        const userId = request.auth.uid;
-        const { proposalId } = request.data;
+        const userId = context.auth.uid;
+        const { proposalId } = data;
 
         if (!proposalId || typeof proposalId !== 'string') {
-            throw new HttpsError('invalid-argument', 'proposalId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'proposalId is required');
         }
 
         await db.runTransaction(async (transaction) => {
@@ -594,13 +602,13 @@ exports.cancelProposal = onCall({ region: 'europe-west10' }, async (request) => 
             const proposalDoc = await transaction.get(proposalRef);
 
             if (!proposalDoc.exists) {
-                throw new HttpsError('not-found', 'Proposal not found');
+                throw new functions.https.HttpsError('not-found', 'Proposal not found');
             }
 
             const proposal = proposalDoc.data();
 
             if (proposal.status !== 'active') {
-                throw new HttpsError('failed-precondition', 'Only active proposals can be cancelled');
+                throw new functions.https.HttpsError('failed-precondition', 'Only active proposals can be cancelled');
             }
 
             // Live authorization check — either side can cancel
@@ -613,7 +621,7 @@ exports.cancelProposal = onCall({ region: 'europe-west10' }, async (request) => 
             const opponentTeam = opponentTeamDoc.data();
 
             if (!isAuthorized(proposerTeam, userId) && !isAuthorized(opponentTeam, userId)) {
-                throw new HttpsError('permission-denied', 'Only leaders or schedulers can cancel proposals');
+                throw new functions.https.HttpsError('permission-denied', 'Only leaders or schedulers can cancel proposals');
             }
 
             // WRITE PHASE
@@ -649,24 +657,26 @@ exports.cancelProposal = onCall({ region: 'europe-west10' }, async (request) => 
 
     } catch (error) {
         console.error('❌ Error cancelling proposal:', error);
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError('internal', 'Failed to cancel proposal: ' + error.message);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to cancel proposal: ' + error.message);
     }
 });
 
 // ─── cancelScheduledMatch ────────────────────────────────────────────────────
 
-exports.cancelScheduledMatch = onCall({ region: 'europe-west10' }, async (request) => {
+exports.cancelScheduledMatch = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     try {
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
         }
 
-        const userId = request.auth.uid;
-        const { matchId } = request.data;
+        const userId = context.auth.uid;
+        const { matchId } = data;
 
         if (!matchId || typeof matchId !== 'string') {
-            throw new HttpsError('invalid-argument', 'matchId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'matchId is required');
         }
 
         await db.runTransaction(async (transaction) => {
@@ -675,16 +685,16 @@ exports.cancelScheduledMatch = onCall({ region: 'europe-west10' }, async (reques
             const matchDoc = await transaction.get(matchRef);
 
             if (!matchDoc.exists) {
-                throw new HttpsError('not-found', 'Match not found');
+                throw new functions.https.HttpsError('not-found', 'Match not found');
             }
 
             const matchData = matchDoc.data();
 
             if (matchData.status === 'cancelled') {
-                throw new HttpsError('failed-precondition', 'Match already cancelled');
+                throw new functions.https.HttpsError('failed-precondition', 'Match already cancelled');
             }
             if (matchData.status !== 'upcoming') {
-                throw new HttpsError('failed-precondition', 'Only upcoming matches can be cancelled');
+                throw new functions.https.HttpsError('failed-precondition', 'Only upcoming matches can be cancelled');
             }
 
             // Live authorization check — read both team docs
@@ -697,7 +707,7 @@ exports.cancelScheduledMatch = onCall({ region: 'europe-west10' }, async (reques
             const teamBData = teamBDoc.data();
 
             if (!isAuthorized(teamAData, userId) && !isAuthorized(teamBData, userId)) {
-                throw new HttpsError('permission-denied', 'Only leaders or schedulers can cancel matches');
+                throw new functions.https.HttpsError('permission-denied', 'Only leaders or schedulers can cancel matches');
             }
 
             // Read parent proposal
@@ -765,54 +775,56 @@ exports.cancelScheduledMatch = onCall({ region: 'europe-west10' }, async (reques
 
     } catch (error) {
         console.error('❌ Error cancelling scheduled match:', error);
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError('internal', 'Failed to cancel scheduled match: ' + error.message);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to cancel scheduled match: ' + error.message);
     }
 });
 
 // ─── toggleScheduler ────────────────────────────────────────────────────────
 
-exports.toggleScheduler = onCall({ region: 'europe-west10' }, async (request) => {
+exports.toggleScheduler = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     try {
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
         }
 
-        const userId = request.auth.uid;
-        const { teamId, targetUserId, enabled } = request.data;
+        const userId = context.auth.uid;
+        const { teamId, targetUserId, enabled } = data;
 
         if (!teamId || typeof teamId !== 'string') {
-            throw new HttpsError('invalid-argument', 'teamId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'teamId is required');
         }
         if (!targetUserId || typeof targetUserId !== 'string') {
-            throw new HttpsError('invalid-argument', 'targetUserId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'targetUserId is required');
         }
         if (typeof enabled !== 'boolean') {
-            throw new HttpsError('invalid-argument', 'enabled must be a boolean');
+            throw new functions.https.HttpsError('invalid-argument', 'enabled must be a boolean');
         }
 
         // Cannot toggle scheduler for yourself if you're the leader (you're always implicitly a scheduler)
         const teamDoc = await db.collection('teams').doc(teamId).get();
         if (!teamDoc.exists) {
-            throw new HttpsError('not-found', 'Team not found');
+            throw new functions.https.HttpsError('not-found', 'Team not found');
         }
 
         const team = teamDoc.data();
 
         // Only leader can toggle schedulers
         if (team.leaderId !== userId) {
-            throw new HttpsError('permission-denied', 'Only team leaders can manage schedulers');
+            throw new functions.https.HttpsError('permission-denied', 'Only team leaders can manage schedulers');
         }
 
         // Target must be on roster
         const targetPlayer = team.playerRoster.find(p => p.userId === targetUserId);
         if (!targetPlayer) {
-            throw new HttpsError('not-found', 'Player not found on team roster');
+            throw new functions.https.HttpsError('not-found', 'Player not found on team roster');
         }
 
         // Leader is always an implicit scheduler — don't add/remove them
         if (targetUserId === team.leaderId) {
-            throw new HttpsError('invalid-argument', 'Leader is always a scheduler');
+            throw new functions.https.HttpsError('invalid-argument', 'Leader is always a scheduler');
         }
 
         // Update schedulers array
@@ -833,7 +845,7 @@ exports.toggleScheduler = onCall({ region: 'europe-west10' }, async (request) =>
 
     } catch (error) {
         console.error('❌ Error toggling scheduler:', error);
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError('internal', 'Failed to toggle scheduler: ' + error.message);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to toggle scheduler: ' + error.message);
     }
 });

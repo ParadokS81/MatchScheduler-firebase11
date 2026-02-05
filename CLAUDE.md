@@ -289,39 +289,50 @@ function componentName() {
 
 ### Deployment (Production)
 
-**Region:** All functions MUST use `europe-west10`. This is set in two places:
-- Backend: Every `onCall()` and `onRequest()` takes `{ region: 'europe-west10' }` as first arg
-- Frontend: `getFunctions(app, 'europe-west10')` in `public/index.html`
-- Storage triggers already specify region in their config objects
+**Region:** Functions use `europe-west3` (Frankfurt) except storage triggers:
+- Backend v1 onCall functions: `functions.region('europe-west3').https.onCall(...)`
+- Backend v2 storage triggers: `{ region: 'europe-west10' }` (must match bucket region)
+- Frontend: `getFunctions(app, 'europe-west3')` in `public/index.html`
 
-**Never deploy all functions at once:**
+**Architecture (after v1 migration):**
+- **v1 functions (25)**: Share a single Cloud Functions container - fast deploys!
+- **v2 storage triggers (2)**: `processLogoUpload`, `processAvatarUpload` - separate Cloud Run services
+
+**Deploy all functions:**
 ```bash
-firebase deploy --only functions          # ❌ Hits Cloud Run CPU quota (26+ simultaneous container builds)
-./scripts/deploy-functions.sh             # ✅ Deploys in batches of 5-7 with pauses
+firebase deploy --only functions          # ✅ Works now! v1 functions share infrastructure
+./scripts/deploy-functions.sh             # ✅ Same thing, just with logging
 ```
 
-**Deploy individual functions or small groups:**
-```bash
-firebase deploy --only functions:updateProfile,functions:createProfile
-```
-
-**Deploy hosting + rules (no quota issues):**
+**Deploy hosting + rules:**
 ```bash
 firebase deploy --only hosting            # Frontend changes
 firebase deploy --only firestore:rules    # Security rules
 firebase deploy --only hosting,firestore:rules  # Both
 ```
 
-**After adding a new Cloud Function:**
-1. Add `{ region: 'europe-west10' }` to the `onCall()`/`onRequest()` config
+**After adding a new Cloud Function (v1 pattern):**
+```javascript
+// In your function file:
+const functions = require('firebase-functions');
+
+exports.myNewFunction = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+        // data = parameters, context.auth = user auth
+    });
+```
+1. Use the v1 pattern above (NOT v2 `onCall({ region }, handler)`)
 2. Export it in `functions/index.js`
-3. Add it to the appropriate batch in `scripts/deploy-functions.sh`
+3. Deploy with `firebase deploy --only functions`
 
-**Why batched deploys?** Firebase v2 functions each create a separate Cloud Run service. Deploying 26+ simultaneously exceeds Google Cloud's concurrent container build quota per region. This is a quota limit, not a billing limit — Blaze plan doesn't bypass it.
-
-**Cleaning up old us-central1 functions:** After the region migration, delete the old us-central1 services:
+**Cleaning up old Cloud Run services:** After the region migration, delete orphaned services:
 ```bash
-firebase functions:delete functionName --region us-central1
+# List Cloud Run services in the region
+gcloud run services list --region=europe-west3
+
+# Delete old function services (keep processLogoUpload, processAvatarUpload)
+gcloud run services delete functionName --region=europe-west3
 ```
 
 ### Common Integration Mistakes (Check These First!)

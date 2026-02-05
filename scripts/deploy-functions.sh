@@ -1,10 +1,12 @@
 #!/bin/bash
-# Deploy Cloud Functions in batches to avoid Cloud Run CPU quota limits.
+# Deploy Cloud Functions
 # Usage: ./scripts/deploy-functions.sh [--project PROJECT_ID]
 #
-# Each Firebase v2 function = separate Cloud Run service.
-# Deploying all 27 at once exceeds concurrent container build quota.
-# This script deploys in groups of 5-6 with pauses between batches.
+# After v1 migration:
+# - v1 functions (25) deploy as a single Cloud Functions container - fast!
+# - v2 storage triggers (2) deploy as separate Cloud Run services
+#
+# No more quota issues - v1 functions share infrastructure.
 
 set -e
 
@@ -14,69 +16,16 @@ if [ "$1" = "--project" ] && [ -n "$2" ]; then
     shift 2
 fi
 
-echo "=== MatchScheduler Functions Deploy (Batched) ==="
-echo "Region: europe-west10"
+echo "=== MatchScheduler Functions Deploy ==="
+echo "Region: europe-west3"
 echo ""
 
-# Batch 1: Auth & Profile (6 functions)
-echo "--- Batch 1/5: Auth & Profile ---"
-firebase deploy --only \
-functions:googleSignIn,\
-functions:createProfile,\
-functions:updateProfile,\
-functions:getProfile,\
-functions:deleteAccount,\
-functions:discordOAuthExchange \
-$PROJECT_FLAG
-echo "Batch 1 complete. Waiting 10s..."
-sleep 10
+# Option 1: Deploy all functions at once (recommended after v1 migration)
+echo "Deploying all functions..."
+firebase deploy --only functions $PROJECT_FLAG
 
-# Batch 2: Team Operations (7 functions)
-echo "--- Batch 2/5: Team Operations ---"
-firebase deploy --only \
-functions:createTeam,\
-functions:joinTeam,\
-functions:regenerateJoinCode,\
-functions:leaveTeam,\
-functions:updateTeamSettings,\
-functions:kickPlayer,\
-functions:transferLeadership \
-$PROJECT_FLAG
-echo "Batch 2 complete. Waiting 10s..."
-sleep 10
-
-# Batch 3: Availability, Templates, Favorites (5 functions)
-echo "--- Batch 3/5: Availability & Templates ---"
-firebase deploy --only \
-functions:updateAvailability,\
-functions:saveTemplate,\
-functions:deleteTemplate,\
-functions:renameTemplate,\
-functions:updateFavorites \
-$PROJECT_FLAG
-echo "Batch 3 complete. Waiting 10s..."
-sleep 10
-
-# Batch 4: Match Proposals (6 functions)
-echo "--- Batch 4/5: Match Proposals ---"
-firebase deploy --only \
-functions:createProposal,\
-functions:confirmSlot,\
-functions:withdrawConfirmation,\
-functions:cancelProposal,\
-functions:cancelScheduledMatch,\
-functions:toggleScheduler \
-$PROJECT_FLAG
-echo "Batch 4 complete. Waiting 10s..."
-sleep 10
-
-# Batch 5: Storage Triggers + Misc (3 functions)
-echo "--- Batch 5/5: Storage Triggers & Misc ---"
-firebase deploy --only \
-functions:processLogoUpload,\
-functions:processAvatarUpload,\
-functions:helloWorld \
-$PROJECT_FLAG
 echo ""
-
 echo "=== All functions deployed ==="
+echo ""
+echo "Note: v1 functions share a single container."
+echo "Only storage triggers (processLogoUpload, processAvatarUpload) use Cloud Run."

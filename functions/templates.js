@@ -1,5 +1,5 @@
 // /functions/templates.js - Template management Cloud Functions
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const MAX_TEMPLATES = 3;
@@ -12,36 +12,38 @@ const VALID_SLOT_PATTERN = /^(mon|tue|wed|thu|fri|sat|sun)_(0[0-9]|1[0-9]|2[0-3]
 /**
  * Save a new availability template
  */
-const saveTemplate = onCall({ region: 'europe-west10' }, async (request) => {
+const saveTemplate = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     const db = getFirestore();
 
     // Validate authentication
-    if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'Must be signed in');
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
     }
 
-    const userId = request.auth.uid;
-    const { name, slots } = request.data;
+    const userId = context.auth.uid;
+    const { name, slots } = data;
 
     // Validate name
     if (!name || typeof name !== 'string') {
-        throw new HttpsError('invalid-argument', 'Template name is required');
+        throw new functions.https.HttpsError('invalid-argument', 'Template name is required');
     }
 
     const trimmedName = name.trim();
     if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
-        throw new HttpsError('invalid-argument', `Name must be 1-${MAX_NAME_LENGTH} characters`);
+        throw new functions.https.HttpsError('invalid-argument', `Name must be 1-${MAX_NAME_LENGTH} characters`);
     }
 
     // Validate slots
     if (!Array.isArray(slots) || slots.length === 0) {
-        throw new HttpsError('invalid-argument', 'At least one slot is required');
+        throw new functions.https.HttpsError('invalid-argument', 'At least one slot is required');
     }
 
     // Validate slot format
     for (const slot of slots) {
         if (typeof slot !== 'string' || !VALID_SLOT_PATTERN.test(slot)) {
-            throw new HttpsError('invalid-argument', `Invalid slot format: ${slot}`);
+            throw new functions.https.HttpsError('invalid-argument', `Invalid slot format: ${slot}`);
         }
     }
 
@@ -53,7 +55,7 @@ const saveTemplate = onCall({ region: 'europe-west10' }, async (request) => {
     const existingTemplates = await templatesRef.count().get();
 
     if (existingTemplates.data().count >= MAX_TEMPLATES) {
-        throw new HttpsError(
+        throw new functions.https.HttpsError(
             'resource-exhausted',
             `Maximum ${MAX_TEMPLATES} templates allowed. Delete one first.`
         );
@@ -77,19 +79,21 @@ const saveTemplate = onCall({ region: 'europe-west10' }, async (request) => {
 /**
  * Delete a user's template
  */
-const deleteTemplate = onCall({ region: 'europe-west10' }, async (request) => {
+const deleteTemplate = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     const db = getFirestore();
 
     // Validate authentication
-    if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'Must be signed in');
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
     }
 
-    const userId = request.auth.uid;
-    const { templateId } = request.data;
+    const userId = context.auth.uid;
+    const { templateId } = data;
 
     if (!templateId || typeof templateId !== 'string') {
-        throw new HttpsError('invalid-argument', 'Template ID is required');
+        throw new functions.https.HttpsError('invalid-argument', 'Template ID is required');
     }
 
     // Verify template exists and belongs to user (subcollection ensures ownership)
@@ -97,7 +101,7 @@ const deleteTemplate = onCall({ region: 'europe-west10' }, async (request) => {
     const templateDoc = await templateRef.get();
 
     if (!templateDoc.exists) {
-        throw new HttpsError('not-found', 'Template not found');
+        throw new functions.https.HttpsError('not-found', 'Template not found');
     }
 
     // Delete template
@@ -111,29 +115,31 @@ const deleteTemplate = onCall({ region: 'europe-west10' }, async (request) => {
 /**
  * Rename a user's template
  */
-const renameTemplate = onCall({ region: 'europe-west10' }, async (request) => {
+const renameTemplate = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     const db = getFirestore();
 
     // Validate authentication
-    if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'Must be signed in');
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
     }
 
-    const userId = request.auth.uid;
-    const { templateId, name } = request.data;
+    const userId = context.auth.uid;
+    const { templateId, name } = data;
 
     if (!templateId || typeof templateId !== 'string') {
-        throw new HttpsError('invalid-argument', 'Template ID is required');
+        throw new functions.https.HttpsError('invalid-argument', 'Template ID is required');
     }
 
     // Validate name
     if (!name || typeof name !== 'string') {
-        throw new HttpsError('invalid-argument', 'Template name is required');
+        throw new functions.https.HttpsError('invalid-argument', 'Template name is required');
     }
 
     const trimmedName = name.trim();
     if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
-        throw new HttpsError('invalid-argument', `Name must be 1-${MAX_NAME_LENGTH} characters`);
+        throw new functions.https.HttpsError('invalid-argument', `Name must be 1-${MAX_NAME_LENGTH} characters`);
     }
 
     // Verify template exists and belongs to user (subcollection ensures ownership)
@@ -141,7 +147,7 @@ const renameTemplate = onCall({ region: 'europe-west10' }, async (request) => {
     const templateDoc = await templateRef.get();
 
     if (!templateDoc.exists) {
-        throw new HttpsError('not-found', 'Template not found');
+        throw new functions.https.HttpsError('not-found', 'Template not found');
     }
 
     // Update template

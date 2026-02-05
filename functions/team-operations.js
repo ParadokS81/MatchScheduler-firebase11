@@ -1,7 +1,7 @@
 // Team Operations Cloud Functions
 // Following PRD v2 Architecture with Firebase v11
 
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
 
@@ -83,15 +83,17 @@ function validateTeamData(teamData) {
 }
 
 // Create team function
-exports.createTeam = onCall({ region: 'europe-west10' }, async (request) => {
+exports.createTeam = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     try {
         // Check authentication
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated to create a team');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to create a team');
         }
-        
-        const userId = request.auth.uid;
-        const teamData = request.data;
+
+        const userId = context.auth.uid;
+        const teamData = data;
         
         console.log('Creating team for user:', userId);
         console.log('Team data:', teamData);
@@ -99,21 +101,21 @@ exports.createTeam = onCall({ region: 'europe-west10' }, async (request) => {
         // Validate team data
         const validationErrors = validateTeamData(teamData);
         if (validationErrors.length > 0) {
-            throw new HttpsError('invalid-argument', validationErrors.join(', '));
+            throw new functions.https.HttpsError('invalid-argument', validationErrors.join(', '));
         }
         
         // Get user profile to include in team roster
         const userDoc = await db.collection('users').doc(userId).get();
         if (!userDoc.exists) {
-            throw new HttpsError('not-found', 'User profile not found. Please create your profile first.');
+            throw new functions.https.HttpsError('not-found', 'User profile not found. Please create your profile first.');
         }
         
         const userProfile = userDoc.data();
-        
+
         // Check if user already has 2 teams (max limit)
         const userTeams = userProfile.teams || {};
         if (Object.keys(userTeams).length >= 2) {
-            throw new HttpsError('failed-precondition', 'You can only be on a maximum of 2 teams');
+            throw new functions.https.HttpsError('failed-precondition', 'You can only be on a maximum of 2 teams');
         }
 
         // Check if team name already exists (case-insensitive)
@@ -124,7 +126,7 @@ exports.createTeam = onCall({ region: 'europe-west10' }, async (request) => {
             .get();
 
         if (!existingTeamByName.empty) {
-            throw new HttpsError('already-exists', `A team named "${teamData.teamName.trim()}" already exists. Please choose a different name.`);
+            throw new functions.https.HttpsError('already-exists', `A team named "${teamData.teamName.trim()}" already exists. Please choose a different name.`);
         }
 
         // Generate unique join code
@@ -144,7 +146,7 @@ exports.createTeam = onCall({ region: 'europe-west10' }, async (request) => {
         }
         
         if (!isUnique) {
-            throw new HttpsError('internal', 'Failed to generate unique join code. Please try again.');
+            throw new functions.https.HttpsError('internal', 'Failed to generate unique join code. Please try again.');
         }
         
         // Create team document
@@ -255,91 +257,93 @@ exports.createTeam = onCall({ region: 'europe-west10' }, async (request) => {
         
     } catch (error) {
         console.error('❌ Error creating team:', error);
-        
-        if (error instanceof HttpsError) {
+
+        if (error instanceof functions.https.HttpsError) {
             throw error;
         }
-        
-        throw new HttpsError('internal', 'Failed to create team: ' + error.message);
+
+        throw new functions.https.HttpsError('internal', 'Failed to create team: ' + error.message);
     }
 });
 
 // Join team function
-exports.joinTeam = onCall({ region: 'europe-west10' }, async (request) => {
+exports.joinTeam = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     console.log('🚀 joinTeam function called');
-    console.log('Request auth:', request.auth ? 'authenticated' : 'not authenticated');
-    console.log('Request data:', request.data);
-    
+    console.log('Request auth:', context.auth ? 'authenticated' : 'not authenticated');
+    console.log('Request data:', data);
+
     try {
         // Check authentication
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated to join a team');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to join a team');
         }
-        
-        const userId = request.auth.uid;
-        const { joinCode } = request.data;
+
+        const userId = context.auth.uid;
+        const { joinCode } = data;
         
         console.log('User joining team:', userId, 'with code:', joinCode);
         
         // Validate join code
         if (!joinCode || typeof joinCode !== 'string') {
-            throw new HttpsError('invalid-argument', 'Join code is required');
+            throw new functions.https.HttpsError('invalid-argument', 'Join code is required');
         }
-        
+
         const trimmedCode = joinCode.trim().toUpperCase();
         if (trimmedCode.length !== 6) {
-            throw new HttpsError('invalid-argument', 'Join code must be exactly 6 characters');
+            throw new functions.https.HttpsError('invalid-argument', 'Join code must be exactly 6 characters');
         }
-        
+
         if (!/^[A-Z0-9]{6}$/.test(trimmedCode)) {
-            throw new HttpsError('invalid-argument', 'Join code must contain only uppercase letters and numbers');
+            throw new functions.https.HttpsError('invalid-argument', 'Join code must contain only uppercase letters and numbers');
         }
         
         // Get user profile
         const userDoc = await db.collection('users').doc(userId).get();
         if (!userDoc.exists) {
-            throw new HttpsError('not-found', 'User profile not found. Please create your profile first.');
+            throw new functions.https.HttpsError('not-found', 'User profile not found. Please create your profile first.');
         }
-        
+
         const userProfile = userDoc.data();
-        
+
         // Check if user already has 2 teams (max limit)
         const userTeams = userProfile.teams || {};
         if (Object.keys(userTeams).length >= 2) {
-            throw new HttpsError('failed-precondition', 'You can only be on a maximum of 2 teams');
+            throw new functions.https.HttpsError('failed-precondition', 'You can only be on a maximum of 2 teams');
         }
-        
+
         // Find team by join code
         const teamQuery = await db.collection('teams').where('joinCode', '==', trimmedCode).get();
-        
+
         if (teamQuery.empty) {
-            throw new HttpsError('not-found', 'Invalid join code. Please check the code and try again.');
+            throw new functions.https.HttpsError('not-found', 'Invalid join code. Please check the code and try again.');
         }
-        
+
         const teamDoc = teamQuery.docs[0];
         const team = teamDoc.data();
         const teamId = teamDoc.id;
-        
+
         // Check if team is active
         if (team.status !== 'active') {
-            throw new HttpsError('failed-precondition', 'This team is not currently accepting new members');
+            throw new functions.https.HttpsError('failed-precondition', 'This team is not currently accepting new members');
         }
-        
+
         // Check if user is already on this team
         if (userTeams[teamId]) {
-            throw new HttpsError('already-exists', 'You are already a member of this team');
+            throw new functions.https.HttpsError('already-exists', 'You are already a member of this team');
         }
-        
+
         // Check if team is full
         if (team.playerRoster.length >= team.maxPlayers) {
-            throw new HttpsError('failed-precondition', `Team is full (${team.playerRoster.length}/${team.maxPlayers} players)`);
+            throw new functions.https.HttpsError('failed-precondition', `Team is full (${team.playerRoster.length}/${team.maxPlayers} players)`);
         }
-        
+
         // Check if initials are unique on this team (only if roster is not empty)
         if (team.playerRoster.length > 0) {
             const existingInitials = team.playerRoster.map(player => player.initials);
             if (existingInitials.includes(userProfile.initials)) {
-                throw new HttpsError('failed-precondition',
+                throw new functions.https.HttpsError('failed-precondition',
                     `Initials "${userProfile.initials}" are already taken on this team. Please update your profile with different initials.`);
             }
         }
@@ -437,40 +441,42 @@ exports.joinTeam = onCall({ region: 'europe-west10' }, async (request) => {
         console.error('Error name:', error.name);
         console.error('Error message:', error.message);
         console.error('Error stack:', error.stack);
-        
-        if (error instanceof HttpsError) {
+
+        if (error instanceof functions.https.HttpsError) {
             throw error;
         }
-        
-        throw new HttpsError('internal', 'Failed to join team: ' + error.message);
+
+        throw new functions.https.HttpsError('internal', 'Failed to join team: ' + error.message);
     }
 });
 
 // Regenerate join code function
-exports.regenerateJoinCode = onCall({ region: 'europe-west10' }, async (request) => {
+exports.regenerateJoinCode = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     try {
         // Check authentication
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
         }
-        
-        const userId = request.auth.uid;
-        const { teamId } = request.data;
+
+        const userId = context.auth.uid;
+        const { teamId } = data;
         
         // Validate input
         if (!teamId || typeof teamId !== 'string') {
-            throw new HttpsError('invalid-argument', 'teamId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'teamId is required');
         }
-        
+
         // Get team and verify user is leader
         const teamDoc = await db.collection('teams').doc(teamId).get();
         if (!teamDoc.exists) {
-            throw new HttpsError('not-found', 'Team not found');
+            throw new functions.https.HttpsError('not-found', 'Team not found');
         }
-        
+
         const team = teamDoc.data();
         if (team.leaderId !== userId) {
-            throw new HttpsError('permission-denied', 'Only team leaders can regenerate join codes');
+            throw new functions.https.HttpsError('permission-denied', 'Only team leaders can regenerate join codes');
         }
         
         // Generate new join code
@@ -500,7 +506,7 @@ exports.regenerateJoinCode = onCall({ region: 'europe-west10' }, async (request)
             
             attempts++;
             if (attempts > 10) {
-                throw new HttpsError('internal', 'Failed to generate unique join code');
+                throw new functions.https.HttpsError('internal', 'Failed to generate unique join code');
             }
         } while (true);
         
@@ -547,31 +553,33 @@ exports.regenerateJoinCode = onCall({ region: 'europe-west10' }, async (request)
         
     } catch (error) {
         console.error('❌ Error regenerating join code:', error);
-        
-        if (error instanceof HttpsError) {
+
+        if (error instanceof functions.https.HttpsError) {
             throw error;
         }
-        
-        throw new HttpsError('internal', 'Failed to regenerate join code: ' + error.message);
+
+        throw new functions.https.HttpsError('internal', 'Failed to regenerate join code: ' + error.message);
     }
 });
 
 // Leave team function
-exports.leaveTeam = onCall({ region: 'europe-west10' }, async (request) => {
+exports.leaveTeam = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     try {
         // Check authentication
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
         }
-        
-        const userId = request.auth.uid;
-        const { teamId } = request.data;
+
+        const userId = context.auth.uid;
+        const { teamId } = data;
         
         // Validate input
         if (!teamId || typeof teamId !== 'string') {
-            throw new HttpsError('invalid-argument', 'teamId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'teamId is required');
         }
-        
+
         // Get team and user documents
         const [teamDoc, userDoc] = await Promise.all([
             db.collection('teams').doc(teamId).get(),
@@ -579,29 +587,29 @@ exports.leaveTeam = onCall({ region: 'europe-west10' }, async (request) => {
         ]);
         
         if (!teamDoc.exists) {
-            throw new HttpsError('not-found', 'Team not found');
+            throw new functions.https.HttpsError('not-found', 'Team not found');
         }
-        
+
         if (!userDoc.exists) {
-            throw new HttpsError('not-found', 'User not found');
+            throw new functions.https.HttpsError('not-found', 'User not found');
         }
-        
+
         const team = teamDoc.data();
         const user = userDoc.data();
-        
+
         // Check if user is on team
         const playerIndex = team.playerRoster.findIndex(p => p.userId === userId);
         if (playerIndex === -1) {
-            throw new HttpsError('permission-denied', 'User is not on this team');
+            throw new functions.https.HttpsError('permission-denied', 'User is not on this team');
         }
-        
+
         const player = team.playerRoster[playerIndex];
         const isLeader = team.leaderId === userId;
         const isLastMember = team.playerRoster.length === 1;
-        
+
         // Leaders can only leave if they're the last member
         if (isLeader && !isLastMember) {
-            throw new HttpsError('permission-denied', 'Leaders cannot leave their team unless they are the last member');
+            throw new functions.https.HttpsError('permission-denied', 'Leaders cannot leave their team unless they are the last member');
         }
         
         // Execute in transaction
@@ -704,30 +712,32 @@ exports.leaveTeam = onCall({ region: 'europe-west10' }, async (request) => {
         
     } catch (error) {
         console.error('❌ Error leaving team:', error);
-        
-        if (error instanceof HttpsError) {
+
+        if (error instanceof functions.https.HttpsError) {
             throw error;
         }
-        
-        throw new HttpsError('internal', 'Failed to leave team: ' + error.message);
+
+        throw new functions.https.HttpsError('internal', 'Failed to leave team: ' + error.message);
     }
 });
 
 // Kick player function - removes a player from the team
-exports.kickPlayer = onCall({ region: 'europe-west10' }, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'Authentication required');
+exports.kickPlayer = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const { teamId, playerToKickId } = request.data;
-    const callerId = request.auth.uid;
+    const { teamId, playerToKickId } = data;
+    const callerId = context.auth.uid;
 
     if (!teamId || !playerToKickId) {
-        throw new HttpsError('invalid-argument', 'Missing required parameters');
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required parameters');
     }
 
     if (callerId === playerToKickId) {
-        throw new HttpsError('invalid-argument', 'Cannot remove yourself. Use "Leave Team" instead.');
+        throw new functions.https.HttpsError('invalid-argument', 'Cannot remove yourself. Use "Leave Team" instead.');
     }
 
     try {
@@ -827,26 +837,28 @@ exports.kickPlayer = onCall({ region: 'europe-west10' }, async (request) => {
         return { success: true };
     } catch (error) {
         console.error('❌ kickPlayer error:', error);
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError('internal', 'Failed to kick player: ' + error.message);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to kick player: ' + error.message);
     }
 });
 
 // Transfer leadership function
-exports.transferLeadership = onCall({ region: 'europe-west10' }, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'Authentication required');
+exports.transferLeadership = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const { teamId, newLeaderId } = request.data;
-    const callerId = request.auth.uid;
+    const { teamId, newLeaderId } = data;
+    const callerId = context.auth.uid;
 
     if (!teamId || !newLeaderId) {
-        throw new HttpsError('invalid-argument', 'Missing required parameters');
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required parameters');
     }
 
     if (callerId === newLeaderId) {
-        throw new HttpsError('invalid-argument', 'You are already the leader');
+        throw new functions.https.HttpsError('invalid-argument', 'You are already the leader');
     }
 
     try {
@@ -938,47 +950,49 @@ exports.transferLeadership = onCall({ region: 'europe-west10' }, async (request)
         return { success: true };
     } catch (error) {
         console.error('❌ transferLeadership error:', error);
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError('internal', 'Failed to transfer leadership: ' + error.message);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to transfer leadership: ' + error.message);
     }
 });
 
 // Update team settings function
-exports.updateTeamSettings = onCall({ region: 'europe-west10' }, async (request) => {
+exports.updateTeamSettings = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
     try {
         // Check authentication
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
         }
-        
-        const userId = request.auth.uid;
-        const { teamId, maxPlayers } = request.data;
+
+        const userId = context.auth.uid;
+        const { teamId, maxPlayers } = data;
         
         // Validate input
         if (!teamId || typeof teamId !== 'string') {
-            throw new HttpsError('invalid-argument', 'teamId is required');
+            throw new functions.https.HttpsError('invalid-argument', 'teamId is required');
         }
-        
+
         if (!maxPlayers || typeof maxPlayers !== 'number' || maxPlayers < 4 || maxPlayers > 20) {
-            throw new HttpsError('invalid-argument', 'maxPlayers must be between 4 and 20');
+            throw new functions.https.HttpsError('invalid-argument', 'maxPlayers must be between 4 and 20');
         }
-        
+
         // Get team document
         const teamDoc = await db.collection('teams').doc(teamId).get();
         if (!teamDoc.exists) {
-            throw new HttpsError('not-found', 'Team not found');
+            throw new functions.https.HttpsError('not-found', 'Team not found');
         }
-        
+
         const team = teamDoc.data();
-        
+
         // Check if user is team leader
         if (team.leaderId !== userId) {
-            throw new HttpsError('permission-denied', 'Only team leaders can update team settings');
+            throw new functions.https.HttpsError('permission-denied', 'Only team leaders can update team settings');
         }
-        
+
         // Validate maxPlayers is not less than current roster size
         if (maxPlayers < team.playerRoster.length) {
-            throw new HttpsError('invalid-argument', `Max players cannot be less than current roster size (${team.playerRoster.length})`);
+            throw new functions.https.HttpsError('invalid-argument', `Max players cannot be less than current roster size (${team.playerRoster.length})`);
         }
         
         // Update team document
@@ -1024,11 +1038,11 @@ exports.updateTeamSettings = onCall({ region: 'europe-west10' }, async (request)
         
     } catch (error) {
         console.error('❌ Error updating team settings:', error);
-        
-        if (error instanceof HttpsError) {
+
+        if (error instanceof functions.https.HttpsError) {
             throw error;
         }
-        
-        throw new HttpsError('internal', 'Failed to update team settings: ' + error.message);
+
+        throw new functions.https.HttpsError('internal', 'Failed to update team settings: ' + error.message);
     }
 });

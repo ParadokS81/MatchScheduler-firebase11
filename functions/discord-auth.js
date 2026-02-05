@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
 
@@ -35,13 +35,11 @@ function getDiscordAvatarUrl(userId, avatarHash) {
  * Cloud Function: discordOAuthExchange
  * Exchanges Discord OAuth code for user data and creates/returns Firebase custom token
  */
-exports.discordOAuthExchange = onCall({
-    region: 'europe-west10',
-    // Declare secrets this function needs access to
-    secrets: ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET']
-}, async (request) => {
-    const { code, redirectUri, forceNew = false, linkOnly = false } = request.data;
-    const callerUid = request.auth?.uid;  // For linkOnly operations
+exports.discordOAuthExchange = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    const { code, redirectUri, forceNew = false, linkOnly = false } = data;
+    const callerUid = context.auth?.uid;  // For linkOnly operations
 
     // Validate inputs
     if (!code || typeof code !== 'string') {

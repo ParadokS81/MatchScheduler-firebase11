@@ -65,7 +65,7 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
         const storage = getStorage(app);
-        const functions = getFunctions(app, 'europe-west10');
+        const functions = getFunctions(app, 'europe-west3');
 
         // Check if we should use emulators (localhost development)
         const isLocalDev = window.location.hostname === 'localhost' ||
@@ -166,10 +166,11 @@
                 </div>
             </div>
 
-            <!-- Middle Row (Divider - Profile | Tabs | MinPlayers) -->
+            <!-- Middle Row (Divider - TeamName | Tabs | MinPlayers) -->
+            <!-- Slice 13.0a: Profile moved to bottom-left, team name now here -->
             <div id="panel-mid-left" class="panel panel-divider">
-                <div id="profile-compact-container" class="panel-content-compact">
-                    <!-- UserProfile.renderCompact() renders here -->
+                <div id="team-name-container" class="panel-content-compact">
+                    <!-- TeamNameDisplay renders here -->
                 </div>
             </div>
 
@@ -192,9 +193,13 @@
             </div>
 
             <!-- Bottom Row (Week 2 / Content + Side Panels) -->
-            <!-- Slice 6.0b: Grid Tools moved to TeamInfo drawer, this panel is now empty -->
             <div id="panel-bottom-left" class="panel">
-                <div id="upcoming-matches-container" class="panel-content h-full">
+                <div class="panel-content h-full flex flex-col">
+                    <div id="upcoming-matches-container" class="flex-1 min-h-0 overflow-y-auto">
+                    </div>
+                    <div id="profile-compact-container" class="flex-shrink-0 border-t border-border pt-2 mt-2">
+                        <!-- UserProfile.renderCompact() renders here -->
+                    </div>
                 </div>
             </div>
 
@@ -320,10 +325,12 @@
     <script src="js/components/TransferLeadershipModal.js?v=20260203a"></script>
     <script src="js/components/TeamManagementModal.js?v=20260203a"></script>
     <script src="js/components/TeamInfo.js?v=20260203a"></script>
+    <script src="js/components/TeamNameDisplay.js?v=20260205a"></script>
     <script src="js/components/AvailabilityGrid.js?v=20260203a"></script>
     <script src="js/components/WeekDisplay.js?v=20260203a"></script>
     <script src="js/components/WeekNavigation.js?v=20260203a"></script>
     <script src="js/components/GridActionButtons.js?v=20260203a"></script>
+    <script src="js/components/TemplatesModal.js?v=20260203a"></script>
     <script src="js/components/SelectionActionButton.js?v=20260203a"></script>
     <script src="js/components/PlayerTooltip.js?v=20260203a"></script>
     <script src="js/components/ColorPickerPopover.js?v=20260203a"></script>
