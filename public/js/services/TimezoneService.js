@@ -17,6 +17,7 @@ const TimezoneService = (function() {
 
     let _userTimezone = null;   // IANA string, e.g., "Europe/Stockholm"
     let _initialized = false;
+    let _hiddenTimeSlots = new Set(); // Slice 12.0a: Timeslot filter engine
 
     // ---------------------------------------------------------------
     // Initialization
@@ -211,6 +212,44 @@ const TimezoneService = (function() {
     }
 
     // ---------------------------------------------------------------
+    // Timeslot filtering (Slice 12.0a)
+    // ---------------------------------------------------------------
+
+    /**
+     * Get the currently visible time slots (all minus hidden).
+     * @returns {string[]} Array of visible local time strings
+     */
+    function getVisibleTimeSlots() {
+        if (_hiddenTimeSlots.size === 0) return DISPLAY_TIME_SLOTS;
+        return DISPLAY_TIME_SLOTS.filter(s => !_hiddenTimeSlots.has(s));
+    }
+
+    /**
+     * Set which time slots are hidden. Minimum 4 slots must remain visible.
+     * @param {string[]} hiddenSlots - Array of time slot strings to hide
+     * @returns {boolean} true if applied, false if rejected (too few would remain)
+     */
+    function setHiddenTimeSlots(hiddenSlots) {
+        const newHidden = new Set(
+            hiddenSlots.filter(s => DISPLAY_TIME_SLOTS.includes(s))
+        );
+        if (DISPLAY_TIME_SLOTS.length - newHidden.size < 4) {
+            console.warn('Cannot hide — minimum 4 slots must remain visible');
+            return false;
+        }
+        _hiddenTimeSlots = newHidden;
+        return true;
+    }
+
+    /**
+     * Get the currently hidden time slots.
+     * @returns {string[]} Array of hidden time slot strings
+     */
+    function getHiddenTimeSlots() {
+        return Array.from(_hiddenTimeSlots);
+    }
+
+    // ---------------------------------------------------------------
     // Grid helpers
     // ---------------------------------------------------------------
 
@@ -253,7 +292,7 @@ const TimezoneService = (function() {
     function buildGridToUtcMap(refDate) {
         const map = new Map();
         for (const day of DAYS) {
-            for (const time of DISPLAY_TIME_SLOTS) {
+            for (const time of getVisibleTimeSlots()) {
                 const localCellId = `${day}_${time}`;
                 const utc = localToUtcSlot(day, time, refDate);
                 map.set(localCellId, utc.slotId);
@@ -272,7 +311,7 @@ const TimezoneService = (function() {
     function buildUtcToGridMap(refDate) {
         const map = new Map();
         for (const day of DAYS) {
-            for (const time of DISPLAY_TIME_SLOTS) {
+            for (const time of getVisibleTimeSlots()) {
                 const utc = localToUtcSlot(day, time, refDate);
                 const localCellId = `${day}_${time}`;
                 map.set(utc.slotId, localCellId);
@@ -401,6 +440,10 @@ const TimezoneService = (function() {
         getTimezoneAbbreviation,
         getTimezoneLabel,
         getTimezoneOptions,
+        // Slice 12.0a: Timeslot filtering
+        getVisibleTimeSlots,
+        setHiddenTimeSlots,
+        getHiddenTimeSlots,
         // Constants exposed for external use
         DAYS,
         DISPLAY_TIME_SLOTS

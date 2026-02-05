@@ -66,6 +66,14 @@ const GridActionButtons = (function() {
                             Clear All
                         </button>
                     </div>
+
+                    <!-- Edit Timeslots (Slice 12.0b) -->
+                    <div class="pt-1 border-t border-border mt-1">
+                        <button id="edit-timeslots-btn"
+                                class="w-full px-2 py-1 text-xs rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-foreground">
+                            ⏱ Edit Timeslots
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
@@ -89,6 +97,10 @@ const GridActionButtons = (function() {
 
         clearAllBtn?.addEventListener('click', _handleClearAll);
         saveTemplateBtn?.addEventListener('click', _handleSaveTemplate);
+
+        // Slice 12.0b: Edit Timeslots
+        const editTimeslotsBtn = document.getElementById('edit-timeslots-btn');
+        editTimeslotsBtn?.addEventListener('click', _showTimeslotsModal);
 
         // Display mode toggle (Slice 5.0.1: 4 modes)
         document.querySelectorAll('.display-mode-btn').forEach(btn => {
@@ -345,6 +357,171 @@ const GridActionButtons = (function() {
                 callback(null);
             }
         });
+    }
+
+    // ---------------------------------------------------------------
+    // Slice 12.0b: Timeslot Editor Modal
+    // ---------------------------------------------------------------
+
+    const GAME_FREQUENCY = {
+        '1800': { count: 17, pct: 0.1 },
+        '1830': { count: 18, pct: 0.2 },
+        '1900': { count: 65, pct: 0.6 },
+        '1930': { count: 242, pct: 2.1 },
+        '2000': { count: 632, pct: 5.5 },
+        '2030': { count: 1386, pct: 12.1 },
+        '2100': { count: 1912, pct: 16.7 },
+        '2130': { count: 2297, pct: 20.1 },
+        '2200': { count: 2029, pct: 17.7 },
+        '2230': { count: 1629, pct: 14.2 },
+        '2300': { count: 1207, pct: 10.6 }
+    };
+
+    function _showTimeslotsModal() {
+        const allSlots = TimezoneService.DISPLAY_TIME_SLOTS;
+        const hiddenSlots = new Set(TimezoneService.getHiddenTimeSlots());
+
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4 backdrop-blur-sm';
+
+        const visibleCount = allSlots.length - hiddenSlots.size;
+
+        modal.innerHTML = `
+            <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm">
+                <div class="flex items-center justify-between p-4 border-b border-border">
+                    <h3 class="text-lg font-semibold">Edit Timeslots</h3>
+                    <span class="text-sm text-muted-foreground"><span id="timeslots-visible-count">${visibleCount}</span>/${allSlots.length} vis.</span>
+                </div>
+                <div class="p-4">
+                    <p class="text-xs text-muted-foreground mb-3">Toggle timeslots to free up space. Minimum 4 must remain visible.</p>
+                    <div class="space-y-0.5" id="timeslot-toggles">
+                        ${allSlots.map(slot => {
+                            const freq = GAME_FREQUENCY[slot] || { pct: 0 };
+                            const isChecked = !hiddenSlots.has(slot);
+                            const timeLabel = slot.slice(0, 2) + ':' + slot.slice(2);
+                            // Scale bar width: max pct is 20.1, map to ~95% max width
+                            const barWidth = Math.max(0.5, (freq.pct / 20.1) * 95);
+                            return `
+                                <label class="flex items-center gap-3 py-1.5 cursor-pointer">
+                                    <input type="checkbox" class="sr-only slot-checkbox" data-slot="${slot}" ${isChecked ? 'checked' : ''}>
+                                    <div class="slot-toggle"><div class="slot-toggle-knob"></div></div>
+                                    <span class="text-sm font-mono w-12">${timeLabel}</span>
+                                    <div class="flex-1 flex items-center gap-2">
+                                        <div class="flex-1 h-3 bg-muted rounded-sm overflow-hidden">
+                                            <div class="h-full bg-primary/50 rounded-sm" style="width: ${barWidth}%"></div>
+                                        </div>
+                                        <span class="text-xs text-muted-foreground w-10 text-right">${freq.pct}%</span>
+                                    </div>
+                                </label>
+                            `;
+                        }).join('')}
+                    </div>
+                    <p class="text-xs text-muted-foreground mt-3">EU 4on4 game frequency (15k games)<br>Peak hours: 21:00–22:30</p>
+                </div>
+                <div class="flex justify-end gap-2 p-4 border-t border-border">
+                    <button id="timeslots-cancel-btn" class="btn-secondary px-4 py-2 rounded text-sm">Cancel</button>
+                    <button id="timeslots-save-btn" class="btn-primary px-4 py-2 rounded text-sm">Save</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const countEl = modal.querySelector('#timeslots-visible-count');
+        const checkboxes = modal.querySelectorAll('.slot-checkbox');
+
+        function _updateToggleStates() {
+            const checked = modal.querySelectorAll('.slot-checkbox:checked');
+            const checkedCount = checked.length;
+            countEl.textContent = checkedCount;
+
+            // When exactly 4 remain, disable those 4 so user can't go below
+            checkboxes.forEach(cb => {
+                if (cb.checked && checkedCount <= 4) {
+                    cb.disabled = true;
+                    cb.parentElement.classList.add('opacity-50');
+                    cb.parentElement.style.cursor = 'not-allowed';
+                } else {
+                    cb.disabled = false;
+                    cb.parentElement.classList.remove('opacity-50');
+                    cb.parentElement.style.cursor = 'pointer';
+                }
+            });
+        }
+
+        // Attach change listeners
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', _updateToggleStates);
+        });
+
+        // Run once to set initial disabled states
+        _updateToggleStates();
+
+        // Escape key handler (defined before closeModal so it can be referenced)
+        const handleKeydown = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeModal();
+            }
+        };
+
+        const closeModal = () => {
+            document.removeEventListener('keydown', handleKeydown);
+            modal.remove();
+        };
+
+        // Save
+        modal.querySelector('#timeslots-save-btn').addEventListener('click', async () => {
+            const saveBtn = modal.querySelector('#timeslots-save-btn');
+            const unchecked = [];
+            checkboxes.forEach(cb => {
+                if (!cb.checked) unchecked.push(cb.dataset.slot);
+            });
+
+            const applied = TimezoneService.setHiddenTimeSlots(unchecked);
+            if (applied) {
+                window.dispatchEvent(new CustomEvent('timeslots-changed', {
+                    detail: { hiddenTimeSlots: unchecked }
+                }));
+
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+
+                try {
+                    await _persistHiddenTimeslots(unchecked);
+                } catch (error) {
+                    // _persistHiddenTimeslots already handles its own error toast
+                }
+            } else {
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showError('Minimum 4 timeslots must remain visible');
+                }
+            }
+            closeModal();
+        });
+
+        // Cancel
+        modal.querySelector('#timeslots-cancel-btn').addEventListener('click', closeModal);
+
+        document.addEventListener('keydown', handleKeydown);
+
+        // Backdrop click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+    }
+
+    async function _persistHiddenTimeslots(hiddenSlots) {
+        try {
+            if (typeof AuthService !== 'undefined') {
+                await AuthService.updateProfile({ hiddenTimeSlots: hiddenSlots });
+            }
+        } catch (error) {
+            console.error('Failed to save timeslot preferences:', error);
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showError('Failed to save timeslot preferences');
+            }
+        }
     }
 
     async function _handleAddMe() {

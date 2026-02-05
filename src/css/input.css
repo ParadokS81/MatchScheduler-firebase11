@@ -1857,6 +1857,47 @@ body {
 }
 
 /* ========================================
+   SLICE 12.0b: TIMESLOT EDITOR TOGGLE SWITCH
+   ======================================== */
+
+/* Timeslot toggle switch */
+.slot-toggle {
+  position: relative;
+  width: 2rem;
+  height: 1rem;
+  background-color: var(--muted);
+  border-radius: 9999px;
+  transition: background-color 150ms ease;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.slot-checkbox:checked + .slot-toggle {
+  background-color: var(--primary);
+}
+
+.slot-toggle-knob {
+  position: absolute;
+  top: 0.0625rem;
+  left: 0.0625rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  background: white;
+  border-radius: 9999px;
+  transition: transform 150ms ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.slot-checkbox:checked + .slot-toggle .slot-toggle-knob {
+  transform: translateX(1rem);
+}
+
+.slot-checkbox:disabled + .slot-toggle {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ========================================
    SLICE 5.1: TEAMS/PLAYERS BROWSER PANEL
    ======================================== */
 

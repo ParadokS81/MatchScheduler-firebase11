@@ -100,6 +100,16 @@ const MatchSchedulerApp = (function() {
         }
     }
 
+    // Slice 12.0a: Adjust grid row proportions based on visible timeslot count
+    function _updateGridLayout() {
+        const grid = document.querySelector('.main-grid-v3');
+        if (!grid) return;
+        const count = typeof TimezoneService !== 'undefined'
+            ? TimezoneService.getVisibleTimeSlots().length
+            : 11;
+        grid.style.gridTemplateRows = `${count / 11}fr 3rem 1fr`;
+    }
+
     // Initialize availability grid components
     function _initializeAvailabilityGrid() {
         // Initialize TimezoneService before grid (Slice 7.0b)
@@ -150,6 +160,17 @@ const MatchSchedulerApp = (function() {
             }
 
             // Refresh scheduled match highlights after grid rebuild
+            _updateScheduledMatchHighlights();
+        });
+
+        // Listen for timeslot filter changes (Slice 12.0a) - rebuild grids with fewer/more rows
+        window.addEventListener('timeslots-changed', () => {
+            _updateGridLayout();
+            _weekDisplay1.rebuildGrid();
+            _weekDisplay2.rebuildGrid();
+            if (_selectedTeam) {
+                _setupAvailabilityListeners(_selectedTeam.id);
+            }
             _updateScheduledMatchHighlights();
         });
 
@@ -214,6 +235,9 @@ const MatchSchedulerApp = (function() {
         if (typeof UpcomingMatchesPanel !== 'undefined') {
             UpcomingMatchesPanel.init('upcoming-matches-container');
         }
+
+        // Slice 12.0a: Apply saved timeslot filter on startup
+        _updateGridLayout();
 
         console.log(`📅 Availability grids initialized for weeks ${currentWeek} and ${currentWeek + 1}`);
     }

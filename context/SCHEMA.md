@@ -63,6 +63,12 @@ interface UserDocument {
                                // Default: null (auto-detected from browser)
                                // Used for: grid display conversion, slot UTC mapping
 
+  // Timeslot visibility preference (Slice 12.0c)
+  hiddenTimeSlots: string[] | null;  // Array of HHMM time slots to hide, e.g., ["1800", "1830"]
+                                     // Default: null (all 11 slots visible)
+                                     // Max 7 hidden (min 4 must remain visible)
+                                     // Valid values: 1800, 1830, 1900, 1930, 2000, 2030, 2100, 2130, 2200, 2230, 2300
+
   // Metadata
   createdAt: Timestamp;
   lastUpdatedAt: Timestamp;
@@ -497,3 +503,4 @@ const docId = `${teamId}_${weekId}`;
 - **2026-01-29**: Simplified avatar system - removed avatarUrls multi-size, using single photoURL (128px) with CSS sizing
 - **2026-01-31**: Added timezone field to user document, slot IDs now UTC-based (Slice 7.0a)
 - **2026-01-31**: Added matchProposals, scheduledMatches collections + schedulers field on teams (Slice 8.0a)
+- **2026-02-05**: Added hiddenTimeSlots field to user document (Slice 12.0c)

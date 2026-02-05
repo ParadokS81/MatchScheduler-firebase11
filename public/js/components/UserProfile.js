@@ -165,6 +165,16 @@ const UserProfile = (function() {
                         }));
                     }
                 }
+
+                // Load hidden timeslots preference (Slice 12.0b)
+                if (typeof TimezoneService !== 'undefined' && _userProfile.hiddenTimeSlots) {
+                    const applied = TimezoneService.setHiddenTimeSlots(_userProfile.hiddenTimeSlots);
+                    if (applied) {
+                        window.dispatchEvent(new CustomEvent('timeslots-changed', {
+                            detail: { hiddenTimeSlots: _userProfile.hiddenTimeSlots }
+                        }));
+                    }
+                }
             } else {
                 console.log('⚠️ User document not found - this should not happen with new flow');
                 _userProfile = null;

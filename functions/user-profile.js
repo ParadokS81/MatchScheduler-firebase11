@@ -182,13 +182,13 @@ exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
     }
 
     const { uid } = auth;
-    const { displayName, initials, discordUsername, discordUserId, avatarSource, photoURL, timezone } = data;
+    const { displayName, initials, discordUsername, discordUserId, avatarSource, photoURL, timezone, hiddenTimeSlots } = data;
 
     // Validate input - at least one field must be provided
     const hasAnyField = displayName || initials ||
         discordUsername !== undefined || discordUserId !== undefined ||
         avatarSource !== undefined || photoURL !== undefined ||
-        timezone !== undefined;
+        timezone !== undefined || hiddenTimeSlots !== undefined;
 
     if (!hasAnyField) {
         throw new HttpsError('invalid-argument', 'At least one field must be provided');
@@ -256,6 +256,23 @@ exports.updateProfile = onCall({ region: 'europe-west10' }, async (request) => {
             throw new HttpsError('invalid-argument', 'Invalid timezone format');
         }
         updates.timezone = timezone;
+    }
+
+    // Handle hiddenTimeSlots update (Slice 12.0c)
+    if (hiddenTimeSlots !== undefined) {
+        if (!Array.isArray(hiddenTimeSlots)) {
+            throw new HttpsError('invalid-argument', 'hiddenTimeSlots must be an array');
+        }
+        const validSlots = ['1800', '1830', '1900', '1930', '2000', '2030', '2100', '2130', '2200', '2230', '2300'];
+        for (const slot of hiddenTimeSlots) {
+            if (!validSlots.includes(slot)) {
+                throw new HttpsError('invalid-argument', `Invalid time slot: ${slot}`);
+            }
+        }
+        if (hiddenTimeSlots.length > 7) {
+            throw new HttpsError('invalid-argument', 'At least 4 time slots must remain visible');
+        }
+        updates.hiddenTimeSlots = hiddenTimeSlots;
     }
 
     try {

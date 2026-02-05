@@ -7,10 +7,12 @@
 const AvailabilityGrid = (function() {
     'use strict';
 
-    // Display time slots from TimezoneService (local times shown to user)
-    const TIME_SLOTS = typeof TimezoneService !== 'undefined'
-        ? TimezoneService.DISPLAY_TIME_SLOTS
-        : ['1800', '1830', '1900', '1930', '2000', '2030', '2100', '2130', '2200', '2230', '2300'];
+    // Slice 12.0a: Dynamic time slots from TimezoneService (respects hidden slots)
+    function _getTimeSlots() {
+        return typeof TimezoneService !== 'undefined'
+            ? TimezoneService.getVisibleTimeSlots()
+            : ['1800', '1830', '1900', '1930', '2000', '2030', '2100', '2130', '2200', '2230', '2300'];
+    }
 
     const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
     const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -100,7 +102,7 @@ const AvailabilityGrid = (function() {
                 _gridToUtcMap = new Map();
                 _utcToGridMap = new Map();
                 for (const day of DAYS) {
-                    for (const time of TIME_SLOTS) {
+                    for (const time of _getTimeSlots()) {
                         const id = `${day}_${time}`;
                         _gridToUtcMap.set(id, id);
                         _utcToGridMap.set(id, id);
@@ -199,8 +201,9 @@ const AvailabilityGrid = (function() {
 
             const startDayIdx = DAYS.indexOf(startDay);
             const endDayIdx = DAYS.indexOf(endDay);
-            const startTimeIdx = TIME_SLOTS.indexOf(startTime);
-            const endTimeIdx = TIME_SLOTS.indexOf(endTime);
+            const timeSlots = _getTimeSlots();
+            const startTimeIdx = timeSlots.indexOf(startTime);
+            const endTimeIdx = timeSlots.indexOf(endTime);
 
             // Get min/max for proper rectangle
             const minDay = Math.min(startDayIdx, endDayIdx);
@@ -211,7 +214,7 @@ const AvailabilityGrid = (function() {
             const cells = [];
             for (let d = minDay; d <= maxDay; d++) {
                 for (let t = minTime; t <= maxTime; t++) {
-                    cells.push(`${DAYS[d]}_${TIME_SLOTS[t]}`);
+                    cells.push(`${DAYS[d]}_${timeSlots[t]}`);
                 }
             }
             return cells;
@@ -378,7 +381,7 @@ const AvailabilityGrid = (function() {
          * Handle day header click (toggle entire column)
          */
         function _handleDayHeaderClick(day) {
-            const columnCells = TIME_SLOTS.map(time => `${day}_${time}`);
+            const columnCells = _getTimeSlots().map(time => `${day}_${time}`);
 
             // Toggle: if all selected, deselect; else select all
             const allSelected = columnCells.every(id => _selectedCells.has(id));
@@ -429,7 +432,7 @@ const AvailabilityGrid = (function() {
          */
         function selectAll() {
             DAYS.forEach(day => {
-                TIME_SLOTS.forEach(time => {
+                _getTimeSlots().forEach(time => {
                     const cellId = `${day}_${time}`;
                     _selectedCells.add(cellId);
                     const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
@@ -470,7 +473,7 @@ const AvailabilityGrid = (function() {
 
                     <!-- Time Rows -->
                     <div class="grid-body">
-                        ${TIME_SLOTS.map(time => `
+                        ${_getTimeSlots().map(time => `
                             <div class="grid-row">
                                 <div class="time-label clickable" data-time="${time}">${formatTime(time)}</div>
                                 ${DAYS.map(day => {
