@@ -121,7 +121,7 @@ const ComparisonModal = (function() {
 
         // Format the message
         const lines = [
-            `Match request: [${userTeamInfo.teamTag}] vs [${selectedMatch.teamTag}]`,
+            `Match request: ${userTeamInfo.teamTag} vs ${selectedMatch.teamTag}`,
             ''
         ];
 
@@ -133,6 +133,7 @@ const ComparisonModal = (function() {
         });
 
         lines.push('');
+        lines.push('https://scheduler.quake.world');
         lines.push('Let me know what works!');
 
         return lines.join('\n');
@@ -162,7 +163,7 @@ const ComparisonModal = (function() {
         const weekNum = weekId.split('-')[1];
 
         const lines = [
-            `Match proposal: [${userTeamInfo.teamTag}] vs [${selectedMatch.teamTag}] — Week ${weekNum}`,
+            `Match proposal: ${userTeamInfo.teamTag} vs ${selectedMatch.teamTag} — Week ${weekNum}`,
             `Filter: ${minFilter.yourTeam}v${minFilter.opponent} minimum`,
             ''
         ];
@@ -178,7 +179,7 @@ const ComparisonModal = (function() {
         }
 
         lines.push('');
-        lines.push(`${window.location.origin}${window.location.pathname}`);
+        lines.push('https://scheduler.quake.world');
         lines.push('');
         lines.push('Confirm slots in the Matches tab. Let me know!');
 
@@ -375,7 +376,7 @@ const ComparisonModal = (function() {
                 <!-- Team Name - single line: [TAG] Team Name -->
                 <div class="text-center mb-3">
                     <div class="flex items-center justify-center">
-                        <span class="text-sm font-mono text-primary font-bold">[${_escapeHtml(teamTag)}]</span>
+                        <span class="text-sm font-mono text-primary font-bold">${_escapeHtml(teamTag)}</span>
                         <span class="font-semibold text-foreground ml-2">${_escapeHtml(teamName)}</span>
                     </div>
                 </div>

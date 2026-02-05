@@ -38,6 +38,43 @@ const TeamsBrowserPanel = (function() {
     // Stats table tab state
     let _activeStatsTab = 'performance'; // 'performance' | 'weapons' | 'resources'
 
+    // Slice 11.0a: H2H state
+    let _h2hTeamAId = null;           // Override Team A id (null = use _selectedTeamId)
+    let _h2hOpponentId = null;        // Selected Team B id (from MatchScheduler teams)
+
+    /** Effective Team A for H2H — override or browsed team */
+    function _getH2HTeamAId() { return _h2hTeamAId || _selectedTeamId; }
+    let _h2hSubTab = 'h2h';           // Active sub-tab: 'h2h' | 'form' | 'maps'
+    let _h2hPeriod = 3;               // Period in months: 1, 3, or 6
+    let _h2hMapFilter = '';            // '' = all maps (H2H sub-tab only)
+    let _h2hResults = null;            // API response from /api/h2h
+    let _h2hRosterA = null;            // API response from /api/roster for Team A
+    let _h2hRosterB = null;            // API response from /api/roster for Team B
+    let _h2hLoading = false;           // Loading state for H2H data fetch
+    let _h2hHoveredId = null;          // Hovered result row (for scoreboard preview)
+    let _h2hSelectedId = null;         // Clicked/sticky result row
+    let _h2hSelectedStats = null;      // ktxstats for selected result
+    let _h2hStatsLoading = false;      // Loading ktxstats
+    const _h2hDataById = new Map();    // Result objects by ID for hover/click lookup
+
+    // Slice 11.0b: Form tab state
+    let _formResultsA = null;          // QWStatsService.getForm() response for Team A
+    let _formResultsB = null;          // QWStatsService.getForm() response for Team B
+    let _formLoading = false;          // Loading state
+    let _formHoveredSide = null;       // 'left' | 'right' | null
+    let _formHoveredId = null;         // Hovered result ID
+    let _formSelectedSide = null;      // 'left' | 'right' | null — sticky selection
+    let _formSelectedId = null;        // Clicked/sticky result ID
+    let _formSelectedStats = null;     // ktxstats for selected result
+    let _formStatsLoading = false;     // Loading ktxstats
+    const _formDataByIdA = new Map();  // Team A result objects by ID
+    const _formDataByIdB = new Map();  // Team B result objects by ID
+
+    // Slice 11.0c: Maps tab state
+    let _mapsDataA = null;             // QWStatsService.getMaps() for Team A
+    let _mapsDataB = null;             // QWStatsService.getMaps() for Team B
+    let _mapsLoading = false;          // Loading state
+
     // ========================================
     // Initialization
     // ========================================
@@ -255,6 +292,14 @@ const TeamsBrowserPanel = (function() {
                 _loadMatchHistory(team.teamTag);
             }
         }
+        // If teams view with H2H tab and opponent selected, lazy-load H2H data
+        if (_currentView === 'teams' && _selectedTeamId && _activeTab === 'h2h' && _h2hOpponentId) {
+            const team = _allTeams.find(t => t.id === _getH2HTeamAId());
+            const opponent = _allTeams.find(t => t.id === _h2hOpponentId);
+            if (team?.teamTag && opponent?.teamTag && !_h2hResults && !_h2hLoading) {
+                _loadH2HData();
+            }
+        }
     }
 
     // ========================================
@@ -372,7 +417,7 @@ const TeamsBrowserPanel = (function() {
                 tabContent = _renderMatchHistoryTab(team);
                 break;
             case 'h2h':
-                tabContent = '<div class="text-sm text-muted-foreground p-4">Head to Head (coming soon)</div>';
+                tabContent = _renderH2HTab(team);
                 break;
         }
 
@@ -391,20 +436,38 @@ const TeamsBrowserPanel = (function() {
     // ========================================
 
     function _renderTabBar() {
-        const tabs = [
-            { id: 'details', label: 'Details' },
-            { id: 'history', label: 'Match History' },
-            { id: 'h2h', label: 'Head to Head' }
+        const isH2H = _activeTab === 'h2h';
+
+        const h2hSubTabs = [
+            { id: 'h2h', label: 'Head to Head' },
+            { id: 'form', label: 'Form' },
+            { id: 'maps', label: 'Maps' }
         ];
 
         return `
             <div class="team-detail-tabs">
-                ${tabs.map(tab => `
-                    <button class="team-detail-tab ${_activeTab === tab.id ? 'active' : ''}"
-                            data-tab="${tab.id}">
-                        ${tab.label}
+                <button class="team-detail-tab ${_activeTab === 'details' ? 'active' : ''}"
+                        data-tab="details">
+                    Details
+                </button>
+                <button class="team-detail-tab ${_activeTab === 'history' ? 'active' : ''}"
+                        data-tab="history">
+                    Match History
+                </button>
+                ${isH2H ? `
+                    <div class="h2h-tab-cluster">
+                        ${h2hSubTabs.map(st => `
+                            <button class="h2h-cluster-tab ${_h2hSubTab === st.id ? 'active' : ''}"
+                                    onclick="TeamsBrowserPanel.switchH2HSubTab('${st.id}')">
+                                ${st.label}
+                            </button>
+                        `).join('')}
+                    </div>
+                ` : `
+                    <button class="team-detail-tab" data-tab="h2h">
+                        Head to Head
                     </button>
-                `).join('')}
+                `}
             </div>
         `;
     }
@@ -1814,12 +1877,19 @@ const TeamsBrowserPanel = (function() {
         const sortedTeams = [...match.teams].sort((a, b) => b.frags - a.frags);
         const sortedPlayers = [...match.players].sort((a, b) => b.frags - a.frags);
 
+        // Helper: render QW name with proper encoding
+        const useRawQW = match._useRawQW;
+        function qwName(name, nameColor) {
+            if (useRawQW && !nameColor) return QWHubService.coloredQuakeNameFromBytes(name);
+            return QWHubService.coloredQuakeName(name, nameColor);
+        }
+
         // Team summary rows
         const teamRowsHtml = hasTeams ? sortedTeams.map(team => `
             <div class="sc-row">
                 <span class="sc-ping">${team.ping ? team.ping + ' ms' : ''}</span>
                 <span class="sc-frags" style="${QWHubService.getFragColorStyle(team.color)}">${team.frags}</span>
-                <span class="sc-team">${QWHubService.coloredQuakeName(
+                <span class="sc-team">${qwName(
                     team.name.substring(0, 4),
                     (team.name_color || '').substring(0, 4)
                 )}</span>
@@ -1843,13 +1913,13 @@ const TeamsBrowserPanel = (function() {
                 <div class="sc-row">
                     <span class="sc-ping">${pingText}</span>
                     <span class="sc-frags" style="${QWHubService.getFragColorStyle(player.color)}">${player.frags}</span>
-                    ${hasTeams ? `<span class="sc-team">${QWHubService.coloredQuakeName(
+                    ${hasTeams ? `<span class="sc-team">${qwName(
                         (player.team || '').substring(0, 4),
                         (player.team_color || '').substring(0, 4)
                     )}</span>` : ''}
                     <span class="${nameClass}">
                         ${flagHtml}
-                        <span>${QWHubService.coloredQuakeName(player.name, player.name_color)}</span>
+                        <span>${qwName(player.name, player.name_color)}</span>
                     </span>
                 </div>
             `;
@@ -1983,6 +2053,1512 @@ const TeamsBrowserPanel = (function() {
     }
 
     // ========================================
+    // H2H Tab (Slice 11.0a)
+    // ========================================
+
+    /**
+     * Main H2H tab renderer. Shows team selector + sub-tab content.
+     */
+    function _renderH2HTab(team) {
+        if (!team.teamTag) {
+            return `
+                <div class="h2h-empty-state">
+                    <p class="text-sm text-muted-foreground">Head to head not available</p>
+                    <p class="text-xs text-muted-foreground mt-1">Team leader can configure QW Hub tag in Team Settings</p>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="h2h-tab-wrapper flex flex-col h-full">
+                ${_h2hSubTab !== 'h2h' ? _renderH2HCompactControls() : ''}
+                <div class="h2h-content flex-1 min-h-0 flex flex-col" id="h2h-subtab-content">
+                    ${_renderH2HSubTabContent()}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Compact single-row controls bar for Form/Maps tabs (period only).
+     * Team selection is handled by the right panel roster dropdowns.
+     */
+    function _renderH2HCompactControls() {
+        const periods = [1, 3, 6];
+
+        return `
+            <div class="h2h-compact-controls">
+                <div class="h2h-period-buttons">
+                    ${periods.map(m => `
+                        <button class="h2h-period-btn ${_h2hPeriod === m ? 'active' : ''}"
+                                onclick="TeamsBrowserPanel.changeH2HPeriod(${m})">
+                            ${m}M
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Team A (fixed) + Team B (dropdown) + period buttons + map filter.
+     */
+    function _renderTeamSelector(teamA) {
+        const allTeams = _allTeams
+            .filter(t => t.id !== teamA.id && t.teamTag)
+            .sort((a, b) => a.teamName.localeCompare(b.teamName));
+
+        const periods = [1, 3, 6];
+
+        return `
+            <div class="h2h-header">
+                <div class="h2h-teams-row">
+                    <div class="h2h-team h2h-team-a">
+                        ${teamA.activeLogo?.urls?.small
+                            ? `<img src="${teamA.activeLogo.urls.small}" class="h2h-team-logo" alt="">`
+                            : ''}
+                        <span class="h2h-team-name">${_escapeHtml(teamA.teamName)}</span>
+                    </div>
+                    <span class="h2h-vs">VS</span>
+                    <div class="h2h-team h2h-team-b">
+                        <select class="h2h-opponent-select" onchange="TeamsBrowserPanel.selectOpponent(this.value)">
+                            <option value="">Select opponent...</option>
+                            ${allTeams.map(t => `
+                                <option value="${t.id}" ${t.id === _h2hOpponentId ? 'selected' : ''}>
+                                    ${_escapeHtml(t.teamName)} (${_escapeHtml(t.teamTag)})
+                                </option>
+                            `).join('')}
+                        </select>
+                    </div>
+                </div>
+                <div class="h2h-controls-row">
+                    <div class="h2h-period-buttons">
+                        ${periods.map(m => `
+                            <button class="h2h-period-btn ${_h2hPeriod === m ? 'active' : ''}"
+                                    onclick="TeamsBrowserPanel.changeH2HPeriod(${m})">
+                                ${m}M
+                            </button>
+                        `).join('')}
+                    </div>
+                    ${_h2hSubTab === 'h2h' ? `
+                        <select class="mh-filter-select" onchange="TeamsBrowserPanel.filterH2HByMap(this.value)">
+                            <option value="">All Maps</option>
+                            ${_getH2HMapOptions().map(map => `
+                                <option value="${map}" ${_h2hMapFilter === map ? 'selected' : ''}>
+                                    ${map}
+                                </option>
+                            `).join('')}
+                        </select>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Dispatch to active sub-tab renderer.
+     */
+    function _renderH2HSubTabContent() {
+        switch (_h2hSubTab) {
+            case 'h2h':
+                return _renderH2HDirectTab();
+            case 'form':
+                return _renderFormTab();
+            case 'maps':
+                return _renderMapsTab();
+            default:
+                return '';
+        }
+    }
+
+    /**
+     * Left-panel header row: period buttons + map filter + W/L record, aligned to data grid.
+     * Grid matches result rows: date | map | score | score | result
+     */
+    function _renderH2HLeftHeader(games) {
+        const periods = [1, 3, 6];
+
+        const wins = (games || []).filter(g => g.result === 'W').length;
+        const losses = (games || []).filter(g => g.result === 'L').length;
+        const total = (games || []).length;
+        const winRate = total > 0 ? Math.round(wins / total * 100) : 0;
+
+        return `
+            <div class="h2h-column-header">
+                <div class="h2h-period-buttons">
+                    ${periods.map(m => `
+                        <button class="h2h-period-btn ${_h2hPeriod === m ? 'active' : ''}"
+                                onclick="TeamsBrowserPanel.changeH2HPeriod(${m})">
+                            ${m}M
+                        </button>
+                    `).join('')}
+                </div>
+                <select class="mh-filter-select h2h-map-filter" onchange="TeamsBrowserPanel.filterH2HByMap(this.value)">
+                    <option value="">All Maps</option>
+                    ${_getH2HMapOptions().map(map => `
+                        <option value="${map}" ${_h2hMapFilter === map ? 'selected' : ''}>
+                            ${map}
+                        </option>
+                    `).join('')}
+                </select>
+                ${total > 0 ? `
+                    <span class="h2h-header-record">
+                        <span class="mh-result-win">${wins}W</span>
+                        <span class="mh-result-loss">${losses}L</span>
+                        <span class="text-xs text-muted-foreground">${winRate}%</span>
+                    </span>
+                ` : `<span></span><span></span><span></span>`}
+            </div>
+        `;
+    }
+
+    /**
+     * H2H direct matchup split panel: results left, roster/scoreboard right.
+     */
+    function _renderH2HDirectTab() {
+        const games = _h2hOpponentId ? _getFilteredH2HResults() : [];
+
+        // Left panel content depends on state
+        let leftContent = '';
+        if (!_h2hOpponentId) {
+            leftContent = `
+                ${_renderH2HLeftHeader(null)}
+                <div class="h2h-empty-state">
+                    <p class="text-sm text-muted-foreground">Select teams to compare</p>
+                </div>
+            `;
+        } else if (_h2hLoading) {
+            leftContent = `
+                ${_renderH2HLeftHeader(null)}
+                <div class="h2h-skeleton">Loading results...</div>
+            `;
+        } else if (!_h2hResults || games.length === 0) {
+            const teamA = _allTeams.find(t => t.id === _getH2HTeamAId());
+            const teamB = _allTeams.find(t => t.id === _h2hOpponentId);
+            leftContent = `
+                ${_renderH2HLeftHeader(null)}
+                <div class="h2h-empty-state">
+                    <p class="text-sm text-muted-foreground">
+                        No direct matchups found between ${_escapeHtml(teamA?.teamName || '?')}
+                        and ${_escapeHtml(teamB?.teamName || '?')}
+                    </p>
+                    <p class="text-xs text-muted-foreground mt-1">
+                        Try extending the period, or check the Form tab
+                    </p>
+                </div>
+            `;
+        } else {
+            leftContent = `
+                ${_renderH2HLeftHeader(games)}
+                <div class="mh-match-list" id="h2h-result-list">
+                    ${_renderH2HResultList(games)}
+                </div>
+            `;
+        }
+
+        // Right panel: scoreboard on hover/click, roster panel otherwise (always has team selectors)
+        let rightContent = '';
+        if (_h2hSelectedId) {
+            rightContent = _renderH2HPreviewPanel(_h2hSelectedId);
+        } else if (_h2hHoveredId) {
+            rightContent = _renderH2HPreviewPanel(_h2hHoveredId);
+        } else {
+            rightContent = _renderH2HRosterPanel();
+        }
+
+        return `
+            <div class="h2h-split">
+                <div class="mh-list-panel">
+                    ${leftContent}
+                </div>
+                <div class="mh-preview-panel" id="h2h-preview-panel">
+                    ${rightContent}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Summary bar showing W/L record from Team A perspective.
+     */
+    function _renderH2HSummaryBar(games) {
+        const wins = games.filter(g => g.result === 'W').length;
+        const losses = games.filter(g => g.result === 'L').length;
+        const draws = games.filter(g => g.result === 'D').length;
+        const total = games.length;
+        const winRate = total > 0 ? Math.round(wins / total * 100) : 0;
+
+        return `
+            <div class="h2h-summary-bar">
+                <span class="h2h-record">
+                    <span class="mh-result-win">${wins}W</span>
+                    ${draws > 0 ? `<span class="mh-result-draw">${draws}D</span>` : ''}
+                    <span class="mh-result-loss">${losses}L</span>
+                </span>
+                <span class="text-xs text-muted-foreground">${winRate}% from Team A perspective</span>
+            </div>
+        `;
+    }
+
+    /**
+     * Render result rows for left panel.
+     */
+    function _renderH2HResultList(games) {
+        if (games.length === 0) {
+            return '<p class="text-xs text-muted-foreground p-2">No results</p>';
+        }
+
+        return games.map(g => {
+            const dateStr = new Date(g.playedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const resultClass = g.result === 'W' ? 'mh-result-win'
+                              : g.result === 'L' ? 'mh-result-loss'
+                              : 'mh-result-draw';
+            const isSelected = String(g.id) === _h2hSelectedId;
+
+            return `
+                <div class="mh-table-row ${isSelected ? 'selected' : ''}"
+                     data-result-id="${g.id}"
+                     onmouseenter="TeamsBrowserPanel.previewH2HResult('${g.id}')"
+                     onmouseleave="TeamsBrowserPanel.clearH2HPreview()"
+                     onclick="TeamsBrowserPanel.selectH2HResult('${g.id}')">
+                    <span class="mh-td mh-td-date">${dateStr}</span>
+                    <span class="mh-td mh-td-map">${g.map}</span>
+                    <span class="mh-td mh-td-score">${g.teamAFrags}</span>
+                    <span class="mh-td mh-td-score">${g.teamBFrags}</span>
+                    <span class="mh-td mh-td-result ${resultClass}">${g.result}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Right panel default: two symmetrical columns with logo, team selector, roster.
+     */
+    function _renderH2HRosterPanel() {
+        const teamAId = _getH2HTeamAId();
+        const teamA = _allTeams.find(t => t.id === teamAId);
+        const teamB = _h2hOpponentId ? _allTeams.find(t => t.id === _h2hOpponentId) : null;
+
+        return `
+            <div class="h2h-roster-panel">
+                <div class="h2h-roster-columns">
+                    ${_renderRosterColumn(teamA, _h2hRosterA, 'A')}
+                    ${_renderRosterColumn(teamB, _h2hRosterB, 'B')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Single roster column: logo → team dropdown → roster table.
+     */
+    function _renderRosterColumn(teamObj, rosterData, side) {
+        const logoUrl = teamObj?.activeLogo?.urls?.medium || teamObj?.activeLogo?.urls?.small || '';
+        const selectedId = side === 'A' ? _getH2HTeamAId() : _h2hOpponentId;
+        const handler = side === 'A' ? 'selectH2HTeamA' : 'selectOpponent';
+
+        // Build team options (exclude the other side's selected team)
+        const otherId = side === 'A' ? _h2hOpponentId : _getH2HTeamAId();
+        const teamOptions = _allTeams
+            .filter(t => t.teamTag && t.id !== otherId)
+            .sort((a, b) => a.teamName.localeCompare(b.teamName));
+
+        const hasRoster = rosterData && rosterData.players?.length > 0;
+        const maxGames = hasRoster ? (rosterData.players[0]?.games || 1) : 1;
+
+        return `
+            <div class="h2h-roster-col">
+                <div class="h2h-roster-identity">
+                    ${logoUrl
+                        ? `<img src="${logoUrl}" class="h2h-roster-logo-lg" alt="">`
+                        : `<div class="h2h-roster-logo-placeholder"></div>`
+                    }
+                    <select class="h2h-team-select" onchange="TeamsBrowserPanel.${handler}(this.value)">
+                        <option value="">Select team...</option>
+                        ${teamOptions.map(t => `
+                            <option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>
+                                ${_escapeHtml(t.teamName)}
+                            </option>
+                        `).join('')}
+                    </select>
+                </div>
+                ${hasRoster ? `
+                    <div class="h2h-roster-header">
+                        <span>Member</span>
+                        <span class="h2h-roster-stat-header">Maps</span>
+                        <span class="h2h-roster-stat-header">Att</span>
+                    </div>
+                    <div class="h2h-roster-list">
+                        ${rosterData.players.slice(0, 8).map((p) => {
+                            const pct = Math.round((p.games / maxGames) * 100);
+                            return `
+                                <div class="h2h-roster-row">
+                                    <span class="h2h-roster-name">${_escapeHtml(p.player)}</span>
+                                    <span class="h2h-roster-stat">${p.games}</span>
+                                    <span class="h2h-roster-stat">${pct}%</span>
+                                </div>
+                        `;
+                        }).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    /**
+     * Preview panel renderer for hover/click.
+     * Hover: simple scoreboard. Click: full stats view if ktxstats loaded.
+     */
+    function _renderH2HPreviewPanel(resultId) {
+        const game = _h2hDataById.get(String(resultId));
+        if (!game) return '';
+
+        const isSticky = _h2hSelectedId === String(resultId);
+
+        if (isSticky && _h2hSelectedStats) {
+            return _renderStatsView(_transformH2HGameForScoreboard(game), _h2hSelectedStats);
+        }
+
+        if (isSticky && _h2hStatsLoading) {
+            return `
+                ${_renderH2HSimpleScoreboard(game)}
+                <div class="mh-stats-loading sb-text-outline">Loading detailed stats...</div>
+            `;
+        }
+
+        // Use full scoreboard + summary if ktxstats is cached
+        const cached = game.demoSha256 ? QWHubService.getCachedGameStats(game.demoSha256) : null;
+        if (cached) {
+            const matchObj = _transformH2HGameForScoreboard(game);
+            return _renderScoreboard(_buildScoreboardMatch(game, cached))
+                + _renderScoreboardSummary(cached, matchObj);
+        }
+
+        return _renderH2HSimpleScoreboard(game);
+    }
+
+    /**
+     * Simple scoreboard (hover preview) — team names + frags + mapshot background.
+     * No player rows since the QW Stats API /api/h2h doesn't include per-player data.
+     */
+    function _renderH2HSimpleScoreboard(game) {
+        const mapImg = `https://a.quake.world/mapshots/webp/lg/${game.map}.webp`;
+        const dateStr = new Date(game.playedAt).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric'
+        });
+        const resultClass = game.result === 'W' ? 'mh-result-win'
+                          : game.result === 'L' ? 'mh-result-loss'
+                          : 'mh-result-draw';
+
+        const teamA = _h2hResults?.teamA || '';
+        const teamB = _h2hResults?.teamB || '';
+
+        return `
+            <div class="h2h-scoreboard" style="background-image: url('${mapImg}')">
+                <div class="h2h-scoreboard-overlay">
+                    <div class="h2h-scoreboard-date">${dateStr} — ${game.map}</div>
+                    <div class="h2h-scoreboard-score">
+                        <span class="h2h-scoreboard-tag">${_escapeHtml(teamA)}</span>
+                        <span class="h2h-scoreboard-frags ${resultClass}">${game.teamAFrags}</span>
+                        <span class="h2h-scoreboard-separator">-</span>
+                        <span class="h2h-scoreboard-frags">${game.teamBFrags}</span>
+                        <span class="h2h-scoreboard-tag">${_escapeHtml(teamB)}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Transform QW Stats API game → Match History format for scoreboard/stats reuse.
+     */
+    function _transformH2HGameForScoreboard(game) {
+        return {
+            id: game.id,
+            map: game.map,
+            date: new Date(game.playedAt),
+            ourTag: _h2hResults?.teamA || '',
+            opponentTag: _h2hResults?.teamB || '',
+            ourScore: game.teamAFrags,
+            opponentScore: game.teamBFrags,
+            result: game.result,
+            demoHash: game.demoSha256
+        };
+    }
+
+    /**
+     * Build a scoreboard-compatible match object from ktxstats data + game info.
+     * Allows reusing _renderScoreboard() for H2H/Form hover previews.
+     */
+    function _buildScoreboardMatch(game, ktxstats) {
+        const validPlayers = (ktxstats.players || []).filter(p => p.ping !== 0);
+
+        // ktxstats uses "top-color"/"bottom-color" fields, hub uses color: [top, bottom] array
+        function playerColor(p) {
+            if (Array.isArray(p.color)) return p.color;
+            if (p['top-color'] != null || p['bottom-color'] != null) {
+                return [p['top-color'] || 0, p['bottom-color'] || 0];
+            }
+            return [0, 0];
+        }
+
+        // Build teams array from ktxstats
+        const teamMap = {};
+        for (const p of validPlayers) {
+            const teamAscii = QWHubService.qwToAscii(p.team || '').toLowerCase();
+            if (!teamMap[teamAscii]) {
+                teamMap[teamAscii] = {
+                    name: p.team || '',
+                    name_color: p.team_color || '',
+                    color: playerColor(p),
+                    frags: 0,
+                    ping: 0,
+                    _useRawQW: !p.team_color
+                };
+            }
+            teamMap[teamAscii].frags += p.stats?.frags || 0;
+        }
+
+        return {
+            map: game.map,
+            _useRawQW: true,
+            teams: Object.values(teamMap).sort((a, b) => b.frags - a.frags),
+            players: validPlayers.map(p => ({
+                name: p.name || '',
+                name_color: p.name_color || '',
+                team: p.team || '',
+                team_color: p.team_color || '',
+                color: playerColor(p),
+                frags: p.stats?.frags || 0,
+                ping: p.ping || 0,
+                cc: p.cc || '',
+                is_bot: false,
+                _useRawQW: !p.name_color
+            })).sort((a, b) => b.frags - a.frags)
+        };
+    }
+
+    /**
+     * Get unique maps from H2H results for the filter dropdown.
+     */
+    function _getH2HMapOptions() {
+        if (!_h2hResults?.games) return [];
+        return [...new Set(_h2hResults.games.map(g => g.map))].sort();
+    }
+
+    /**
+     * Get filtered H2H results based on map filter.
+     */
+    function _getFilteredH2HResults() {
+        if (!_h2hResults?.games) return [];
+        if (!_h2hMapFilter) return _h2hResults.games;
+        return _h2hResults.games.filter(g => g.map === _h2hMapFilter);
+    }
+
+    /**
+     * Update selected/hover highlights on result rows without full re-render.
+     */
+    function _updateH2HHighlights() {
+        const rows = document.querySelectorAll('#h2h-result-list .mh-table-row');
+        rows.forEach(row => {
+            const id = row.dataset.resultId;
+            row.classList.toggle('selected', id === _h2hSelectedId);
+        });
+    }
+
+    // ========================================
+    // H2H Data Loading (Slice 11.0a)
+    // ========================================
+
+    /**
+     * Fetch H2H results + both rosters in parallel.
+     */
+    async function _loadH2HData() {
+        const teamAId = _getH2HTeamAId();
+        const teamA = _allTeams.find(t => t.id === teamAId);
+        const teamB = _allTeams.find(t => t.id === _h2hOpponentId);
+
+        if (!teamA?.teamTag || !teamB?.teamTag) return;
+
+        _h2hLoading = true;
+        _h2hResults = null;
+        _h2hRosterA = null;
+        _h2hRosterB = null;
+        _h2hHoveredId = null;
+        _h2hSelectedId = null;
+        _h2hSelectedStats = null;
+        _h2hDataById.clear();
+        _renderCurrentView();
+
+        try {
+            const [h2hData, rosterA, rosterB] = await Promise.all([
+                QWStatsService.getH2H(teamA.teamTag, teamB.teamTag, {
+                    months: _h2hPeriod,
+                    limit: 10
+                }),
+                QWStatsService.getRoster(teamA.teamTag, { months: _h2hPeriod }),
+                QWStatsService.getRoster(teamB.teamTag, { months: _h2hPeriod })
+            ]);
+
+            // Guard: still viewing same teams?
+            if (_getH2HTeamAId() !== teamA.id || _h2hOpponentId !== teamB.id) return;
+
+            _h2hResults = h2hData;
+            _h2hRosterA = rosterA;
+            _h2hRosterB = rosterB;
+
+            // Populate lookup map for hover/click
+            if (h2hData.games) {
+                h2hData.games.forEach(g => {
+                    _h2hDataById.set(String(g.id), g);
+                });
+            }
+        } catch (error) {
+            console.error('Failed to load H2H data:', error);
+            _h2hResults = { error: true };
+        } finally {
+            _h2hLoading = false;
+            _renderCurrentView();
+        }
+    }
+
+    // ========================================
+    // H2H Public Handlers (Slice 11.0a)
+    // ========================================
+
+    /**
+     * Team A dropdown change handler (H2H right panel).
+     */
+    function selectH2HTeamA(teamId) {
+        _h2hTeamAId = teamId || null;
+        _h2hResults = null;
+        _h2hRosterA = null;
+        _h2hRosterB = null;
+        _h2hHoveredId = null;
+        _h2hSelectedId = null;
+        _h2hSelectedStats = null;
+        _h2hMapFilter = '';
+        _h2hDataById.clear();
+        _resetMapsState();
+        _resetFormState();
+
+        if (_getH2HTeamAId() && _h2hOpponentId) {
+            _loadH2HData();
+        } else {
+            _renderCurrentView();
+        }
+    }
+
+    /**
+     * Team B dropdown change handler.
+     */
+    function selectOpponent(teamId) {
+        _h2hOpponentId = teamId || null;
+        _h2hResults = null;
+        _h2hRosterA = null;
+        _h2hRosterB = null;
+        _h2hHoveredId = null;
+        _h2hSelectedId = null;
+        _h2hSelectedStats = null;
+        _h2hMapFilter = '';
+        _h2hDataById.clear();
+        _resetMapsState();
+        _resetFormState();
+
+        // Update URL with opponent selection
+        if (typeof Router !== 'undefined' && _selectedTeamId) {
+            Router.pushH2HOpponent(_selectedTeamId, _h2hOpponentId);
+        }
+
+        if (_h2hOpponentId) {
+            _loadH2HData();
+        } else {
+            _renderCurrentView();
+        }
+    }
+
+    /**
+     * Sub-tab click handler (h2h | form | maps).
+     */
+    function switchH2HSubTab(subTab) {
+        if (_h2hSubTab === subTab) return;
+        _h2hSubTab = subTab;
+        _renderCurrentView();
+
+        // Load form data when switching to form tab (if not already loaded)
+        if (subTab === 'form' && _h2hOpponentId && !_formResultsA && !_formLoading) {
+            _loadFormData();
+        }
+
+        // Load maps data when switching to maps tab (if not already loaded)
+        if (subTab === 'maps' && _h2hOpponentId && !_mapsDataA && !_mapsLoading) {
+            _loadMapsData();
+        }
+    }
+
+    /**
+     * Period button click handler.
+     */
+    function changeH2HPeriod(months) {
+        if (_h2hPeriod === months) return;
+        _h2hPeriod = months;
+        if (_h2hOpponentId) {
+            _loadH2HData();
+            // Re-fetch form data if form tab is active or was previously loaded
+            if (_formResultsA || _h2hSubTab === 'form') {
+                _loadFormData();
+            }
+            // Re-fetch maps data if maps tab is active or was previously loaded
+            if (_mapsDataA || _h2hSubTab === 'maps') {
+                _loadMapsData();
+            }
+        } else {
+            _renderCurrentView();
+        }
+    }
+
+    /**
+     * Map filter change handler (H2H sub-tab only).
+     */
+    function filterH2HByMap(map) {
+        _h2hMapFilter = map;
+        // Client-side filter — just re-render left panel
+        const listEl = document.getElementById('h2h-result-list');
+        if (listEl) {
+            const games = _getFilteredH2HResults();
+            listEl.innerHTML = _renderH2HResultList(games);
+        }
+    }
+
+    /**
+     * Hover handler for H2H result row.
+     */
+    function previewH2HResult(resultId) {
+        if (_h2hSelectedId) return; // Don't override sticky
+        _h2hHoveredId = String(resultId);
+        const panel = document.getElementById('h2h-preview-panel');
+        if (panel) {
+            panel.innerHTML = _renderH2HPreviewPanel(resultId);
+        }
+
+        // Eagerly fetch ktxstats in background for full scoreboard
+        const game = _h2hDataById.get(String(resultId));
+        if (game?.demoSha256 && !QWHubService.getCachedGameStats(game.demoSha256)) {
+            QWHubService.getGameStats(game.demoSha256).then(() => {
+                // Re-render if still hovering this result
+                if (_h2hHoveredId === String(resultId) && !_h2hSelectedId) {
+                    const p = document.getElementById('h2h-preview-panel');
+                    if (p) p.innerHTML = _renderH2HPreviewPanel(resultId);
+                }
+            }).catch(() => {}); // Silently fail — simple scoreboard remains
+        }
+    }
+
+    /**
+     * Mouse leave handler for H2H result row.
+     */
+    function clearH2HPreview() {
+        _h2hHoveredId = null;
+        if (!_h2hSelectedId) {
+            const panel = document.getElementById('h2h-preview-panel');
+            if (panel) {
+                panel.innerHTML = _renderH2HRosterPanel();
+            }
+        }
+    }
+
+    /**
+     * Click handler for H2H result row. Toggles sticky selection + fetches ktxstats.
+     */
+    async function selectH2HResult(resultId) {
+        const id = String(resultId);
+
+        // Toggle off
+        if (_h2hSelectedId === id) {
+            _h2hSelectedId = null;
+            _h2hSelectedStats = null;
+            const panel = document.getElementById('h2h-preview-panel');
+            if (panel) panel.innerHTML = _renderH2HRosterPanel();
+            _updateH2HHighlights();
+            return;
+        }
+
+        _h2hSelectedId = id;
+        _h2hSelectedStats = null;
+        _h2hStatsLoading = true;
+        _updateH2HHighlights();
+
+        // Render scoreboard immediately from API data
+        const panel = document.getElementById('h2h-preview-panel');
+        if (panel) panel.innerHTML = _renderH2HPreviewPanel(id);
+
+        // Fetch ktxstats for detailed stats (cold path)
+        const game = _h2hDataById.get(id);
+        if (game?.demoSha256) {
+            try {
+                const stats = await QWHubService.getGameStats(game.demoSha256);
+                if (_h2hSelectedId === id) { // Guard
+                    _h2hSelectedStats = stats;
+                    _h2hStatsLoading = false;
+                    const p = document.getElementById('h2h-preview-panel');
+                    if (p) p.innerHTML = _renderH2HPreviewPanel(id);
+                }
+            } catch (error) {
+                console.error('Failed to load game stats:', error);
+                _h2hStatsLoading = false;
+                if (_h2hSelectedId === id) {
+                    const p = document.getElementById('h2h-preview-panel');
+                    if (p) p.innerHTML = _renderH2HPreviewPanel(id);
+                }
+            }
+        } else {
+            _h2hStatsLoading = false;
+        }
+    }
+
+    /**
+     * Reset all H2H state (called when switching teams).
+     */
+    function _resetH2HState() {
+        _h2hTeamAId = null;
+        _h2hOpponentId = null;
+        _h2hSubTab = 'h2h';
+        _h2hPeriod = 3;
+        _h2hMapFilter = '';
+        _h2hResults = null;
+        _h2hRosterA = null;
+        _h2hRosterB = null;
+        _h2hLoading = false;
+        _h2hHoveredId = null;
+        _h2hSelectedId = null;
+        _h2hSelectedStats = null;
+        _h2hStatsLoading = false;
+        _h2hDataById.clear();
+        _resetFormState();
+        _resetMapsState();
+    }
+
+    // ========================================
+    // Slice 11.0b: Form Tab
+    // ========================================
+
+    /**
+     * Load form data for both teams in parallel.
+     */
+    async function _loadFormData() {
+        const teamAId = _getH2HTeamAId();
+        const teamA = _allTeams.find(t => t.id === teamAId);
+        const teamB = _allTeams.find(t => t.id === _h2hOpponentId);
+
+        if (!teamA?.teamTag || !teamB?.teamTag) return;
+
+        _formLoading = true;
+        _formResultsA = null;
+        _formResultsB = null;
+        _formHoveredSide = null;
+        _formHoveredId = null;
+        _formSelectedSide = null;
+        _formSelectedId = null;
+        _formSelectedStats = null;
+        _formDataByIdA.clear();
+        _formDataByIdB.clear();
+        _rerenderFormTab();
+
+        try {
+            const [formA, formB] = await Promise.all([
+                QWStatsService.getForm(teamA.teamTag, { months: _h2hPeriod, limit: 10 }),
+                QWStatsService.getForm(teamB.teamTag, { months: _h2hPeriod, limit: 10 })
+            ]);
+
+            // Guard against stale response
+            if (_getH2HTeamAId() !== teamA.id || _h2hOpponentId !== teamB.id) return;
+
+            _formResultsA = formA;
+            _formResultsB = formB;
+
+            if (formA.games) formA.games.forEach(g => _formDataByIdA.set(String(g.id), g));
+            if (formB.games) formB.games.forEach(g => _formDataByIdB.set(String(g.id), g));
+        } catch (error) {
+            console.error('Failed to load form data:', error);
+        } finally {
+            _formLoading = false;
+            _rerenderFormTab();
+        }
+    }
+
+    /**
+     * Form tab dispatcher — routes to default/hover-left/hover-right layout.
+     */
+    function _renderFormTab() {
+        if (!_h2hOpponentId) {
+            return `
+                <div class="h2h-empty-state">
+                    <p class="text-sm text-muted-foreground">Select an opponent to compare form</p>
+                </div>
+            `;
+        }
+
+        if (_formLoading) {
+            return `
+                <div class="form-split form-split-default">
+                    <div class="form-side"><div class="h2h-skeleton">Loading...</div></div>
+                    <div class="form-divider"></div>
+                    <div class="form-side"><div class="h2h-skeleton">Loading...</div></div>
+                </div>
+            `;
+        }
+
+        const activeSide = _formSelectedSide || _formHoveredSide;
+        const activeId = _formSelectedId || _formHoveredId;
+
+        if (!activeSide) {
+            return _renderFormDefault();
+        } else if (activeSide === 'left') {
+            return _renderFormHoverLeft(activeId);
+        } else {
+            return _renderFormHoverRight(activeId);
+        }
+    }
+
+    /**
+     * Render form side header with team logo + tag + label.
+     */
+    function _renderFormSideHeader(teamObj, label, games) {
+        const tag = teamObj?.teamTag || '?';
+        const logoUrl = teamObj?.activeLogo?.urls?.small || '';
+        const wins = (games || []).filter(g => g.result === 'W').length;
+        const losses = (games || []).filter(g => g.result === 'L').length;
+        const total = (games || []).length;
+        const pct = total > 0 ? Math.round((wins / total) * 100) : 0;
+
+        return `
+            <div class="form-column-header">
+                <div class="form-header-identity">
+                    ${logoUrl ? `<img src="${logoUrl}" class="form-side-logo" alt="">` : ''}
+                    <span class="font-bold">${_escapeHtml(tag)}</span>
+                    <span class="form-side-label">${label}</span>
+                </div>
+                ${total > 0 ? `
+                    <span class="form-header-record">
+                        <span class="mh-result-win">${wins}W</span>
+                        <span class="mh-result-loss">${losses}L</span>
+                        <span class="text-xs text-muted-foreground">${pct}%</span>
+                    </span>
+                ` : `<span></span><span></span><span></span>`}
+            </div>
+        `;
+    }
+
+    /**
+     * Default symmetric ~50/50 layout.
+     */
+    function _renderFormDefault() {
+        const teamA = _allTeams.find(t => t.id === _getH2HTeamAId());
+        const teamB = _allTeams.find(t => t.id === _h2hOpponentId);
+        const gamesA = _formResultsA?.games || [];
+        const gamesB = _formResultsB?.games || [];
+
+        return `
+            <div class="form-split form-split-default">
+                <div class="form-side form-side-left">
+                    ${_renderFormSideHeader(teamA, 'Recent Form', gamesA)}
+                    ${gamesA.length > 0
+                        ? _renderFormResultList(gamesA, 'left')
+                        : '<div class="h2h-empty-state"><p class="text-xs text-muted-foreground">No recent matches</p></div>'
+                    }
+                </div>
+                <div class="form-divider">
+                    <p>Hover a result to see scores</p>
+                    <p>Click a result to browse stats</p>
+                </div>
+                <div class="form-side form-side-right">
+                    ${_renderFormSideHeader(teamB, 'Recent Form', gamesB)}
+                    ${gamesB.length > 0
+                        ? _renderFormResultList(gamesB, 'right')
+                        : '<div class="h2h-empty-state"><p class="text-xs text-muted-foreground">No recent matches</p></div>'
+                    }
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Hover-left layout: list ~40% left, scoreboard ~60% right.
+     */
+    /**
+     * Render form content panel inner HTML — uses full scoreboard if ktxstats cached.
+     */
+    function _renderFormContentPreview(game, side, isSticky) {
+        if (!game) {
+            return '<div class="mh-preview-empty"><p class="text-xs text-muted-foreground">Hover a result</p></div>';
+        }
+
+        if (isSticky && _formSelectedStats) {
+            return _renderStatsView(_transformFormGameForScoreboard(game, side), _formSelectedStats);
+        }
+
+        if (isSticky && _formStatsLoading) {
+            const cached = game.demoSha256 ? QWHubService.getCachedGameStats(game.demoSha256) : null;
+            if (cached) {
+                return _renderScoreboard(_buildScoreboardMatch(game, cached))
+                    + '<div class="mh-stats-loading sb-text-outline">Loading detailed stats...</div>';
+            }
+            return _renderFormSimpleScoreboard(_transformFormGameToH2HFormat(game, side))
+                + '<div class="mh-stats-loading sb-text-outline">Loading detailed stats...</div>';
+        }
+
+        // Hover — use full scoreboard + summary if ktxstats cached
+        const cached = game.demoSha256 ? QWHubService.getCachedGameStats(game.demoSha256) : null;
+        if (cached) {
+            const matchObj = _transformFormGameForScoreboard(game, side);
+            return _renderScoreboard(_buildScoreboardMatch(game, cached))
+                + _renderScoreboardSummary(cached, matchObj);
+        }
+
+        return _renderFormSimpleScoreboard(_transformFormGameToH2HFormat(game, side));
+    }
+
+    function _renderFormHoverLeft(activeId) {
+        const teamA = _allTeams.find(t => t.id === _getH2HTeamAId());
+        const gamesA = _formResultsA?.games || [];
+        const game = _formDataByIdA.get(String(activeId));
+        const isSticky = _formSelectedSide === 'left';
+
+        return `
+            <div class="form-split form-split-hover-left">
+                <div class="form-side form-side-left form-side-narrow">
+                    ${_renderFormSideHeader(teamA, '', gamesA)}
+                    ${_renderFormResultList(gamesA, 'left')}
+                </div>
+                <div class="form-content-panel" id="form-content-panel"
+                     onclick="TeamsBrowserPanel.clearFormSelection()">
+                    ${_renderFormContentPreview(game, 'left', isSticky)}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Hover-right layout: scoreboard ~60% left, list ~40% right.
+     */
+    function _renderFormHoverRight(activeId) {
+        const teamB = _allTeams.find(t => t.id === _h2hOpponentId);
+        const gamesB = _formResultsB?.games || [];
+        const game = _formDataByIdB.get(String(activeId));
+        const isSticky = _formSelectedSide === 'right';
+
+        return `
+            <div class="form-split form-split-hover-right">
+                <div class="form-content-panel" id="form-content-panel"
+                     onclick="TeamsBrowserPanel.clearFormSelection()">
+                    ${_renderFormContentPreview(game, 'right', isSticky)}
+                </div>
+                <div class="form-side form-side-right form-side-narrow">
+                    ${_renderFormSideHeader(teamB, '', gamesB)}
+                    ${_renderFormResultList(gamesB, 'right')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render result rows for one side.
+     */
+    function _renderFormResultList(games, side) {
+        return `
+            <div class="mh-match-list">
+                ${games.map(g => {
+                    const dateStr = new Date(g.playedAt).toLocaleDateString('en-US', {
+                        month: 'short', day: 'numeric'
+                    });
+                    const resultClass = g.result === 'W' ? 'mh-result-win'
+                                      : g.result === 'L' ? 'mh-result-loss'
+                                      : 'mh-result-draw';
+                    const isSelected = _formSelectedSide === side && _formSelectedId === String(g.id);
+                    const isHovered = _formHoveredSide === side && _formHoveredId === String(g.id);
+
+                    return `
+                        <div class="mh-table-row ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''}"
+                             data-result-id="${g.id}"
+                             data-side="${side}"
+                             onmouseenter="TeamsBrowserPanel.previewFormResult('${g.id}', '${side}')"
+                             onmouseleave="TeamsBrowserPanel.clearFormPreview('${side}')"
+                             onclick="TeamsBrowserPanel.selectFormResult('${g.id}', '${side}')">
+                            <span class="mh-td mh-td-date">${dateStr}</span>
+                            <span class="mh-td mh-td-map">${g.map}</span>
+                            <span class="mh-td mh-td-score">${g.teamFrags}</span>
+                            <span class="mh-td mh-td-score">${g.oppFrags}</span>
+                            <span class="mh-td mh-td-opponent">${_escapeHtml(g.opponent)}</span>
+                            <span class="mh-td mh-td-result ${resultClass}">${g.result}</span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    /**
+     * Record summary at bottom of each side (e.g., "4W 1D 2L (57%)").
+     */
+    function _renderFormSummary(games) {
+        const wins = games.filter(g => g.result === 'W').length;
+        const draws = games.filter(g => g.result === 'D').length;
+        const losses = games.filter(g => g.result === 'L').length;
+        const total = games.length;
+        const pct = total > 0 ? Math.round((wins / total) * 100) : 0;
+
+        return `
+            <div class="form-summary">
+                <span class="mh-result-win">${wins}W</span>
+                <span class="mh-result-draw">${draws}D</span>
+                <span class="mh-result-loss">${losses}L</span>
+                <span class="text-muted-foreground">(${pct}%)</span>
+            </div>
+        `;
+    }
+
+    /**
+     * Simple scoreboard for Form tab — takes explicit teamA/teamB from the game object
+     * instead of reading from _h2hResults (which is H2H-specific).
+     */
+    function _renderFormSimpleScoreboard(game) {
+        const mapImg = `https://a.quake.world/mapshots/webp/lg/${game.map}.webp`;
+        const dateStr = new Date(game.playedAt).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric'
+        });
+        const resultClass = game.result === 'W' ? 'mh-result-win'
+                          : game.result === 'L' ? 'mh-result-loss'
+                          : 'mh-result-draw';
+
+        return `
+            <div class="h2h-scoreboard" style="background-image: url('${mapImg}')">
+                <div class="h2h-scoreboard-overlay">
+                    <div class="h2h-scoreboard-date">${dateStr} — ${game.map}</div>
+                    <div class="h2h-scoreboard-score">
+                        <span class="h2h-scoreboard-tag">${_escapeHtml(game.teamA)}</span>
+                        <span class="h2h-scoreboard-frags ${resultClass}">${game.teamAFrags}</span>
+                        <span class="h2h-scoreboard-separator">-</span>
+                        <span class="h2h-scoreboard-frags">${game.teamBFrags}</span>
+                        <span class="h2h-scoreboard-tag">${_escapeHtml(game.teamB)}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Transform Form API game → H2H scoreboard format (for simple scoreboard).
+     */
+    function _transformFormGameToH2HFormat(game, side) {
+        const teamTag = side === 'left'
+            ? (_allTeams.find(t => t.id === _getH2HTeamAId())?.teamTag || '')
+            : (_allTeams.find(t => t.id === _h2hOpponentId)?.teamTag || '');
+
+        return {
+            map: game.map,
+            playedAt: game.playedAt,
+            teamAFrags: game.teamFrags,
+            teamBFrags: game.oppFrags,
+            result: game.result,
+            demoSha256: game.demoSha256,
+            teamA: teamTag,
+            teamB: game.opponent
+        };
+    }
+
+    /**
+     * Transform Form API game → stats view format (for full ktxstats view).
+     */
+    function _transformFormGameForScoreboard(game, side) {
+        const teamTag = side === 'left'
+            ? (_allTeams.find(t => t.id === _getH2HTeamAId())?.teamTag || '')
+            : (_allTeams.find(t => t.id === _h2hOpponentId)?.teamTag || '');
+
+        return {
+            id: game.id,
+            map: game.map,
+            date: new Date(game.playedAt),
+            ourTag: teamTag,
+            opponentTag: game.opponent,
+            ourScore: game.teamFrags,
+            opponentScore: game.oppFrags,
+            result: game.result,
+            demoHash: game.demoSha256
+        };
+    }
+
+    // -- Form tab interaction handlers --
+
+    /**
+     * Hover handler with side awareness.
+     */
+    function previewFormResult(resultId, side) {
+        if (_formSelectedSide) return; // Don't override sticky
+        _formHoveredSide = side;
+        _formHoveredId = String(resultId);
+
+        // If still in default layout, switch to hover layout
+        const currentSplit = document.querySelector('.form-split');
+        if (currentSplit && currentSplit.classList.contains('form-split-default')) {
+            _rerenderFormTab();
+        } else {
+            // Already in hover layout — just update content panel directly
+            const panel = document.getElementById('form-content-panel');
+            if (panel) {
+                const dataMap = side === 'left' ? _formDataByIdA : _formDataByIdB;
+                const game = dataMap.get(String(resultId));
+                if (game) {
+                    panel.innerHTML = _renderFormContentPreview(game, side, false);
+                }
+            }
+        }
+
+        // Eagerly fetch ktxstats in background for full scoreboard
+        const dataMap = side === 'left' ? _formDataByIdA : _formDataByIdB;
+        const game = dataMap.get(String(resultId));
+        if (game?.demoSha256 && !QWHubService.getCachedGameStats(game.demoSha256)) {
+            QWHubService.getGameStats(game.demoSha256).then(() => {
+                if (_formHoveredId === String(resultId) && _formHoveredSide === side && !_formSelectedSide) {
+                    const p = document.getElementById('form-content-panel');
+                    if (p) p.innerHTML = _renderFormContentPreview(game, side, false);
+                }
+            }).catch(() => {});
+        }
+    }
+
+    /**
+     * Mouse leave handler.
+     */
+    function clearFormPreview(side) {
+        if (_formHoveredSide !== side) return;
+        _formHoveredSide = null;
+        _formHoveredId = null;
+        if (!_formSelectedSide) {
+            _rerenderFormTab();
+        }
+    }
+
+    /**
+     * Click handler with side awareness — toggles sticky selection.
+     */
+    function clearFormSelection() {
+        if (!_formSelectedSide) return;
+        _formSelectedSide = null;
+        _formSelectedId = null;
+        _formSelectedStats = null;
+        _formStatsLoading = false;
+        _formHoveredSide = null;
+        _formHoveredId = null;
+        _rerenderFormTab();
+    }
+
+    async function selectFormResult(resultId, side) {
+        const id = String(resultId);
+
+        // Toggle off
+        if (_formSelectedSide === side && _formSelectedId === id) {
+            clearFormSelection();
+            return;
+        }
+
+        _formSelectedSide = side;
+        _formSelectedId = id;
+        _formSelectedStats = null;
+        _formStatsLoading = true;
+        _rerenderFormTab();
+
+        // Fetch ktxstats
+        const dataMap = side === 'left' ? _formDataByIdA : _formDataByIdB;
+        const game = dataMap.get(id);
+
+        if (game?.demoSha256) {
+            try {
+                const stats = await QWHubService.getGameStats(game.demoSha256);
+                if (_formSelectedSide === side && _formSelectedId === id) {
+                    _formSelectedStats = stats;
+                    _formStatsLoading = false;
+                    _rerenderFormTab();
+                }
+            } catch (error) {
+                console.error('Failed to load form game stats:', error);
+                _formStatsLoading = false;
+                if (_formSelectedSide === side && _formSelectedId === id) {
+                    _rerenderFormTab();
+                }
+            }
+        } else {
+            _formStatsLoading = false;
+        }
+    }
+
+    /**
+     * Re-render just the form tab content area.
+     */
+    function _rerenderFormTab() {
+        const container = document.querySelector('.team-detail-tab-content');
+        if (container && _activeTab === 'h2h' && _h2hSubTab === 'form') {
+            const formContainer = document.getElementById('h2h-subtab-content');
+            if (formContainer) {
+                formContainer.innerHTML = _renderFormTab();
+            }
+        }
+    }
+
+    /**
+     * Reset all Form tab state.
+     */
+    function _resetFormState() {
+        _formResultsA = null;
+        _formResultsB = null;
+        _formLoading = false;
+        _formHoveredSide = null;
+        _formHoveredId = null;
+        _formSelectedSide = null;
+        _formSelectedId = null;
+        _formSelectedStats = null;
+        _formStatsLoading = false;
+        _formDataByIdA.clear();
+        _formDataByIdB.clear();
+    }
+
+    // ========================================
+    // Slice 11.0c: Maps Tab
+    // ========================================
+
+    /**
+     * Maps tab renderer — alternating mapshot/stats rows.
+     */
+    function _renderMapsTab() {
+        if (!_h2hOpponentId) {
+            return `
+                <div class="h2h-empty-state">
+                    <p class="text-sm text-muted-foreground">Select an opponent to compare map strength</p>
+                </div>
+            `;
+        }
+
+        if (_mapsLoading) {
+            return `
+                <div class="maps-loading">
+                    <div class="h2h-skeleton">Loading map analysis...</div>
+                </div>
+            `;
+        }
+
+        const mergedMaps = _mergeMapsData(_mapsDataA, _mapsDataB);
+
+        if (mergedMaps.length === 0) {
+            return `
+                <div class="h2h-empty-state">
+                    <p class="text-sm text-muted-foreground">No map data available for this matchup</p>
+                    <p class="text-xs text-muted-foreground mt-1">Try extending the period to 6 months</p>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="maps-grid">
+                ${mergedMaps.map((mapData, i) => _renderMapRow(mapData, i)).join('')}
+            </div>
+        `;
+    }
+
+    /**
+     * Single alternating row: even = [mapshot | stats], odd = [stats | mapshot].
+     */
+    function _renderMapRow(mapData, index) {
+        const isEven = index % 2 === 0;
+        const mapshotUrl = `https://a.quake.world/mapshots/webp/lg/${mapData.map}.webp`;
+        const teamA = _allTeams.find(t => t.id === _getH2HTeamAId());
+        const teamB = _allTeams.find(t => t.id === _h2hOpponentId);
+        const tagA = teamA?.teamTag || '?';
+        const tagB = teamB?.teamTag || '?';
+
+        const annotation = _getMapAnnotation(mapData.statsA, mapData.statsB, tagA, tagB);
+
+        const statsHtml = `
+            <div class="maps-stats-side">
+                <div class="maps-map-name">${mapData.map}</div>
+                ${mapData.statsA ? `
+                    <div class="maps-team-stat">
+                        <span class="maps-tag">${_escapeHtml(tagA)}</span>
+                        <span class="maps-record">${mapData.statsA.wins}-${mapData.statsA.losses}</span>
+                        <span class="maps-winrate">(${Math.round(mapData.statsA.winRate)}%)</span>
+                        <span class="maps-fragdiff ${mapData.statsA.avgFragDiff >= 0 ? 'positive' : 'negative'}">
+                            ${mapData.statsA.avgFragDiff >= 0 ? '+' : ''}${mapData.statsA.avgFragDiff.toFixed(1)}
+                        </span>
+                    </div>
+                ` : `
+                    <div class="maps-team-stat maps-no-data">
+                        <span class="maps-tag">${_escapeHtml(tagA)}</span>
+                        <span class="text-xs text-muted-foreground">No games</span>
+                    </div>
+                `}
+                ${mapData.statsB ? `
+                    <div class="maps-team-stat">
+                        <span class="maps-tag">${_escapeHtml(tagB)}</span>
+                        <span class="maps-record">${mapData.statsB.wins}-${mapData.statsB.losses}</span>
+                        <span class="maps-winrate">(${Math.round(mapData.statsB.winRate)}%)</span>
+                        <span class="maps-fragdiff ${mapData.statsB.avgFragDiff >= 0 ? 'positive' : 'negative'}">
+                            ${mapData.statsB.avgFragDiff >= 0 ? '+' : ''}${mapData.statsB.avgFragDiff.toFixed(1)}
+                        </span>
+                    </div>
+                ` : `
+                    <div class="maps-team-stat maps-no-data">
+                        <span class="maps-tag">${_escapeHtml(tagB)}</span>
+                        <span class="text-xs text-muted-foreground">No games</span>
+                    </div>
+                `}
+                ${annotation ? `<div class="maps-annotation">${annotation}</div>` : ''}
+            </div>
+        `;
+
+        const mapshotHtml = `
+            <div class="maps-mapshot-side">
+                <img src="${mapshotUrl}" alt="${mapData.map}" class="maps-mapshot-img"
+                     onerror="this.style.display='none'">
+            </div>
+        `;
+
+        // Alternate: even rows = [mapshot | stats], odd rows = [stats | mapshot]
+        return `
+            <div class="maps-row ${isEven ? 'maps-row-even' : 'maps-row-odd'}">
+                ${isEven ? mapshotHtml + statsHtml : statsHtml + mapshotHtml}
+            </div>
+        `;
+    }
+
+    /**
+     * Generate text annotation based on win rate comparison.
+     */
+    function _getMapAnnotation(statsA, statsB, tagA, tagB) {
+        if (!statsA && !statsB) return '';
+
+        // Only one team has data
+        if (!statsA) return `${tagB} plays, ${tagA} doesn't`;
+        if (!statsB) return `${tagA} plays, ${tagB} doesn't`;
+
+        const wrA = statsA.winRate;
+        const wrB = statsB.winRate;
+        const diff = wrA - wrB;
+
+        // Both strong (>60%)
+        if (wrA >= 60 && wrB >= 60) return 'Both teams strong';
+
+        // One dominates (>30% gap)
+        if (diff >= 30) return `${tagA} dominates`;
+        if (diff <= -30) return `${tagB} dominates`;
+
+        // One favors (15-30% gap)
+        if (diff >= 15) return `${tagA} favors`;
+        if (diff <= -15) return `${tagB} favors`;
+
+        // Both weak (<40%)
+        if (wrA < 40 && wrB < 40) return 'Neither team favors';
+
+        // Close
+        return 'Even';
+    }
+
+    /**
+     * Merge both teams' map data, sorted by combined games.
+     */
+    function _mergeMapsData(mapsA, mapsB) {
+        const mapIndex = {};
+
+        // Add Team A maps
+        if (mapsA?.maps) {
+            mapsA.maps.forEach(m => {
+                mapIndex[m.map] = {
+                    map: m.map,
+                    statsA: m,
+                    statsB: null,
+                    totalGames: m.games
+                };
+            });
+        }
+
+        // Merge Team B maps
+        if (mapsB?.maps) {
+            mapsB.maps.forEach(m => {
+                if (mapIndex[m.map]) {
+                    mapIndex[m.map].statsB = m;
+                    mapIndex[m.map].totalGames += m.games;
+                } else {
+                    mapIndex[m.map] = {
+                        map: m.map,
+                        statsA: null,
+                        statsB: m,
+                        totalGames: m.games
+                    };
+                }
+            });
+        }
+
+        // Sort by combined activity (most played first)
+        return Object.values(mapIndex)
+            .sort((a, b) => b.totalGames - a.totalGames);
+    }
+
+    /**
+     * Load map stats for both teams in parallel.
+     */
+    async function _loadMapsData() {
+        const teamAId = _getH2HTeamAId();
+        const teamA = _allTeams.find(t => t.id === teamAId);
+        const teamB = _allTeams.find(t => t.id === _h2hOpponentId);
+
+        if (!teamA?.teamTag || !teamB?.teamTag) return;
+
+        _mapsLoading = true;
+        _mapsDataA = null;
+        _mapsDataB = null;
+
+        // Re-render to show loading state
+        _rerenderMapsTab();
+
+        try {
+            const [mapsA, mapsB] = await Promise.all([
+                QWStatsService.getMaps(teamA.teamTag, { months: _h2hPeriod }),
+                QWStatsService.getMaps(teamB.teamTag, { months: _h2hPeriod })
+            ]);
+
+            // Guard against stale response
+            if (_getH2HTeamAId() !== teamA.id || _h2hOpponentId !== teamB.id) return;
+
+            _mapsDataA = mapsA;
+            _mapsDataB = mapsB;
+        } catch (error) {
+            console.error('Failed to load maps data:', error);
+        } finally {
+            _mapsLoading = false;
+            _rerenderMapsTab();
+        }
+    }
+
+    /**
+     * Re-render just the maps tab content area.
+     */
+    function _rerenderMapsTab() {
+        const container = document.querySelector('.team-detail-tab-content');
+        if (container && _activeTab === 'h2h' && _h2hSubTab === 'maps') {
+            const formContainer = document.getElementById('h2h-subtab-content');
+            if (formContainer) {
+                formContainer.innerHTML = _renderMapsTab();
+            }
+        }
+    }
+
+    /**
+     * Reset all Maps tab state.
+     */
+    function _resetMapsState() {
+        _mapsDataA = null;
+        _mapsDataB = null;
+        _mapsLoading = false;
+    }
+
+    // ========================================
     // Browse Teams Event Handler (Slice 5.1b)
     // ========================================
 
@@ -2050,7 +3626,11 @@ const TeamsBrowserPanel = (function() {
         _renderCurrentView();
         // Notify router of sub-tab change
         if (typeof Router !== 'undefined') {
-            Router.pushTeamSubTab(_selectedTeamId, tabName);
+            if (tabName === 'h2h' && _h2hOpponentId) {
+                Router.pushH2HOpponent(_selectedTeamId, _h2hOpponentId);
+            } else {
+                Router.pushTeamSubTab(_selectedTeamId, tabName);
+            }
         }
     }
 
@@ -2528,6 +4108,7 @@ const TeamsBrowserPanel = (function() {
     function selectTeam(teamId) {
         if (!teamId) return;
         _resetHistoryState();
+        _resetH2HState();
         _activeTab = 'details';
         _selectedTeamId = teamId;
         _render();
@@ -2544,6 +4125,7 @@ const TeamsBrowserPanel = (function() {
     function deselectTeam() {
         if (!_selectedTeamId) return;
         _resetHistoryState();
+        _resetH2HState();
         _selectedTeamId = null;
         _activeTab = 'details';
         if (_container) _render();
@@ -2595,6 +4177,7 @@ const TeamsBrowserPanel = (function() {
         _allTeams = [];
         _allPlayers = [];
         _resetHistoryState();
+        _resetH2HState();
 
         console.log('TeamsBrowserPanel cleaned up');
     }
@@ -2616,6 +4199,20 @@ const TeamsBrowserPanel = (function() {
         openFullStats,
         sortByColumn,
         switchStatsTab,
+        // Slice 11.0a: H2H interactions
+        selectH2HTeamA,
+        selectOpponent,
+        switchH2HSubTab,
+        changeH2HPeriod,
+        filterH2HByMap,
+        previewH2HResult,
+        clearH2HPreview,
+        selectH2HResult,
+        // Slice 11.0b: Form tab interactions
+        previewFormResult,
+        clearFormPreview,
+        selectFormResult,
+        clearFormSelection,
         // Router integration
         selectTeam,
         deselectTeam,

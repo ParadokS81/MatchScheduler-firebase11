@@ -899,6 +899,15 @@ body {
   justify-content: center;
 }
 
+/* Ready for match indicator - 4+ players available, subtle green tint */
+.grid-cell.ready-for-match:not(.has-scheduled-match) {
+  background-color: oklch(0.36 0.08 277);
+}
+
+.grid-cell.ready-for-match:not(.has-scheduled-match):hover {
+  background-color: oklch(0.40 0.10 277);
+}
+
 /* Player Tooltip - positioned near cells */
 .player-tooltip {
   position: fixed;
@@ -1413,20 +1422,20 @@ body {
    SCHEDULED MATCH GRID HIGHLIGHTS
    ======================================== */
 
-/* Scheduled match cell — green border only, no background tint */
+/* Scheduled match cell — saturated purple fill */
 .grid-cell.has-scheduled-match {
   position: relative;
-  border: 2px solid oklch(0.65 0.15 145 / 0.5) !important;
+  background-color: oklch(0.45 0.12 277) !important;
   cursor: pointer;
+}
+
+.grid-cell.has-scheduled-match:hover {
+  background-color: oklch(0.50 0.14 277) !important;
 }
 
 /* Hide player badges in scheduled match cells — logos replace them */
 .grid-cell.has-scheduled-match > .player-badges {
   display: none;
-}
-
-.grid-cell.has-scheduled-match:hover {
-  background-color: oklch(0.65 0.15 145 / 0.08) !important;
 }
 
 /* Logo vs Logo overlay inside scheduled match cells */
@@ -1439,12 +1448,12 @@ body {
   padding: 0 0.375rem;
   white-space: nowrap;
   pointer-events: none;
-  z-index: 1;
+  z-index: 2;
 }
 
 .scheduled-match-label .sml-logo {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.5rem;
+  height: 1.5rem;
   border-radius: 0.125rem;
   object-fit: cover;
 }
@@ -1833,7 +1842,8 @@ body {
 
 /* Logo-as-switcher: active team logo hover */
 .team-logo-clickable:hover {
-  box-shadow: 0 0 0 2px var(--primary);
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 /* Logo-as-switcher: inactive team logo - greyscale until hovered */
@@ -4378,4 +4388,675 @@ body {
   .selection-action-btn {
     bottom: 3.5rem; /* 3rem bottom bar + 0.5rem spacing */
   }
+}
+
+/* ============================================
+   Slice 11.0a: H2H Foundation
+   ============================================ */
+
+/* H2H clustered tab group — accent background wrapping Head to Head + Form + Maps */
+.h2h-tab-cluster {
+    display: flex;
+    gap: 0;
+    background: hsl(var(--primary-hsl) / 0.08);
+    border-radius: 0.375rem;
+    padding: 0.125rem;
+    align-self: center;
+    margin-left: 0.75rem;
+}
+
+.h2h-cluster-tab {
+    font-size: 0.8125rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.25rem;
+    background: transparent;
+    border: none;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.h2h-cluster-tab:hover {
+    color: var(--foreground);
+    background: hsl(var(--primary-hsl) / 0.12);
+}
+
+.h2h-cluster-tab.active {
+    color: var(--foreground);
+    background: hsl(var(--primary-hsl) / 0.2);
+    font-weight: 600;
+}
+
+/* Team selector header */
+/* Left panel column header — same grid as data rows for pixel-perfect alignment */
+.h2h-column-header {
+    display: grid;
+    grid-template-columns: 6.5rem auto 2.25rem 2.25rem 1.25rem;
+    align-items: center;
+    column-gap: 0.25rem;
+    padding: 0.3125rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+/* Period buttons in col 1 */
+.h2h-column-header > .h2h-period-buttons {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+/* Map filter in col 2 */
+.h2h-column-header > .h2h-map-filter {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    justify-self: start;
+}
+
+/* Record uses display:contents so children become grid items */
+.h2h-header-record {
+    display: contents;
+}
+
+/* Force each record span into the correct column — center to match scores */
+.h2h-header-record > span:nth-child(1) {
+    grid-column: 3;
+    grid-row: 1;
+    text-align: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+.h2h-header-record > span:nth-child(2) {
+    grid-column: 4;
+    grid-row: 1;
+    text-align: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+.h2h-header-record > span:nth-child(3) {
+    grid-column: 5;
+    grid-row: 1;
+    text-align: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+.h2h-opponent-select {
+    font-size: 0.6875rem;
+    padding: 0.1875rem 0.375rem;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 0.25rem;
+    color: var(--foreground);
+    cursor: pointer;
+    min-width: 0;
+    flex: 1;
+    max-width: 10rem;
+}
+
+/* Compact controls bar for Form/Maps tabs */
+.h2h-compact-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+/* Period buttons (segmented) */
+.h2h-period-buttons {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.25rem;
+    overflow: hidden;
+}
+
+.h2h-period-btn {
+    font-size: 0.625rem;
+    padding: 0.125rem 0.5rem;
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--border);
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.h2h-period-btn:last-child {
+    border-right: none;
+}
+
+.h2h-period-btn:hover {
+    background: var(--muted);
+    color: var(--foreground);
+}
+
+.h2h-period-btn.active {
+    background: hsl(var(--primary-hsl) / 0.2);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+/* H2H split panel (reuses mh-list-panel / mh-preview-panel) */
+.h2h-split {
+    display: flex;
+    height: 100%;
+    gap: 0;
+}
+
+/* H2H result rows: 5-column grid (date, map, score, score, result) */
+.h2h-split .mh-table-row {
+    grid-template-columns: 6.5rem auto 2.25rem 2.25rem 1.25rem;
+}
+
+/* Form result rows: 6-column grid (date, map, scoreUs, scoreThem, opponent, result) */
+.form-split .mh-table-row {
+    grid-template-columns: 3.5rem auto 2.25rem 2.25rem 2.5rem 1.25rem;
+}
+
+/* Summary bar (inside h2h-left-header, no own border) */
+.h2h-summary-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.25rem 0.5rem;
+    flex-shrink: 0;
+}
+
+.h2h-record {
+    display: flex;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* Roster panel — two symmetrical columns */
+.h2h-roster-panel {
+    padding: 0.375rem 0.5rem;
+    overflow-y: auto;
+    height: 100%;
+}
+
+.h2h-roster-columns {
+    display: flex;
+    gap: 1.5rem;
+    height: 100%;
+    justify-content: center;
+}
+
+.h2h-roster-col {
+    flex: 1;
+    min-width: 0;
+    max-width: 13rem;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Logo + team selector identity block */
+.h2h-roster-identity {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0;
+}
+
+.h2h-roster-logo-lg {
+    width: 8rem;
+    height: 8rem;
+    object-fit: contain;
+}
+
+.h2h-roster-logo-placeholder {
+    width: 8rem;
+    height: 8rem;
+    border-radius: 0.375rem;
+    background: var(--muted);
+    opacity: 0.3;
+}
+
+.h2h-team-select {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.1875rem 0.375rem;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 0.25rem;
+    color: var(--foreground);
+    cursor: pointer;
+    width: 100%;
+    max-width: 9rem;
+    text-align: center;
+}
+
+/* Roster table header */
+.h2h-roster-header {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--muted-foreground);
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.25rem;
+}
+
+.h2h-roster-header > span:first-child {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    padding-right: 0.25rem;
+}
+
+.h2h-roster-stat-header {
+    font-size: 0.5625rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    width: 3.25rem;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.h2h-roster-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0.125rem 0;
+    font-size: 0.6875rem;
+    color: var(--foreground);
+}
+
+.h2h-roster-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    padding-right: 0.25rem;
+}
+
+.h2h-roster-stat {
+    font-size: 0.625rem;
+    flex-shrink: 0;
+    width: 3.25rem;
+    text-align: right;
+    color: var(--muted-foreground);
+}
+
+/* Simple scoreboard (H2H hover preview without player rows) */
+.h2h-scoreboard {
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.h2h-scoreboard-overlay {
+    background: rgba(0, 0, 0, 0.6);
+    padding: 1rem 1.5rem;
+    border-radius: 0.375rem;
+    text-align: center;
+}
+
+.h2h-scoreboard-date {
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+    margin-bottom: 0.375rem;
+}
+
+.h2h-scoreboard-score {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 700;
+}
+
+.h2h-scoreboard-tag {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    font-weight: 600;
+}
+
+.h2h-scoreboard-frags {
+    color: var(--foreground);
+}
+
+.h2h-scoreboard-separator {
+    color: var(--muted-foreground);
+}
+
+/* Empty / loading states */
+.h2h-empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    text-align: center;
+}
+
+.h2h-skeleton {
+    padding: 1rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+}
+
+/* Remove padding when split panel inside tab content */
+.team-detail-tab-content:has(.h2h-split) {
+    padding: 0;
+}
+
+/* H2H tab wrapper fills available space */
+.h2h-tab-wrapper {
+    overflow: hidden;
+}
+
+.h2h-content {
+    overflow: hidden;
+}
+
+/* ============================================
+   Slice 11.0b: Form Tab — Symmetric Split
+   ============================================ */
+
+/* Default 50/50 layout */
+.form-split {
+    display: flex;
+    height: 100%;
+    gap: 0;
+}
+
+.form-split-default .form-side {
+    width: 38%;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow-y: auto;
+}
+
+/* Push sides to edges, divider centered */
+.form-split-default .form-side-left {
+    border-right: 1px solid var(--border);
+}
+
+.form-split-default .form-side-right {
+    border-left: 1px solid var(--border);
+    margin-left: auto;
+}
+
+/* Center divider — hint text in the empty middle space */
+.form-divider {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+    opacity: 0.5;
+    text-align: center;
+    padding: 1rem;
+}
+
+.form-side-header {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--foreground);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.375rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+/* Form column header — grid-aligned like H2H */
+.form-column-header {
+    display: grid;
+    grid-template-columns: 3.5rem auto 2.25rem 2.25rem 2.5rem 1.25rem;
+    column-gap: 0.25rem;
+    align-items: center;
+    padding: 0.375rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--foreground);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Logo + tag + label span first two columns */
+.form-header-identity {
+    grid-column: 1 / 3;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+/* W/L record in score columns */
+.form-header-record {
+    display: contents;
+}
+
+.form-header-record > span:nth-child(1) {
+    grid-column: 3;
+    text-align: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+.form-header-record > span:nth-child(2) {
+    grid-column: 4;
+    text-align: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+.form-header-record > span:nth-child(3) {
+    grid-column: 6;
+    text-align: center;
+    font-size: 0.625rem;
+    font-weight: 600;
+}
+
+.form-side-logo {
+    width: 1.125rem;
+    height: 1.125rem;
+    object-fit: contain;
+}
+
+.form-side-label {
+    color: var(--muted-foreground);
+    font-weight: 600;
+}
+
+/* Hover-left: list ~40%, content ~60% */
+.form-split-hover-left .form-side-narrow {
+    width: 38%;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    min-width: 0;
+    overflow-y: auto;
+}
+
+.form-split-hover-left .form-content-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow-y: auto;
+}
+
+/* Hover-right: content ~60%, list ~40% */
+.form-split-hover-right .form-side-narrow {
+    width: 38%;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border);
+    min-width: 0;
+    overflow-y: auto;
+}
+
+.form-split-hover-right .form-content-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow-y: auto;
+}
+
+/* Form summary (bottom of each side) */
+.form-summary {
+    padding: 0.375rem 0.5rem;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    display: flex;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+/* Remove padding for form splits */
+.team-detail-tab-content:has(.form-split) {
+    padding: 0;
+}
+
+/* ============================================
+   Slice 11.0c: Maps Tab — Alternating Layout
+   ============================================ */
+
+.maps-grid {
+    overflow-y: auto;
+    height: 100%;
+}
+
+.maps-row {
+    display: flex;
+    min-height: 3.5rem;
+}
+
+/* Mapshot side */
+.maps-mapshot-side {
+    width: 30%;
+    flex-shrink: 0;
+    overflow: hidden;
+    position: relative;
+    background: var(--muted);
+}
+
+.maps-mapshot-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+.maps-row:hover .maps-mapshot-img {
+    opacity: 1;
+}
+
+/* Stats side */
+.maps-stats-side {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.maps-map-name {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--foreground);
+    margin-bottom: 0.125rem;
+}
+
+.maps-team-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.6875rem;
+}
+
+.maps-tag {
+    font-weight: 600;
+    color: var(--foreground);
+    min-width: 2.5rem;
+}
+
+.maps-record {
+    color: var(--foreground);
+    font-weight: 600;
+}
+
+.maps-winrate {
+    color: var(--muted-foreground);
+}
+
+.maps-fragdiff {
+    font-size: 0.625rem;
+    font-weight: 600;
+}
+
+.maps-fragdiff.positive {
+    color: rgb(34, 197, 94);
+}
+
+.maps-fragdiff.negative {
+    color: rgb(239, 68, 68);
+}
+
+.maps-no-data {
+    opacity: 0.5;
+}
+
+.maps-annotation {
+    font-size: 0.625rem;
+    color: var(--muted-foreground);
+    font-style: italic;
+    margin-top: 0.125rem;
+}
+
+/* Even rows: mapshot left, stats right */
+.maps-row-even {
+    flex-direction: row;
+}
+
+/* Odd rows: stats left, mapshot right */
+.maps-row-odd {
+    flex-direction: row;
+}
+
+/* No borders between sides — cleaner look */
+
+/* Remove padding for maps grid */
+.team-detail-tab-content:has(.maps-grid) {
+    padding: 0;
 }

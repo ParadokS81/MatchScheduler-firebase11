@@ -6,7 +6,8 @@
  *
  * URL structure:
  *   #/calendar, #/teams, #/teams/{id}, #/teams/{id}/history,
- *   #/teams/{id}/h2h, #/players, #/players/by-team, #/matches, #/tournament
+ *   #/teams/{id}/h2h, #/teams/{id}/h2h/{opponentId},
+ *   #/players, #/players/by-team, #/matches, #/tournament
  */
 const Router = (function() {
     'use strict';
@@ -79,6 +80,9 @@ const Router = (function() {
                         if (route.subTab && route.subTab !== 'details') {
                             TeamsBrowserPanel.switchTab(route.subTab);
                         }
+                        if (route.opponentId) {
+                            TeamsBrowserPanel.selectOpponent(route.opponentId);
+                        }
                     } else {
                         // Back to overview — deselect any selected team
                         TeamsBrowserPanel.deselectTeam();
@@ -107,7 +111,8 @@ const Router = (function() {
 
         if (tab === 'teams' && segments.length >= 2) {
             const subTab = VALID_SUB_TABS.has(segments[2]) ? segments[2] : 'details';
-            return { tab: 'teams', teamId: segments[1], subTab };
+            const opponentId = (subTab === 'h2h' && segments[3]) ? segments[3] : null;
+            return { tab: 'teams', teamId: segments[1], subTab, opponentId };
         }
 
         if (tab === 'players' && segments[1] === 'by-team') {
@@ -147,6 +152,15 @@ const Router = (function() {
     }
 
     /**
+     * Called by TeamsBrowserPanel when H2H opponent is selected/changed.
+     */
+    function pushH2HOpponent(teamId, opponentId) {
+        if (_isRestoring) return;
+        const suffix = opponentId ? `/${opponentId}` : '';
+        _pushHash(`#/teams/${teamId}/h2h${suffix}`);
+    }
+
+    /**
      * Called by TeamsBrowserPanel sort-mode toggle.
      */
     function pushPlayerSort(sortMode) {
@@ -176,6 +190,7 @@ const Router = (function() {
         init,
         cleanup,
         pushTeamSubTab,
+        pushH2HOpponent,
         pushPlayerSort
     };
 })();

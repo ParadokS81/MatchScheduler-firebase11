@@ -467,11 +467,30 @@ exports.confirmSlot = onCall({ region: 'europe-west10' }, async (request) => {
                 }
             });
 
+            if (matched) {
+                return {
+                    matched,
+                    scheduledMatchId,
+                    matchDetails: {
+                        proposerTeamTag: proposal.proposerTeamTag,
+                        proposerTeamName: proposal.proposerTeamName,
+                        opponentTeamTag: proposal.opponentTeamTag,
+                        opponentTeamName: proposal.opponentTeamName,
+                        slotId,
+                        weekId: proposal.weekId,
+                        scheduledDate: computeScheduledDate(proposal.weekId, slotId),
+                        opponentTeamId: side === 'proposer' ? proposal.opponentTeamId : proposal.proposerTeamId,
+                        opponentLeaderId: side === 'proposer'
+                            ? opponentTeam.leaderId
+                            : proposerTeam.leaderId
+                    }
+                };
+            }
             return { matched, scheduledMatchId };
         });
 
         console.log('✅ Slot confirmed:', { proposalId, slotId, matched: result.matched });
-        return { success: true, matched: result.matched, scheduledMatchId: result.scheduledMatchId };
+        return { success: true, matched: result.matched, scheduledMatchId: result.scheduledMatchId, matchDetails: result.matchDetails || null };
 
     } catch (error) {
         console.error('❌ Error confirming slot:', error);

@@ -41,8 +41,8 @@ const AvailabilityGrid = (function() {
     }
 
     // Player badge display constants
-    const MAX_VISIBLE_BADGES = 3;  // Show 3 badges + overflow indicator
-    const TOOLTIP_THRESHOLD = 4;   // Show tooltip when 4+ players
+    const MAX_VISIBLE_BADGES = 4;  // Show 4 badges, overflow at 5+
+    const TOOLTIP_THRESHOLD = 5;   // Show tooltip when 5+ players
 
     function formatTime(slot) {
         return `${slot.slice(0, 2)}:${slot.slice(2)}`;
@@ -847,7 +847,7 @@ const AvailabilityGrid = (function() {
         function _renderPlayerBadges(cell, playerIds, playerRoster, currentUserId, displayMode) {
             if (!playerIds || playerIds.length === 0) {
                 cell.innerHTML = '';
-                cell.classList.remove('has-players', 'has-overflow');
+                cell.classList.remove('has-players', 'has-overflow', 'ready-for-match');
                 return;
             }
 
@@ -865,6 +865,13 @@ const AvailabilityGrid = (function() {
             } else {
                 cell.classList.remove('has-overflow');
                 delete cell.dataset.playerCount;
+            }
+
+            // Mark cell as ready for match if 4+ players (prompts leaders to search for pracs)
+            if (players.length >= 4) {
+                cell.classList.add('ready-for-match');
+            } else {
+                cell.classList.remove('ready-for-match');
             }
 
             let badgesHtml = '<div class="player-badges">';

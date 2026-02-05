@@ -25,7 +25,22 @@ const MatchesPanel = (function() {
         _container = document.getElementById(containerId);
         if (!_container) return;
 
-        const currentUser = AuthService.getCurrentUser();
+        let currentUser = AuthService.getCurrentUser();
+
+        // Auth may not have resolved yet on direct navigation — wait for it
+        if (!currentUser) {
+            currentUser = await new Promise((resolve) => {
+                const unsub = AuthService.onAuthStateChange((user) => {
+                    if (user) {
+                        unsub();
+                        resolve(user);
+                    }
+                });
+                // Timeout: if no user after 5s, they're genuinely unauthenticated
+                setTimeout(() => { unsub(); resolve(null); }, 5000);
+            });
+        }
+
         if (!currentUser) {
             _renderUnauthenticated();
             return;
@@ -683,7 +698,10 @@ const MatchesPanel = (function() {
             const result = await ProposalService.confirmSlot(proposalId, slotId);
 
             if (result.success) {
-                if (result.matched) {
+                if (result.matched && result.matchDetails) {
+                    // Show the sealed notification modal with Discord message template
+                    _showMatchSealedModal(result.matchDetails);
+                } else if (result.matched) {
                     ToastService.showSuccess('Match scheduled! Both teams confirmed.');
                 } else {
                     ToastService.showSuccess('Slot confirmed — waiting for opponent');
@@ -700,6 +718,28 @@ const MatchesPanel = (function() {
             btn.disabled = false;
             btn.textContent = 'Confirm';
         }
+    }
+
+    /**
+     * Show the match sealed modal with opponent Discord info
+     */
+    async function _showMatchSealedModal(matchDetails) {
+        let opponentDiscordId = null;
+
+        // Try to fetch opponent leader's Discord ID for the DM button
+        if (matchDetails.opponentLeaderId) {
+            try {
+                const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+                const userDoc = await getDoc(doc(window.firebase.db, 'users', matchDetails.opponentLeaderId));
+                if (userDoc.exists()) {
+                    opponentDiscordId = userDoc.data().discordUserId || null;
+                }
+            } catch (err) {
+                console.warn('Could not fetch opponent Discord info:', err);
+            }
+        }
+
+        MatchSealedModal.show(matchDetails, opponentDiscordId);
     }
 
     /**
