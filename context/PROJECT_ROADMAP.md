@@ -466,13 +466,21 @@ Redesign of the team detail view with tabbed navigation, richer landing page, sp
 ## Part 8: Team Privacy Controls
 
 ### 📅 Slice 9.0: Team Privacy Settings
-**Status:** Not Started
+**Status:** Complete
 **User Value:** Teams can hide roster names from comparison (strategic privacy) or hide entirely from public comparison
-**Components:** Team settings toggles, ComparisonEngine privacy filtering
+**Components:** TeamManagementModal, ComparisonEngine, ComparisonModal, AvailabilityGrid, updateTeamSettings CF
+
+**Sub-slices:**
+- 9.0a: Modal layout compaction (Tag+Max on one row, logo+schedulers side-by-side, action buttons side-by-side)
+- 9.0b: Privacy settings (hideRosterNames + hideFromComparison toggles, backend, comparison filtering)
+
 **Scope:**
 - Toggle: hide roster nicks from comparison (show "3 players" instead of names)
 - Toggle: hide team from public comparison entirely (internal-only availability tool)
 - Both are boolean flags on team document
+- ComparisonEngine filters hidden teams and anonymizes rosters
+- ComparisonModal + AvailabilityGrid tooltips render anonymous summaries
+- updateTeamSettings Cloud Function extended for privacy fields
 
 ---
 

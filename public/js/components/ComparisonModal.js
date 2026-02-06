@@ -294,6 +294,30 @@ const ComparisonModal = (function() {
     }
 
     /**
+     * Render anonymous roster summary (when team has hideRosterNames enabled)
+     */
+    function _renderAnonymousRoster(availablePlayers, unavailablePlayers) {
+        const availCount = availablePlayers.length;
+        const unavailCount = unavailablePlayers.length;
+
+        return `
+            <div class="py-2">
+                <div class="flex items-center gap-2 py-0.5">
+                    <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: oklch(0.60 0.18 145);"></span>
+                    <span class="text-sm text-foreground">${availCount} player${availCount !== 1 ? 's' : ''} available</span>
+                </div>
+                ${unavailCount > 0 ? `
+                    <div class="flex items-center gap-2 py-0.5">
+                        <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: oklch(0.5 0.02 260); opacity: 0.5;"></span>
+                        <span class="text-sm text-muted-foreground">${unavailCount} unavailable</span>
+                    </div>
+                ` : ''}
+                <p class="text-xs text-muted-foreground mt-1 italic">Roster hidden by team</p>
+            </div>
+        `;
+    }
+
+    /**
      * Render contact section for opponent with message preview and action buttons
      * @param {Object} discordInfo - Leader's Discord info
      * @param {string} selectedSlotId - The slot user clicked
@@ -383,7 +407,9 @@ const ComparisonModal = (function() {
 
                 <!-- Roster -->
                 <div class="vs-roster">
-                    ${_renderRoster(availablePlayers, unavailablePlayers)}
+                    ${(!isUserTeam && matchData?.hideRosterNames)
+                        ? _renderAnonymousRoster(availablePlayers, unavailablePlayers)
+                        : _renderRoster(availablePlayers, unavailablePlayers)}
                 </div>
 
                 ${contactSection}
@@ -568,20 +594,8 @@ const ComparisonModal = (function() {
                     });
 
                     if (result.success) {
-                        // Copy Discord template to clipboard
-                        const template = _generateProposalDiscordTemplate(
-                            _currentData.weekId,
-                            _currentData.userTeamInfo,
-                            selectedMatch
-                        );
-                        try {
-                            await navigator.clipboard.writeText(template);
-                            ToastService.showSuccess('Proposal created! Message copied to clipboard');
-                        } catch (clipErr) {
-                            console.warn('Clipboard write failed:', clipErr);
-                            ToastService.showSuccess('Proposal created! (Clipboard copy failed)');
-                        }
-                        close();
+                        // Show post-creation step with Discord contact prompt
+                        _showPostProposalStep(selectedMatch);
                     } else {
                         ToastService.showError(result.error || 'Failed to create proposal');
                         proposeBtn.disabled = false;
@@ -658,6 +672,153 @@ const ComparisonModal = (function() {
             if (e.key === 'Escape' && _isOpen) close();
         };
         document.addEventListener('keydown', _keydownHandler);
+    }
+
+    /**
+     * Show the post-proposal-creation step with Discord contact prompt
+     */
+    function _showPostProposalStep(selectedMatch) {
+        const weekId = _currentData.weekId;
+        const userTeamInfo = _currentData.userTeamInfo;
+        const weekNum = weekId.split('-')[1];
+        const comparisonState = ComparisonEngine.getComparisonState();
+        const minFilter = comparisonState.filters || { yourTeam: 1, opponent: 1 };
+
+        // Compute viable slots for message
+        const viableSlots = ProposalService.computeViableSlots(
+            userTeamInfo.teamId,
+            selectedMatch.teamId,
+            weekId,
+            minFilter
+        );
+
+        // Sort by total players descending, take top 3
+        const sorted = [...viableSlots].sort((a, b) =>
+            (b.proposerCount + b.opponentCount) - (a.proposerCount + a.opponentCount)
+        );
+        const top3 = sorted.slice(0, 3);
+        const remaining = sorted.length - 3;
+
+        // Build message
+        const lines = [
+            `Hey! We proposed a match: ${userTeamInfo.teamTag} vs ${selectedMatch.teamTag} (W${weekNum})`,
+            '',
+            'Best times for both teams:'
+        ];
+        for (const slot of top3) {
+            const display = TimezoneService.formatSlotForDisplay(slot.slotId, _getRefDate(weekId));
+            const shortDay = (display.dayLabel || '').slice(0, 3);
+            lines.push(`\u25B8 ${shortDay} ${display.timeLabel} (${slot.proposerCount}v${slot.opponentCount})`);
+        }
+        if (top3.length === 0) {
+            lines.length = 2; // Keep header + blank line
+            lines.push('No viable slots yet \u2014 check availability!');
+        }
+        if (remaining > 0) {
+            lines.push('');
+            lines.push(`+${remaining} more time${remaining !== 1 ? 's' : ''} available`);
+        }
+        lines.push('');
+        lines.push('Check proposal: https://scheduler.quake.world');
+        const message = lines.join('\n');
+
+        const escapedMessage = _escapeHtml(message).replace(/\n/g, '&#10;');
+
+        const discordIcon = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>`;
+
+        // Replace modal body
+        const body = _container.querySelector('.p-4.overflow-y-auto.flex-1');
+        if (body) {
+            body.innerHTML = `
+                <div class="p-6 text-center">
+                    <div class="text-green-400 text-4xl mb-3">&#10003;</div>
+                    <h3 class="text-lg font-semibold text-foreground mb-1">Proposal Created!</h3>
+                    <p class="text-sm text-muted-foreground mb-4">
+                        ${_escapeHtml(userTeamInfo.teamTag)} vs ${_escapeHtml(selectedMatch.teamTag)} — Week ${weekNum}
+                    </p>
+
+                    <div class="text-left bg-muted/30 rounded p-3 mb-4 text-xs font-mono text-muted-foreground whitespace-pre-wrap max-h-32 overflow-y-auto">${_escapeHtml(message)}</div>
+
+                    <p class="text-sm text-muted-foreground mb-3">
+                        Send this to the opponent leader so they know to check:
+                    </p>
+
+                    <div class="flex items-center gap-2 justify-center flex-wrap">
+                        <button class="btn btn-sm bg-[#5865F2] hover:bg-[#4752C4] text-white flex items-center gap-1"
+                                id="post-proposal-discord" data-message="${escapedMessage}">
+                            ${discordIcon}
+                            <span>Contact on Discord</span>
+                        </button>
+                        <button class="btn btn-sm btn-secondary" id="post-proposal-copy" data-message="${escapedMessage}">
+                            Copy Message
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Replace footer with just Done button
+        const footer = _container.querySelector('.p-4.border-t.border-border.shrink-0');
+        if (footer) {
+            footer.innerHTML = `<button id="comparison-modal-done-post" class="btn btn-primary flex-1">Done</button>`;
+            document.getElementById('comparison-modal-done-post')?.addEventListener('click', close);
+        }
+
+        // Wire up Discord + Copy buttons
+        _attachPostProposalListeners(selectedMatch);
+    }
+
+    /**
+     * Attach event listeners for the post-proposal Discord/Copy buttons
+     */
+    async function _attachPostProposalListeners(selectedMatch) {
+        const copyBtn = document.getElementById('post-proposal-copy');
+        const discordBtn = document.getElementById('post-proposal-discord');
+
+        // Copy button
+        copyBtn?.addEventListener('click', async () => {
+            const msg = copyBtn.dataset.message.replace(/&#10;/g, '\n');
+            try {
+                await navigator.clipboard.writeText(msg);
+                ToastService.showSuccess('Message copied to clipboard!');
+                const origHtml = copyBtn.innerHTML;
+                copyBtn.innerHTML = `<svg class="w-4 h-4 inline" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> Copied!`;
+                setTimeout(() => { copyBtn.innerHTML = origHtml; }, 2000);
+            } catch (err) {
+                console.error('Copy failed:', err);
+                ToastService.showError('Failed to copy message');
+            }
+        });
+
+        // Fetch opponent leader Discord info
+        const opponentTeam = TeamService.getTeamFromCache(selectedMatch.teamId);
+        const leaderId = opponentTeam?.leaderId;
+
+        if (leaderId && discordBtn) {
+            try {
+                const discordInfo = await _getUserDiscordInfo(leaderId);
+                if (discordInfo?.discordUserId) {
+                    discordBtn.addEventListener('click', async () => {
+                        const msg = discordBtn.dataset.message.replace(/&#10;/g, '\n');
+                        try {
+                            await navigator.clipboard.writeText(msg);
+                            ToastService.showSuccess('Message copied! Paste in Discord');
+                        } catch (err) { /* silent */ }
+                        setTimeout(() => {
+                            window.open(`discord://-/users/${discordInfo.discordUserId}`, '_blank');
+                        }, 100);
+                    });
+                } else {
+                    // No Discord user ID — hide Discord button
+                    discordBtn.style.display = 'none';
+                }
+            } catch (err) {
+                console.warn('Failed to fetch leader Discord info:', err);
+                discordBtn.style.display = 'none';
+            }
+        } else if (discordBtn) {
+            discordBtn.style.display = 'none';
+        }
     }
 
     /**

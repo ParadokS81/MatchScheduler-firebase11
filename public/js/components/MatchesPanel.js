@@ -1,5 +1,5 @@
 // MatchesPanel.js - Matches tab content with proposal cards
-// Slice 8.2b: Column layout (3 week columns + upcoming matches column)
+// Slice 8.2c: 2-column layout (this week | upcoming + scheduled) with Discord contact
 // Follows Cache + Listener pattern: Component owns Firebase listeners, services manage cache
 
 const MatchesPanel = (function() {
@@ -58,7 +58,6 @@ const MatchesPanel = (function() {
 
         // Attach event listeners ONCE (event delegation handles dynamic content)
         _container.addEventListener('click', _handleClick);
-        _container.addEventListener('change', _handleGameTypeChange);
         _container.addEventListener('pointerenter', _handleMatchRowEnter, true);
         _container.addEventListener('pointerleave', _handleMatchRowLeave, true);
 
@@ -164,18 +163,14 @@ const MatchesPanel = (function() {
     // ─── Week Helpers ───────────────────────────────────────────────────
 
     /**
-     * Get three consecutive weeks starting from current week.
-     * Returns objects with weekId, weekNumber, and dateRange for column headers.
+     * Get the current week as an object with weekId, weekNumber, dateRange.
      */
-    function _getThreeWeeks() {
+    function _getCurrentWeek() {
         const currentWeek = WeekNavigation.getCurrentWeekNumber();
         const year = new Date().getUTCFullYear();
-        return [0, 1, 2].map(offset => {
-            const weekNumber = currentWeek + offset;
-            const weekId = `${year}-${String(weekNumber).padStart(2, '0')}`;
-            const dateRange = _getWeekDateRange(weekNumber, year);
-            return { weekId, weekNumber, dateRange };
-        });
+        const weekId = `${year}-${String(currentWeek).padStart(2, '0')}`;
+        const dateRange = _getWeekDateRange(currentWeek, year);
+        return { weekId, weekNumber: currentWeek, dateRange };
     }
 
     /**
@@ -224,7 +219,7 @@ const MatchesPanel = (function() {
     }
 
     /**
-     * Render the column layout: 3 week columns + upcoming matches column + archived section
+     * Render 2-column layout: THIS WEEK (left ~60%) | UPCOMING (right ~40%) + archived
      */
     async function _renderAll() {
         if (!_container) return;
@@ -235,18 +230,23 @@ const MatchesPanel = (function() {
         await _ensureAvailabilityLoaded(proposals);
 
         const now = new Date();
-        const weeks = _getThreeWeeks();
+        const currentWeek = _getCurrentWeek();
 
         // Categorize proposals
-        const active = [];
+        const thisWeekProposals = [];
+        const futureProposalsByWeek = {};
         const archived = [];
 
         for (const p of proposals) {
             if (p.status === 'active') {
                 if (p.expiresAt && p.expiresAt.toDate && p.expiresAt.toDate() < now) {
                     archived.push(p);
+                } else if (p.weekId === currentWeek.weekId) {
+                    thisWeekProposals.push(p);
                 } else {
-                    active.push(p);
+                    // Future week — group by weekId
+                    if (!futureProposalsByWeek[p.weekId]) futureProposalsByWeek[p.weekId] = [];
+                    futureProposalsByWeek[p.weekId].push(p);
                 }
             } else if (p.status === 'confirmed') {
                 // Confirmed proposals are no longer shown as cards — their matches appear in upcoming column
@@ -255,44 +255,53 @@ const MatchesPanel = (function() {
             }
         }
 
-        // Group active proposals by weekId into columns
-        const byWeek = {};
-        weeks.forEach(w => byWeek[w.weekId] = []);
-        for (const p of active) {
-            if (byWeek[p.weekId]) {
-                byWeek[p.weekId].push(p);
-            }
-            // Proposals for weeks outside the 3-column range are not shown
-        }
+        // Sort future weeks chronologically
+        const futureWeekIds = Object.keys(futureProposalsByWeek).sort();
 
         // Get upcoming scheduled matches for user's teams
         const scheduledMatches = ScheduledMatchService.getUpcomingMatchesForTeams(_userTeamIds);
         scheduledMatches.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
 
+        // Build future weeks HTML
+        const futureWeeksHtml = futureWeekIds.map(weekId => {
+            const [yearStr, weekStr] = weekId.split('-');
+            const weekNum = parseInt(weekStr);
+            const year = parseInt(yearStr);
+            const dateRange = _getWeekDateRange(weekNum, year);
+            return _renderFutureWeekGroup(weekNum, dateRange, futureProposalsByWeek[weekId]);
+        }).join('');
+
+        const hasFutureContent = futureWeekIds.length > 0 || scheduledMatches.length > 0;
+
         _container.innerHTML = `
             <div class="matches-panel h-full flex flex-col">
-                <div class="flex-1 flex gap-3 p-3 overflow-hidden min-h-0">
-                    ${weeks.map(w => `
-                        <div class="flex-1 min-w-0 flex flex-col">
-                            <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                                W${String(w.weekNumber).padStart(2, '0')} · ${w.dateRange}
-                            </h3>
-                            <div class="flex-1 overflow-y-auto space-y-2">
-                                ${byWeek[w.weekId].length > 0
-                                    ? byWeek[w.weekId].map(p => _renderProposalCard(p, 'active')).join('')
-                                    : '<p class="text-xs text-muted-foreground/50 italic">No proposals</p>'}
-                            </div>
-                        </div>
-                    `).join('')}
-
-                    <div class="w-72 shrink-0 flex flex-col border-l border-border pl-3">
+                <div class="flex-1 flex gap-4 p-3 overflow-hidden min-h-0">
+                    <!-- LEFT: THIS WEEK -->
+                    <div class="flex-[3] min-w-0 flex flex-col">
                         <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                            Upcoming Matches
+                            This Week · W${String(currentWeek.weekNumber).padStart(2, '0')} · ${currentWeek.dateRange}
                         </h3>
-                        <div class="flex-1 overflow-y-auto">
-                            ${scheduledMatches.length > 0
-                                ? scheduledMatches.map(m => _renderUpcomingMatchCompact(m)).join('')
-                                : '<p class="text-xs text-muted-foreground/50 italic">No scheduled matches</p>'}
+                        <div class="flex-1 overflow-y-auto space-y-2">
+                            ${thisWeekProposals.length > 0
+                                ? thisWeekProposals.map(p => _renderProposalCard(p, 'active')).join('')
+                                : '<p class="text-xs text-muted-foreground/50 italic">No proposals this week</p>'}
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: UPCOMING -->
+                    <div class="flex-[2] min-w-0 flex flex-col border-l border-border pl-4">
+                        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                            Upcoming
+                        </h3>
+                        <div class="flex-1 overflow-y-auto space-y-3">
+                            ${futureWeeksHtml}
+                            ${scheduledMatches.length > 0 ? `
+                                <div class="${futureWeekIds.length > 0 ? 'mt-3 pt-3 border-t border-border' : ''}">
+                                    <div class="future-week-header mb-2">Scheduled Matches</div>
+                                    ${scheduledMatches.map(m => _renderUpcomingMatchCompact(m)).join('')}
+                                </div>
+                            ` : ''}
+                            ${!hasFutureContent ? '<p class="text-xs text-muted-foreground/50 italic">No upcoming proposals or matches</p>' : ''}
                         </div>
                     </div>
                 </div>
@@ -303,16 +312,63 @@ const MatchesPanel = (function() {
     }
 
     /**
-     * Render a single proposal card (collapsed or expanded)
+     * Render a group of proposals for a future week
+     */
+    function _renderFutureWeekGroup(weekNumber, dateRange, proposals) {
+        return `
+            <div>
+                <div class="future-week-header">
+                    W${String(weekNumber).padStart(2, '0')} · ${dateRange}
+                </div>
+                <div class="space-y-2">
+                    ${proposals.map(p => _renderProposalCard(p, 'active')).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // Discord SVG icon (reused in card and handlers)
+    const DISCORD_ICON_SVG = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>`;
+
+    /**
+     * Get proposal status text and color for the card status line
+     */
+    function _getProposalStatus(proposal, isProposerSide) {
+        const myConfirmedCount = Object.keys(
+            (isProposerSide ? proposal.proposerConfirmedSlots : proposal.opponentConfirmedSlots) || {}
+        ).length;
+        const theirConfirmedCount = Object.keys(
+            (isProposerSide ? proposal.opponentConfirmedSlots : proposal.proposerConfirmedSlots) || {}
+        ).length;
+
+        if (myConfirmedCount > 0 && theirConfirmedCount > 0) {
+            return { text: `You confirmed ${myConfirmedCount}, they confirmed ${theirConfirmedCount}`, cls: 'text-green-400' };
+        }
+        if (theirConfirmedCount > 0) {
+            return { text: `They confirmed ${theirConfirmedCount} slot${theirConfirmedCount !== 1 ? 's' : ''}`, cls: 'text-blue-400' };
+        }
+        if (myConfirmedCount > 0) {
+            return { text: `You confirmed ${myConfirmedCount} slot${myConfirmedCount !== 1 ? 's' : ''}`, cls: 'text-primary' };
+        }
+        return { text: 'Waiting for confirmations', cls: 'text-muted-foreground' };
+    }
+
+    /**
+     * Render a single proposal card (collapsed: 2-row with logos + status, or expanded)
      */
     function _renderProposalCard(proposal, type) {
         const isExpanded = _expandedProposalId === proposal.id;
-        const currentUser = AuthService.getCurrentUser();
         const isProposerSide = _isUserOnSide(proposal, 'proposer');
         const isOpponentSide = _isUserOnSide(proposal, 'opponent');
+        const canAct = isProposerSide || isOpponentSide;
+        // Don't show Discord button if user is on both sides (would message themselves)
+        const showDiscord = canAct && !(isProposerSide && isOpponentSide) && type === 'active';
 
-        // Always show both teams so it's clear who's playing whom
-        const displayName = `${proposal.proposerTeamName} vs ${proposal.opponentTeamName}`;
+        // Team logos from cache
+        const proposerTeam = TeamService.getTeamFromCache(proposal.proposerTeamId);
+        const opponentTeam = TeamService.getTeamFromCache(proposal.opponentTeamId);
+        const proposerLogo = proposerTeam?.activeLogo?.urls?.small || '';
+        const opponentLogo = opponentTeam?.activeLogo?.urls?.small || '';
 
         // Compute viable slot count for badge
         let slotCount = 0;
@@ -323,43 +379,50 @@ const MatchesPanel = (function() {
                 proposal.weekId,
                 proposal.minFilter
             );
-            // Filter past slots
             const now = new Date();
             slotCount = slots.filter(s => !_isSlotPast(proposal.weekId, s.slotId, now)).length;
         }
 
-        // Status badge for confirmed
-        let statusBadge = '';
-        if (type === 'upcoming' && proposal.confirmedSlotId) {
-            const display = TimezoneService.formatSlotForDisplay(proposal.confirmedSlotId);
-            statusBadge = `<span class="text-xs text-green-400">${display.fullLabel}</span>`;
-        }
+        // Status line for row 2
+        const status = type === 'active' ? _getProposalStatus(proposal, isProposerSide) : { text: '', cls: '' };
+        const weekNum = proposal.weekId?.split('-')[1] || '?';
 
         const expandedContent = isExpanded && type === 'active'
             ? _renderExpandedProposal(proposal)
             : '';
 
         const cardClass = type === 'archived' ? 'opacity-50' : '';
-        const statusClass = type === 'upcoming' ? 'border-green-500/30' : 'border-border';
 
         return `
-            <div class="proposal-card rounded-lg border ${statusClass} bg-card ${cardClass}"
+            <div class="proposal-card rounded-lg border border-border bg-card ${cardClass}"
                  data-proposal-id="${proposal.id}">
-                <div class="proposal-card-header flex items-center justify-between p-2.5 cursor-pointer"
+                <!-- Row 1: Logos + Teams + Slot Count + Discord + Expand -->
+                <div class="proposal-card-header flex items-center gap-2 p-2.5 cursor-pointer"
                      data-action="toggle-expand" data-proposal-id="${proposal.id}">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <span class="text-sm font-medium truncate">${displayName}</span>
-                        ${statusBadge}
-                    </div>
-                    <div class="flex items-center gap-2 shrink-0">
-                        ${type === 'active' ? `
-                            <span class="text-xs text-muted-foreground">${slotCount} slot${slotCount !== 1 ? 's' : ''}</span>
+                    ${proposerLogo ? `<img src="${proposerLogo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
+                    <span class="text-sm font-medium truncate min-w-0">${_escapeHtml(proposal.proposerTeamName)} vs ${_escapeHtml(proposal.opponentTeamName)}</span>
+                    ${opponentLogo ? `<img src="${opponentLogo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
+                    <div class="flex items-center gap-1.5 shrink-0 ml-auto">
+                        ${type === 'active' ? `<span class="text-xs bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">${slotCount}</span>` : ''}
+                        ${showDiscord ? `
+                            <button class="p-1 rounded hover:bg-[#5865F2]/20 text-muted-foreground hover:text-[#5865F2] transition-colors"
+                                    data-action="discord-contact" data-proposal-id="${proposal.id}"
+                                    title="Contact opponent on Discord">
+                                ${DISCORD_ICON_SVG}
+                            </button>
                         ` : ''}
-                        <span class="text-xs text-muted-foreground">W${proposal.weekId?.split('-')[1] || '?'}</span>
-                        ${type === 'active' ? `
-                            <span class="text-muted-foreground text-xs">${isExpanded ? '▲' : '▼'}</span>
-                        ` : ''}
+                        ${type === 'active' ? `<span class="text-muted-foreground text-xs">${isExpanded ? '▲' : '▼'}</span>` : ''}
                     </div>
+                </div>
+                <!-- Row 2: Min filter + Week + Status -->
+                <div class="flex items-center gap-1.5 px-2.5 pb-2 text-xs">
+                    <span class="text-muted-foreground">Min ${proposal.minFilter?.yourTeam || 1}v${proposal.minFilter?.opponent || 1}</span>
+                    <span class="text-muted-foreground/50">·</span>
+                    <span class="text-muted-foreground">W${weekNum}</span>
+                    ${status.text ? `
+                        <span class="text-muted-foreground/50">·</span>
+                        <span class="${status.cls}">${status.text}</span>
+                    ` : ''}
                 </div>
                 ${expandedContent}
             </div>
@@ -406,40 +469,48 @@ const MatchesPanel = (function() {
             const display = TimezoneService.formatSlotForDisplay(slot.slotId);
             const statusIcon = bothConfirmed ? '✓✓' : (theyConfirmed ? '✓ them' : (iConfirmed ? '✓ you' : ''));
 
-            let slotClasses = 'flex items-center justify-between py-1.5 px-2 rounded text-sm';
-            if (bothConfirmed) slotClasses += ' bg-green-500/10 border border-green-500/30';
-            else if (droppedWarning) slotClasses += ' bg-amber-500/10 border border-amber-500/30';
+            let rowClasses = 'slot-row py-1.5 px-2 rounded text-sm';
+            if (bothConfirmed) rowClasses += ' bg-green-500/10 border border-green-500/30';
+            else if (droppedWarning) rowClasses += ' bg-amber-500/10 border border-amber-500/30';
+
+            // Game type confirmed label (for already-confirmed slots)
+            const confirmedType = iConfirmed && myConfirm.gameType
+                ? (myConfirm.gameType === 'practice' ? 'PRAC' : 'OFF')
+                : '';
 
             return `
-                <div class="${slotClasses}" data-slot-id="${slot.slotId}">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <span>${display.dayLabel.slice(0, 3)} ${display.timeLabel}</span>
-                        <span class="text-xs text-muted-foreground">${slot.proposerCount} vs ${slot.opponentCount}</span>
-                        ${droppedWarning ? '<span class="text-xs text-amber-400" title="Player dropped since confirmed">⚠</span>' : ''}
-                        ${statusIcon ? `<span class="text-xs ${bothConfirmed ? 'text-green-400' : 'text-muted-foreground'}">${statusIcon}</span>` : ''}
-                    </div>
-                    ${canAct ? `
-                        ${iConfirmed ? `
-                            <button class="proposal-withdraw-btn text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground"
-                                    data-action="withdraw" data-proposal-id="${_expandedProposalId}" data-slot="${slot.slotId}">
-                                Withdraw
-                            </button>
-                        ` : `
-                            <div class="flex items-center gap-1">
-                                <select class="game-type-select text-xs bg-muted border border-border rounded px-1.5 py-0.5 text-foreground"
-                                        data-slot="${slot.slotId}">
-                                    <option value="" selected disabled>Type...</option>
-                                    <option value="official">Official</option>
-                                    <option value="practice">Practice</option>
-                                </select>
-                                <button class="proposal-confirm-btn text-xs px-2 py-0.5 rounded bg-primary/50 text-primary-foreground cursor-not-allowed"
+                <div class="${rowClasses}" data-slot-id="${slot.slotId}">
+                    <span class="slot-col-time font-medium">${display.dayLabel.slice(0, 3)} ${display.timeLabel}</span>
+                    <span class="slot-col-count text-xs text-muted-foreground">${slot.proposerCount}v${slot.opponentCount}</span>
+                    <span class="slot-col-status text-xs">
+                        ${droppedWarning ? '<span class="text-amber-400" title="Player count dropped since confirmed">⚠</span>' : ''}
+                        ${statusIcon ? `<span class="${bothConfirmed ? 'text-green-400' : 'text-muted-foreground'}">${statusIcon}</span>` : ''}
+                    </span>
+                    <div class="slot-col-actions flex items-center gap-1 justify-end">
+                        ${canAct ? `
+                            ${iConfirmed ? `
+                                ${confirmedType ? `<span class="text-xs text-muted-foreground">${confirmedType}</span>` : ''}
+                                <button class="proposal-withdraw-btn text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground"
+                                        data-action="withdraw" data-proposal-id="${_expandedProposalId}" data-slot="${slot.slotId}">
+                                    Withdraw
+                                </button>
+                            ` : `
+                                <button class="game-type-btn text-xs px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-green-400 hover:border-green-500/50 transition-colors"
+                                        data-action="select-game-type" data-type="official" data-slot="${slot.slotId}">
+                                    OFF
+                                </button>
+                                <button class="game-type-btn text-xs px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-amber-400 hover:border-amber-500/50 transition-colors"
+                                        data-action="select-game-type" data-type="practice" data-slot="${slot.slotId}">
+                                    PRAC
+                                </button>
+                                <button class="proposal-confirm-btn text-xs px-2 py-0.5 rounded border border-border text-muted-foreground/40 cursor-not-allowed"
                                         data-action="confirm" data-proposal-id="${_expandedProposalId}" data-slot="${slot.slotId}"
-                                        disabled>
+                                        disabled title="Select OFF or PRAC first">
                                     Confirm
                                 </button>
-                            </div>
-                        `}
-                    ` : ''}
+                            `}
+                        ` : ''}
+                    </div>
                 </div>
             `;
         }).join('');
@@ -449,9 +520,6 @@ const MatchesPanel = (function() {
 
         return `
             <div class="proposal-expanded border-t border-border p-2.5">
-                <div class="text-xs text-muted-foreground mb-2">
-                    Min ${proposal.minFilter?.yourTeam || 1}v${proposal.minFilter?.opponent || 1}
-                </div>
                 <div class="space-y-1">
                     ${slotsHtml || '<p class="text-xs text-muted-foreground italic">No viable slots this week</p>'}
                 </div>
@@ -599,29 +667,35 @@ const MatchesPanel = (function() {
     // ─── Event Handlers ────────────────────────────────────────────────
 
     /**
-     * Handle game type dropdown change - enable/disable Confirm button
+     * Handle game type toggle button click — highlight selected, enable Confirm
      */
-    function _handleGameTypeChange(e) {
-        const select = e.target.closest('.game-type-select');
-        if (!select) return;
-
-        const slotId = select.dataset.slot;
-        const row = select.closest('[data-slot-id]');
+    function _handleSelectGameType(target) {
+        const row = target.closest('[data-slot-id]');
         if (!row) return;
 
-        const confirmBtn = row.querySelector('.proposal-confirm-btn');
-        if (!confirmBtn) return;
+        const gameType = target.dataset.type; // 'official' or 'practice'
 
-        if (select.value) {
-            // Valid selection - enable button
-            confirmBtn.disabled = false;
-            confirmBtn.classList.remove('bg-primary/50', 'cursor-not-allowed');
-            confirmBtn.classList.add('bg-primary', 'hover:bg-primary/80');
+        // Deselect all type buttons in this row, select clicked one
+        row.querySelectorAll('.game-type-btn').forEach(btn => {
+            btn.classList.remove('border-green-500', 'text-green-400', 'border-amber-500', 'text-amber-400', 'bg-green-500/10', 'bg-amber-500/10');
+            btn.classList.add('border-border', 'text-muted-foreground');
+        });
+        if (gameType === 'official') {
+            target.classList.remove('border-border', 'text-muted-foreground');
+            target.classList.add('border-green-500', 'text-green-400', 'bg-green-500/10');
         } else {
-            // No selection - disable button
-            confirmBtn.disabled = true;
-            confirmBtn.classList.add('bg-primary/50', 'cursor-not-allowed');
-            confirmBtn.classList.remove('bg-primary', 'hover:bg-primary/80');
+            target.classList.remove('border-border', 'text-muted-foreground');
+            target.classList.add('border-amber-500', 'text-amber-400', 'bg-amber-500/10');
+        }
+
+        // Enable Confirm button and store game type on it
+        const confirmBtn = row.querySelector('.proposal-confirm-btn');
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.dataset.gameType = gameType;
+            confirmBtn.title = `Confirm as ${gameType === 'practice' ? 'Practice' : 'Official'}`;
+            confirmBtn.classList.remove('text-muted-foreground/40', 'cursor-not-allowed', 'border-border');
+            confirmBtn.classList.add('bg-primary', 'text-primary-foreground', 'hover:bg-primary/80', 'border-primary');
         }
     }
 
@@ -637,6 +711,13 @@ const MatchesPanel = (function() {
         const slotId = target.dataset.slot;
 
         switch (action) {
+            case 'discord-contact':
+                e.stopPropagation();
+                await _handleDiscordContact(proposalId);
+                return; // Don't let toggle-expand fire
+            case 'select-game-type':
+                _handleSelectGameType(target);
+                return;
             case 'toggle-expand':
                 await _handleToggleExpand(proposalId);
                 break;
@@ -735,13 +816,11 @@ const MatchesPanel = (function() {
      * Confirm a slot
      */
     async function _handleConfirmSlot(proposalId, slotId, btn) {
-        // Get game type from sibling select
-        const row = btn.closest('[data-slot-id]');
-        const gameTypeSelect = row?.querySelector('.game-type-select');
-        const gameType = gameTypeSelect?.value;
+        // Get game type from the confirm button's data attribute (set by toggle selection)
+        const gameType = btn.dataset.gameType;
 
         if (!gameType) {
-            ToastService.showError('Please select Official or Practice');
+            ToastService.showError('Select OFF or PRAC first');
             return;
         }
 
@@ -921,6 +1000,113 @@ const MatchesPanel = (function() {
         } catch (error) {
             console.error('❌ Load Grid View failed:', error);
         }
+    }
+
+    // ─── Discord Contact ─────────────────────────────────────────────
+
+    /**
+     * Generate a Discord message for a proposal with top 3 viable timeslots
+     */
+    function _generateProposalContactMessage(proposal, viableSlots) {
+        const isProposerSide = _isUserOnSide(proposal, 'proposer');
+        const myTag = isProposerSide ? proposal.proposerTeamTag : proposal.opponentTeamTag;
+        const theirTag = isProposerSide ? proposal.opponentTeamTag : proposal.proposerTeamTag;
+        const weekNum = proposal.weekId?.split('-')[1] || '?';
+
+        // Sort by total players descending
+        const sorted = [...viableSlots].sort((a, b) => {
+            return (b.proposerCount + b.opponentCount) - (a.proposerCount + a.opponentCount);
+        });
+
+        const top3 = sorted.slice(0, 3);
+        const remaining = sorted.length - 3;
+
+        if (top3.length === 0) {
+            return [
+                `Hey! We proposed a match: ${myTag} vs ${theirTag} (W${weekNum})`,
+                '',
+                'No viable slots yet \u2014 check availability!',
+                '',
+                'https://scheduler.quake.world'
+            ].join('\n');
+        }
+
+        const lines = [
+            `Hey! We proposed a match: ${myTag} vs ${theirTag} (W${weekNum})`,
+            '',
+            'Best times for both teams:'
+        ];
+
+        for (const slot of top3) {
+            const display = TimezoneService.formatSlotForDisplay(slot.slotId);
+            const shortDay = (display.dayLabel || '').slice(0, 3);
+            lines.push(`\u25B8 ${shortDay} ${display.timeLabel} (${slot.proposerCount}v${slot.opponentCount})`);
+        }
+
+        if (remaining > 0) {
+            lines.push('');
+            lines.push(`+${remaining} more time${remaining !== 1 ? 's' : ''} available`);
+        }
+
+        lines.push('');
+        lines.push('Check proposal: https://scheduler.quake.world');
+
+        return lines.join('\n');
+    }
+
+    /**
+     * Handle Discord contact button click on a proposal card
+     */
+    async function _handleDiscordContact(proposalId) {
+        const proposal = ProposalService.getProposal(proposalId);
+        if (!proposal) return;
+
+        const isProposerSide = _isUserOnSide(proposal, 'proposer');
+        const opponentTeamId = isProposerSide ? proposal.opponentTeamId : proposal.proposerTeamId;
+        const opponentTeam = TeamService.getTeamFromCache(opponentTeamId);
+
+        // Compute viable slots for message (filtered for past)
+        const viableSlots = ProposalService.computeViableSlots(
+            proposal.proposerTeamId,
+            proposal.opponentTeamId,
+            proposal.weekId,
+            proposal.minFilter
+        );
+        const now = new Date();
+        const activeSlots = viableSlots.filter(s => !_isSlotPast(proposal.weekId, s.slotId, now));
+
+        // Generate message
+        const message = _generateProposalContactMessage(proposal, activeSlots);
+
+        // Copy to clipboard
+        try {
+            await navigator.clipboard.writeText(message);
+            ToastService.showSuccess('Message copied! Paste in Discord');
+        } catch (err) {
+            console.warn('Clipboard copy failed:', err);
+            ToastService.showInfo('Opening Discord\u2026 (clipboard copy failed)');
+        }
+
+        // Try to open Discord DM with opponent leader
+        const leaderId = opponentTeam?.leaderId;
+        if (leaderId) {
+            try {
+                const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+                const userDoc = await getDoc(doc(window.firebase.db, 'users', leaderId));
+                if (userDoc.exists()) {
+                    const discordUserId = userDoc.data().discordUserId;
+                    if (discordUserId) {
+                        setTimeout(() => {
+                            window.open(`discord://-/users/${discordUserId}`, '_blank');
+                        }, 100);
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.warn('Could not fetch opponent leader Discord info:', err);
+            }
+        }
+        // If no Discord ID, clipboard copy is still done — no extra action needed
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────
@@ -1110,7 +1296,6 @@ const MatchesPanel = (function() {
         // Remove event listeners
         if (_container) {
             _container.removeEventListener('click', _handleClick);
-            _container.removeEventListener('change', _handleGameTypeChange);
             _container.removeEventListener('pointerenter', _handleMatchRowEnter, true);
             _container.removeEventListener('pointerleave', _handleMatchRowLeave, true);
         }

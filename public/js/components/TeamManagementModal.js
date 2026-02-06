@@ -74,12 +74,11 @@ const TeamManagementModal = (function() {
 
                     <!-- Body -->
                     <div class="p-4 space-y-4 max-h-[70vh] overflow-y-auto scrollbar-thin">
-                        ${_renderJoinCodeSection()}
-                        ${_isLeader ? _renderTeamTagSection() : _renderTeamTagReadonly()}
-                        ${_isLeader ? _renderMaxPlayersSection() : _renderMaxPlayersReadonly()}
-                        ${_isLeader ? _renderLogoSection() : ''}
+                        ${_renderLogoAndDetailsSection()}
 
                         ${_isLeader ? _renderSchedulerSection() : ''}
+
+                        ${_isLeader ? _renderPrivacySection() : ''}
 
                         <hr class="border-border">
 
@@ -96,154 +95,114 @@ const TeamManagementModal = (function() {
     }
 
     /**
-     * Render join code section (visible to all members)
+     * Render logo (left) alongside team details (right): Tag, Max, Join Code
+     * Works for both leader (editable) and member (readonly) views
      */
-    function _renderJoinCodeSection() {
+    function _renderLogoAndDetailsSection() {
+        const logoUrl = _teamData.activeLogo?.urls?.medium;
+
+        // Logo column
+        const logoHtml = logoUrl
+            ? `<img src="${logoUrl}" alt="${_escapeHtml(_teamData.teamName)} logo"
+                    class="w-24 h-24 rounded-lg object-cover border border-border">`
+            : `<div class="w-24 h-24 bg-muted border border-border rounded-lg flex items-center justify-center">
+                    <span class="text-xl font-bold text-muted-foreground">${_escapeHtml(_teamData.teamTag)}</span>
+               </div>`;
+
+        const logoButtonText = logoUrl ? 'Change Logo' : 'Add Logo';
+        const logoButton = _isLeader ? `
+            <button id="manage-logo-btn"
+                    class="px-2 py-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs font-medium rounded-lg transition-colors">
+                ${logoButtonText}
+            </button>
+        ` : '';
+
+        // Details column (right side) — Tag, Max, Join Code
+        const maxPlayersOptions = Array.from({ length: 17 }, (_, i) => i + 4)
+            .map(num => `<option value="${num}" ${num === _teamData.maxPlayers ? 'selected' : ''}>${num}</option>`)
+            .join('');
+
+        const tagRow = _isLeader ? `
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-foreground whitespace-nowrap w-12">Tag</label>
+                <input type="text" id="team-tag-input" value="${_escapeHtml(_teamData.teamTag)}"
+                       maxlength="4" class="w-16 px-2 py-1 bg-muted border border-border rounded-lg text-sm font-mono text-foreground text-center"/>
+                <button id="save-team-tag-btn"
+                        class="px-2 py-1 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-medium rounded-lg transition-colors hidden">
+                    Save
+                </button>
+                <span id="team-tag-feedback" class="text-xs"></span>
+            </div>
+        ` : `
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-foreground whitespace-nowrap w-12">Tag</label>
+                <div class="px-2 py-1 bg-muted border border-border rounded-lg text-sm font-mono text-foreground">
+                    ${_escapeHtml(_teamData.teamTag)}
+                </div>
+            </div>
+        `;
+
+        const maxRow = _isLeader ? `
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-foreground whitespace-nowrap w-12">Max</label>
+                <select id="max-players-select"
+                        class="w-14 px-1 py-1 bg-muted border border-border rounded-lg text-sm text-foreground">
+                    ${maxPlayersOptions}
+                </select>
+            </div>
+        ` : `
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-foreground whitespace-nowrap w-12">Max</label>
+                <div class="px-2 py-1 bg-muted border border-border rounded-lg text-sm text-foreground">
+                    ${_teamData.maxPlayers}
+                </div>
+            </div>
+        `;
+
         const regenerateButton = _isLeader ? `
-            <button
-                id="regenerate-join-code-btn"
-                class="p-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-lg transition-colors"
-                title="Regenerate join code"
-            >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button id="regenerate-join-code-btn"
+                    class="p-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-lg transition-colors"
+                    title="Regenerate join code">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
             </button>
         ` : '';
 
-        return `
-            <div class="flex items-center gap-3">
-                <label class="text-sm font-medium text-foreground whitespace-nowrap">Join Code</label>
-                <input
-                    type="text"
-                    value="${_escapeHtml(_teamData.joinCode)}"
-                    readonly
-                    class="w-20 px-2 py-1 bg-muted border border-border rounded-lg text-sm font-mono text-foreground text-center"
-                    id="join-code-input"
-                />
-                <button
-                    id="copy-join-code-btn"
-                    class="p-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-lg transition-colors"
-                    title="Copy join code"
-                >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        const joinCodeRow = `
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-foreground whitespace-nowrap w-12">Code</label>
+                <input type="text" value="${_escapeHtml(_teamData.joinCode)}" readonly
+                       class="w-20 px-2 py-1 bg-muted border border-border rounded-lg text-sm font-mono text-foreground text-center"
+                       id="join-code-input"/>
+                <button id="copy-join-code-btn"
+                        class="p-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-lg transition-colors"
+                        title="Copy join code">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                     </svg>
                 </button>
                 ${regenerateButton}
             </div>
         `;
-    }
 
-    /**
-     * Render team tag input (leader only, editable)
-     */
-    function _renderTeamTagSection() {
         return `
-            <div class="flex items-center gap-3">
-                <label class="text-sm font-medium text-foreground whitespace-nowrap">Team Tag</label>
-                <input
-                    type="text"
-                    id="team-tag-input"
-                    value="${_escapeHtml(_teamData.teamTag)}"
-                    maxlength="4"
-                    class="w-20 px-2 py-1 bg-muted border border-border rounded-lg text-sm font-mono text-foreground text-center"
-                />
-                <button
-                    id="save-team-tag-btn"
-                    class="px-3 py-1 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium rounded-lg transition-colors hidden"
-                >
-                    Save
-                </button>
-                <span id="team-tag-feedback" class="text-xs"></span>
-            </div>
-        `;
-    }
-
-    /**
-     * Render team tag as read-only (member view)
-     */
-    function _renderTeamTagReadonly() {
-        return `
-            <div class="flex items-center gap-3">
-                <label class="text-sm font-medium text-foreground whitespace-nowrap">Team Tag</label>
-                <div class="px-3 py-1 bg-muted border border-border rounded-lg text-sm font-mono text-foreground">
-                    ${_escapeHtml(_teamData.teamTag)}
+            <div class="flex gap-4">
+                <div class="flex flex-col items-center gap-1.5 shrink-0">
+                    ${logoHtml}
+                    ${logoButton}
+                </div>
+                <div class="flex-1 min-w-0 space-y-2">
+                    ${tagRow}
+                    ${maxRow}
+                    ${joinCodeRow}
                 </div>
             </div>
         `;
     }
 
     /**
-     * Render max players dropdown (leader only)
-     */
-    function _renderMaxPlayersSection() {
-        const maxPlayersOptions = Array.from({ length: 17 }, (_, i) => i + 4)
-            .map(num => `<option value="${num}" ${num === _teamData.maxPlayers ? 'selected' : ''}>${num}</option>`)
-            .join('');
-
-        return `
-            <div class="flex items-center gap-3">
-                <label class="text-sm font-medium text-foreground whitespace-nowrap">Max Players</label>
-                <select
-                    id="max-players-select"
-                    class="w-16 px-2 py-1 bg-muted border border-border rounded-lg text-sm text-foreground"
-                >
-                    ${maxPlayersOptions}
-                </select>
-            </div>
-        `;
-    }
-
-    /**
-     * Render max players as read-only (member view)
-     */
-    function _renderMaxPlayersReadonly() {
-        return `
-            <div class="flex items-center gap-3">
-                <label class="text-sm font-medium text-foreground whitespace-nowrap">Max Players</label>
-                <div class="px-3 py-1 bg-muted border border-border rounded-lg text-sm text-foreground">
-                    ${_teamData.maxPlayers}
-                </div>
-            </div>
-        `;
-    }
-
-    /**
-     * Render logo section (leader only)
-     */
-    function _renderLogoSection() {
-        const logoUrl = _teamData.activeLogo?.urls?.medium;
-
-        if (logoUrl) {
-            return `
-                <div class="flex flex-col items-center gap-3 py-2">
-                    <img src="${logoUrl}" alt="${_escapeHtml(_teamData.teamName)} logo"
-                         class="w-24 h-24 rounded-lg object-cover border border-border">
-                    <button id="manage-logo-btn"
-                            class="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors">
-                        Change Logo
-                    </button>
-                </div>
-            `;
-        } else {
-            return `
-                <div class="flex flex-col items-center gap-3 py-2">
-                    <div class="w-24 h-24 bg-muted border border-border rounded-lg flex items-center justify-center">
-                        <span class="text-xl font-bold text-muted-foreground">${_escapeHtml(_teamData.teamTag)}</span>
-                    </div>
-                    <button id="manage-logo-btn"
-                            class="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors">
-                        Add Logo
-                    </button>
-                </div>
-            `;
-        }
-    }
-
-    /**
-     * Render scheduler delegation section (leader only)
-     * Shows toggles for each non-leader roster member
+     * Render collapsible scheduling permissions section (leader only)
      */
     function _renderSchedulerSection() {
         const members = _teamData.playerRoster.filter(p => p.userId !== _teamData.leaderId);
@@ -257,10 +216,10 @@ const TeamManagementModal = (function() {
         const memberRows = members.map(p => {
             const isScheduler = schedulers.includes(p.userId);
             return `
-                <div class="flex items-center justify-between py-1.5">
-                    <span class="text-sm text-foreground">${_escapeHtml(p.displayName)}</span>
+                <div class="flex items-center justify-between py-1">
+                    <span class="text-sm text-foreground truncate mr-2">${_escapeHtml(p.displayName)}</span>
                     <button
-                        class="scheduler-toggle relative w-9 h-5 rounded-full transition-colors ${isScheduler ? 'bg-primary' : 'bg-muted-foreground/30'}"
+                        class="scheduler-toggle relative w-9 h-5 rounded-full transition-colors shrink-0 ${isScheduler ? 'bg-primary' : 'bg-muted-foreground/30'}"
                         data-user-id="${p.userId}"
                         data-enabled="${isScheduler}"
                         title="${isScheduler ? 'Remove scheduling rights' : 'Grant scheduling rights'}"
@@ -271,15 +230,46 @@ const TeamManagementModal = (function() {
             `;
         }).join('');
 
+        const schedulerCount = schedulers.length;
+        const countBadge = schedulerCount > 0
+            ? `<span class="text-xs text-primary">${schedulerCount} active</span>`
+            : '';
+
         return `
             <div>
-                <label class="text-sm font-medium text-foreground">Scheduling Permissions</label>
-                <p class="text-xs text-muted-foreground mb-2">Allow members to propose and confirm matches</p>
-                <div class="space-y-1" id="scheduler-toggles">
-                    ${memberRows}
+                <button id="scheduler-expand-btn"
+                        class="flex items-center justify-between w-full py-1 group"
+                        type="button">
+                    <div class="flex items-center gap-2">
+                        <svg id="scheduler-chevron" class="w-4 h-4 text-muted-foreground transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                        <label class="text-sm font-medium text-foreground cursor-pointer">Scheduling Permissions</label>
+                        ${countBadge}
+                    </div>
+                    <span class="text-xs text-muted-foreground group-hover:text-foreground">${members.length} members</span>
+                </button>
+                <div id="scheduler-content" class="hidden mt-1">
+                    <p class="text-xs text-muted-foreground mb-1 ml-6">Allow members to propose/confirm matches</p>
+                    <div class="space-y-0.5 ml-6" id="scheduler-toggles">
+                        ${memberRows}
+                    </div>
                 </div>
             </div>
         `;
+    }
+
+    /**
+     * Handle scheduler section expand/collapse
+     */
+    function _handleSchedulerExpand() {
+        const content = document.getElementById('scheduler-content');
+        const chevron = document.getElementById('scheduler-chevron');
+        if (!content || !chevron) return;
+
+        const isHidden = content.classList.contains('hidden');
+        content.classList.toggle('hidden');
+        chevron.style.transform = isHidden ? 'rotate(90deg)' : '';
     }
 
     /**
@@ -323,6 +313,98 @@ const TeamManagementModal = (function() {
             }
         } catch (error) {
             console.error('❌ Error toggling scheduler:', error);
+            _applyToggleState(btn, currentlyEnabled);
+            ToastService.showError('Network error - please try again');
+        }
+    }
+
+    /**
+     * Render privacy settings section (leader only)
+     * Two toggles: hide roster names, hide from comparison
+     */
+    function _renderPrivacySection() {
+        const hideRosterNames = _teamData.hideRosterNames || false;
+        const hideFromComparison = _teamData.hideFromComparison || false;
+
+        return `
+            <div>
+                <label class="text-sm font-medium text-foreground">Privacy</label>
+                <p class="text-xs text-muted-foreground mb-2">Control how your team appears to others</p>
+                <div class="space-y-2" id="privacy-toggles">
+                    <div class="flex items-center justify-between py-1">
+                        <div class="min-w-0 mr-3">
+                            <span class="text-sm text-foreground">Hide roster names</span>
+                            <p class="text-xs text-muted-foreground">Others see player counts, not names</p>
+                        </div>
+                        <button
+                            class="privacy-toggle relative w-9 h-5 rounded-full transition-colors shrink-0 ${hideRosterNames ? 'bg-primary' : 'bg-muted-foreground/30'}"
+                            data-setting="hideRosterNames"
+                            data-enabled="${hideRosterNames}"
+                        >
+                            <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all" style="left: ${hideRosterNames ? '1.125rem' : '0.125rem'}"></span>
+                        </button>
+                    </div>
+                    <div class="flex items-center justify-between py-1">
+                        <div class="min-w-0 mr-3">
+                            <span class="text-sm text-foreground">Hide from comparison</span>
+                            <p class="text-xs text-muted-foreground">Team invisible in comparison mode</p>
+                        </div>
+                        <button
+                            class="privacy-toggle relative w-9 h-5 rounded-full transition-colors shrink-0 ${hideFromComparison ? 'bg-primary' : 'bg-muted-foreground/30'}"
+                            data-setting="hideFromComparison"
+                            data-enabled="${hideFromComparison}"
+                        >
+                            <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all" style="left: ${hideFromComparison ? '1.125rem' : '0.125rem'}"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Handle privacy toggle click
+     */
+    async function _handlePrivacyToggle(event) {
+        const btn = event.target.closest('.privacy-toggle');
+        if (!btn) return;
+
+        const setting = btn.dataset.setting;
+        const currentlyEnabled = btn.dataset.enabled === 'true';
+        const newEnabled = !currentlyEnabled;
+
+        // Optimistic update
+        function _applyToggleState(button, enabled) {
+            button.dataset.enabled = String(enabled);
+            button.classList.toggle('bg-primary', enabled);
+            button.classList.toggle('bg-muted-foreground/30', !enabled);
+            const knob = button.querySelector('span');
+            if (knob) {
+                knob.style.left = enabled ? '1.125rem' : '0.125rem';
+            }
+        }
+
+        _applyToggleState(btn, newEnabled);
+
+        try {
+            const result = await TeamService.callFunction('updateTeamSettings', {
+                teamId: _teamId,
+                [setting]: newEnabled
+            });
+
+            if (result.success) {
+                _teamData[setting] = newEnabled;
+                ToastService.showSuccess(
+                    setting === 'hideRosterNames'
+                        ? `Roster names ${newEnabled ? 'hidden' : 'visible'} to others`
+                        : `Team ${newEnabled ? 'hidden from' : 'visible in'} comparison`
+                );
+            } else {
+                _applyToggleState(btn, currentlyEnabled);
+                ToastService.showError(result.error || 'Failed to update privacy setting');
+            }
+        } catch (error) {
+            console.error('Error toggling privacy:', error);
             _applyToggleState(btn, currentlyEnabled);
             ToastService.showError('Network error - please try again');
         }
@@ -390,18 +472,18 @@ const TeamManagementModal = (function() {
      */
     function _renderLeaderActions() {
         return `
-            <div class="space-y-2">
+            <div class="flex gap-2">
                 <button
                     id="remove-player-btn"
-                    class="w-full px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors"
+                    class="flex-1 px-3 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors"
                 >
                     Remove Player
                 </button>
                 <button
                     id="transfer-leadership-btn"
-                    class="w-full px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors"
+                    class="flex-1 px-3 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors"
                 >
-                    Transfer Leadership
+                    Transfer Leader
                 </button>
             </div>
         `;
@@ -473,9 +555,17 @@ const TeamManagementModal = (function() {
         const maxPlayersSelect = document.getElementById('max-players-select');
         maxPlayersSelect?.addEventListener('change', _handleMaxPlayersChange);
 
+        // Scheduler expand/collapse (leader only)
+        const schedulerExpandBtn = document.getElementById('scheduler-expand-btn');
+        schedulerExpandBtn?.addEventListener('click', _handleSchedulerExpand);
+
         // Scheduler toggles (leader only) — delegate to container
         const schedulerToggles = document.getElementById('scheduler-toggles');
         schedulerToggles?.addEventListener('click', _handleSchedulerToggle);
+
+        // Privacy toggles (leader only) — delegate to container
+        const privacyToggles = document.getElementById('privacy-toggles');
+        privacyToggles?.addEventListener('click', _handlePrivacyToggle);
 
         // Manage logo (leader only)
         const manageLogoBtn = document.getElementById('manage-logo-btn');
@@ -533,11 +623,14 @@ const TeamManagementModal = (function() {
      * Handle regenerate join code - shows confirmation, then regenerates
      */
     async function _handleRegenerateJoinCode() {
+        // Capture teamId before close() clears it
+        const teamId = _teamId;
+
         // Close this modal first, then show regenerate modal
         close();
 
         // Use the same regenerate modal pattern from TeamManagementDrawer
-        const result = await _showRegenerateModal();
+        const result = await _showRegenerateModal(teamId);
 
         // If user wants to reopen team settings, they can click the gear again
     }
@@ -545,7 +638,7 @@ const TeamManagementModal = (function() {
     /**
      * Show regenerate join code modal with confirmation and copy
      */
-    async function _showRegenerateModal() {
+    async function _showRegenerateModal(teamId) {
         return new Promise((resolve) => {
             const modalHTML = `
                 <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
@@ -638,7 +731,7 @@ const TeamManagementModal = (function() {
 
                 try {
                     const result = await TeamService.callFunction('regenerateJoinCode', {
-                        teamId: _teamId
+                        teamId: teamId
                     });
 
                     if (result.success) {

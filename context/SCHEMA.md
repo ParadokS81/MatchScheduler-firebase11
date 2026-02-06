@@ -130,6 +130,10 @@ interface TeamDocument {
   leaderId: string;           // userId of team leader
   schedulers: string[];       // userIds who can propose/confirm matches (leader is always implicit)
 
+  // Privacy (Slice 9.0b)
+  hideRosterNames: boolean;   // Default: false. When true, comparison views show "X available" instead of player names
+  hideFromComparison: boolean; // Default: false. When true, team is invisible in comparison mode
+
   // Configuration
   divisions: string[];        // e.g., ["D1", "D2"]
   maxPlayers: number;         // Max roster size

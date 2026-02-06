@@ -66,7 +66,7 @@ const QW_TEAMS = [
     {
         id: 'team-pol-001',
         teamName: 'Polonez',
-        teamTag: null,
+        teamTag: 'pol',
         divisions: ['D1'],
         logoUrl: 'https://www.thebig4.se/teams/polonez.png',
         players: [

@@ -1457,19 +1457,39 @@ const AvailabilityGrid = (function() {
 
             // Build opponents column HTML
             const opponentsHtml = matches.map((match, index) => {
-                const availableHtml = match.availablePlayers.map(p =>
-                    `<div class="player-row player-available">
-                        <span class="player-status-dot available"></span>
-                        <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}</span>
-                    </div>`
-                ).join('');
+                let rosterHtml;
 
-                const unavailableHtml = match.unavailablePlayers.map(p =>
-                    `<div class="player-row player-unavailable">
-                        <span class="player-status-dot unavailable"></span>
-                        <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}</span>
-                    </div>`
-                ).join('');
+                if (match.hideRosterNames) {
+                    // Privacy: show counts instead of names
+                    rosterHtml = `
+                        <div class="player-row player-available">
+                            <span class="player-status-dot available"></span>
+                            <span class="player-name">${match.availablePlayers.length} available</span>
+                        </div>
+                        ${match.unavailablePlayers.length > 0 ? `
+                            <div class="player-row player-unavailable">
+                                <span class="player-status-dot unavailable"></span>
+                                <span class="player-name">${match.unavailablePlayers.length} unavailable</span>
+                            </div>
+                        ` : ''}
+                    `;
+                } else {
+                    const availableHtml = match.availablePlayers.map(p =>
+                        `<div class="player-row player-available">
+                            <span class="player-status-dot available"></span>
+                            <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}</span>
+                        </div>`
+                    ).join('');
+
+                    const unavailableHtml = match.unavailablePlayers.map(p =>
+                        `<div class="player-row player-unavailable">
+                            <span class="player-status-dot unavailable"></span>
+                            <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}</span>
+                        </div>`
+                    ).join('');
+
+                    rosterHtml = availableHtml + unavailableHtml;
+                }
 
                 return `
                     <div class="match-team-section">
@@ -1478,8 +1498,7 @@ const AvailabilityGrid = (function() {
                             <span class="match-player-count">${match.availablePlayers.length}/${match.availablePlayers.length + match.unavailablePlayers.length}</span>
                         </div>
                         <div class="match-roster-list">
-                            ${availableHtml}
-                            ${unavailableHtml}
+                            ${rosterHtml}
                         </div>
                     </div>
                     ${index < matches.length - 1 ? '<hr class="match-divider">' : ''}

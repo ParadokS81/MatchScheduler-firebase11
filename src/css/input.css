@@ -3964,6 +3964,30 @@ body {
     border-radius: var(--radius);
 }
 
+/* Slot row grid layout for table-like alignment in expanded cards */
+.slot-row {
+    display: grid;
+    grid-template-columns: 5.5rem 2.5rem auto 1fr;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.slot-col-actions {
+    justify-self: end;
+}
+
+/* Future week group header in upcoming column */
+.future-week-header {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.5rem;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    Slice 10.0a: Mobile Responsive CSS Foundation
    All mobile styles are additive — desktop layout is untouched.

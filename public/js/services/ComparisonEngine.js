@@ -68,6 +68,10 @@ const ComparisonEngine = (function() {
 
                 // Get opponent team data from cache (synchronous)
                 const opponentTeam = TeamService.getTeamFromCache(opponentId);
+
+                // Privacy: skip teams that hide from comparison
+                if (opponentTeam?.hideFromComparison) continue;
+
                 const opponentRoster = opponentTeam?.playerRoster || [];
 
                 // Check each slot where user team has availability
@@ -99,18 +103,33 @@ const ComparisonEngine = (function() {
                         }
 
                         // Build roster details for tooltip
-                        const availablePlayers = opponentRoster.filter(p =>
-                            opponentPlayers.includes(p.userId)
-                        );
-                        const unavailablePlayers = opponentRoster.filter(p =>
-                            !opponentPlayers.includes(p.userId)
-                        );
+                        let availablePlayers, unavailablePlayers;
+
+                        if (opponentTeam?.hideRosterNames) {
+                            // Privacy: anonymous placeholders (counts preserved, names hidden)
+                            availablePlayers = opponentPlayers.map((_, i) => ({
+                                userId: `anon-${i}`, displayName: null, initials: null, photoURL: null, _anonymous: true
+                            }));
+                            unavailablePlayers = opponentRoster
+                                .filter(p => !opponentPlayers.includes(p.userId))
+                                .map((_, i) => ({
+                                    userId: `anon-u-${i}`, displayName: null, initials: null, photoURL: null, _anonymous: true
+                                }));
+                        } else {
+                            availablePlayers = opponentRoster.filter(p =>
+                                opponentPlayers.includes(p.userId)
+                            );
+                            unavailablePlayers = opponentRoster.filter(p =>
+                                !opponentPlayers.includes(p.userId)
+                            );
+                        }
 
                         _matches[fullSlotId].push({
                             teamId: opponentId,
                             teamTag: opponentTeam?.teamTag || '??',
                             teamName: opponentTeam?.teamName || 'Unknown',
                             leaderId: opponentTeam?.leaderId || null,
+                            hideRosterNames: opponentTeam?.hideRosterNames || false,
                             availablePlayers,
                             unavailablePlayers
                         });

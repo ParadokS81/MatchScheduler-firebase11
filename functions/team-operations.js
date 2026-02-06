@@ -966,15 +966,30 @@ exports.updateTeamSettings = functions
         }
 
         const userId = context.auth.uid;
-        const { teamId, maxPlayers } = data;
-        
+        const { teamId, maxPlayers, hideRosterNames, hideFromComparison } = data;
+
         // Validate input
         if (!teamId || typeof teamId !== 'string') {
             throw new functions.https.HttpsError('invalid-argument', 'teamId is required');
         }
 
-        if (!maxPlayers || typeof maxPlayers !== 'number' || maxPlayers < 4 || maxPlayers > 20) {
+        // At least one setting must be provided
+        const hasMaxPlayers = maxPlayers !== undefined;
+        const hasHideRosterNames = hideRosterNames !== undefined;
+        const hasHideFromComparison = hideFromComparison !== undefined;
+
+        if (!hasMaxPlayers && !hasHideRosterNames && !hasHideFromComparison) {
+            throw new functions.https.HttpsError('invalid-argument', 'At least one setting must be provided');
+        }
+
+        if (hasMaxPlayers && (typeof maxPlayers !== 'number' || maxPlayers < 4 || maxPlayers > 20)) {
             throw new functions.https.HttpsError('invalid-argument', 'maxPlayers must be between 4 and 20');
+        }
+        if (hasHideRosterNames && typeof hideRosterNames !== 'boolean') {
+            throw new functions.https.HttpsError('invalid-argument', 'hideRosterNames must be a boolean');
+        }
+        if (hasHideFromComparison && typeof hideFromComparison !== 'boolean') {
+            throw new functions.https.HttpsError('invalid-argument', 'hideFromComparison must be a boolean');
         }
 
         // Get team document
@@ -991,24 +1006,40 @@ exports.updateTeamSettings = functions
         }
 
         // Validate maxPlayers is not less than current roster size
-        if (maxPlayers < team.playerRoster.length) {
+        if (hasMaxPlayers && maxPlayers < team.playerRoster.length) {
             throw new functions.https.HttpsError('invalid-argument', `Max players cannot be less than current roster size (${team.playerRoster.length})`);
         }
-        
-        // Update team document
-        await db.collection('teams').doc(teamId).update({
-            maxPlayers,
-            lastActivityAt: FieldValue.serverTimestamp()
-        });
-        
-        // Log event - PRD format: YYYYMMDD-HHMM-teamname-eventtype_XXXX
+
+        // Build update object dynamically
+        const updateData = { lastActivityAt: FieldValue.serverTimestamp() };
+        if (hasMaxPlayers) updateData.maxPlayers = maxPlayers;
+        if (hasHideRosterNames) updateData.hideRosterNames = hideRosterNames;
+        if (hasHideFromComparison) updateData.hideFromComparison = hideFromComparison;
+
+        await db.collection('teams').doc(teamId).update(updateData);
+
+        // Log event
         const now = new Date();
         const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
         const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
         const teamNameClean = team.teamName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
         const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
         const eventId = `${dateStr}-${timeStr}-${teamNameClean}-settings_updated_${randomSuffix}`;
-        
+
+        const details = {};
+        if (hasMaxPlayers) {
+            details.oldMaxPlayers = team.maxPlayers;
+            details.newMaxPlayers = maxPlayers;
+        }
+        if (hasHideRosterNames) {
+            details.oldHideRosterNames = team.hideRosterNames || false;
+            details.newHideRosterNames = hideRosterNames;
+        }
+        if (hasHideFromComparison) {
+            details.oldHideFromComparison = team.hideFromComparison || false;
+            details.newHideFromComparison = hideFromComparison;
+        }
+
         await db.collection('eventLog').doc(eventId).set({
             eventId,
             teamId,
@@ -1021,19 +1052,14 @@ exports.updateTeamSettings = functions
                 displayName: team.playerRoster.find(p => p.userId === userId)?.displayName || 'Unknown',
                 initials: team.playerRoster.find(p => p.userId === userId)?.initials || 'UN'
             },
-            details: {
-                oldMaxPlayers: team.maxPlayers,
-                newMaxPlayers: maxPlayers
-            }
+            details
         });
-        
+
         console.log('✅ Team settings updated successfully:', teamId);
-        
+
         return {
             success: true,
-            data: {
-                maxPlayers
-            }
+            data: updateData
         };
         
     } catch (error) {
