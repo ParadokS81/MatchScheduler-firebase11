@@ -1,5 +1,7 @@
-// TeamNameDisplay.js - Shows team name in mid-left divider panel
-// Slice 13.0a: Relocated from TeamInfo top-left panel
+// TeamNameDisplay.js - DEPRECATED in Slice 13.0f
+// Team name is now rendered by TeamInfo in the unified left panel
+// This file kept for backwards compatibility but should not be initialized
+// TODO: Remove this file after confirming no regressions
 
 const TeamNameDisplay = (function() {
     'use strict';

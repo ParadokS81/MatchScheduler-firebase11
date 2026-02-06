@@ -36,8 +36,10 @@ const MobileLayout = (function() {
     let _originalParents = {};
 
     // Node relocation map
-    const LEFT_DRAWER_NODES = ['panel-top-left'];
-    const RIGHT_DRAWER_NODES = ['panel-top-right', 'panel-mid-right', 'panel-bottom-right'];
+    // Slice 13.0e: Right side uses unified panel-right instead of 3 separate panels
+    // Slice 13.0f: Left side uses unified panel-left instead of 3 separate panels
+    const LEFT_DRAWER_NODES = ['panel-left'];
+    const RIGHT_DRAWER_NODES = ['panel-right'];
 
     // ========================================
     // Slice 10.0d: Swipe Gesture Detection

@@ -42,8 +42,13 @@ const TeamsBrowserPanel = (function() {
     let _h2hTeamAId = null;           // Override Team A id (null = use _selectedTeamId)
     let _h2hOpponentId = null;        // Selected Team B id (from MatchScheduler teams)
 
-    /** Effective Team A for H2H — override or browsed team */
-    function _getH2HTeamAId() { return _h2hTeamAId || _selectedTeamId; }
+    /** Effective Team A for H2H — override or browsed team (only if has teamTag) */
+    function _getH2HTeamAId() {
+        if (_h2hTeamAId) return _h2hTeamAId;
+        // Only use browsed team as default if it has a teamTag
+        const selectedTeam = _allTeams.find(t => t.id === _selectedTeamId);
+        return selectedTeam?.teamTag ? _selectedTeamId : null;
+    }
     let _h2hSubTab = 'h2h';           // Active sub-tab: 'h2h' | 'form' | 'maps'
     let _h2hPeriod = 3;               // Period in months: 1, 3, or 6
     let _h2hMapFilter = '';            // '' = all maps (H2H sub-tab only)
@@ -2060,15 +2065,8 @@ const TeamsBrowserPanel = (function() {
      * Main H2H tab renderer. Shows team selector + sub-tab content.
      */
     function _renderH2HTab(team) {
-        if (!team.teamTag) {
-            return `
-                <div class="h2h-empty-state">
-                    <p class="text-sm text-muted-foreground">Head to head not available</p>
-                    <p class="text-xs text-muted-foreground mt-1">Team leader can configure QW Hub tag in Team Settings</p>
-                </div>
-            `;
-        }
-
+        // Always show H2H interface - users can select teams manually via dropdowns
+        // If current team has no teamTag, they can still pick other teams to compare
         return `
             <div class="h2h-tab-wrapper flex flex-col h-full">
                 ${_h2hSubTab !== 'h2h' ? _renderH2HCompactControls() : ''}

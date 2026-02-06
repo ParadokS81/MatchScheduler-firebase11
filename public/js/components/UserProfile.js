@@ -150,10 +150,8 @@ const UserProfile = (function() {
                     FavoritesService.init(uid, _userProfile.favoriteTeams || []);
                 }
 
-                // Initialize FavoritesPanel (Slice 3.2)
-                if (typeof FavoritesPanel !== 'undefined') {
-                    FavoritesPanel.init();
-                }
+                // Slice 13.0e: FavoritesPanel deprecated - functionality moved to unified sidebar
+                // Favorites filter is now part of TeamBrowser
 
                 // Load timezone preference (Slice 7.0c)
                 if (typeof TimezoneService !== 'undefined' && _userProfile.timezone) {

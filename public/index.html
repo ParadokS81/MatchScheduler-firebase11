@@ -150,11 +150,43 @@
     <div class="app-container">
         <!-- Main Content Area - True 3x3 Grid with Middle Row as Divider -->
         <main class="main-grid-v3">
-            <!-- Top Row (Week 1 + Side Panels) -->
-            <div id="panel-top-left" class="panel">
-                <div class="panel-content">
-                    <h3 class="text-lg font-semibold mb-2">Team Info</h3>
-                    <p class="text-muted-foreground">Team information component will be here</p>
+            <!-- Left Sidebar (spans all rows) - Slice 13.0f -->
+            <div id="panel-left" class="panel sidebar-panel">
+                <div class="sidebar-content">
+                    <!-- Team Identity Section (Logo + Name + Tag) -->
+                    <div class="sidebar-section">
+                        <div id="team-identity-container">
+                            <!-- TeamInfo renders logo + name + tag here -->
+                        </div>
+                    </div>
+
+                    <!-- Roster Section -->
+                    <div class="sidebar-section">
+                        <div id="roster-container">
+                            <!-- TeamInfo renders roster list here -->
+                        </div>
+                    </div>
+
+                    <!-- Your Matches Section -->
+                    <div class="sidebar-section">
+                        <div id="your-matches-container">
+                            <!-- UpcomingMatchesPanel renders user's team matches here -->
+                        </div>
+                    </div>
+
+                    <!-- Upcoming Matches Section (scrollable) -->
+                    <div class="sidebar-section sidebar-list">
+                        <div id="upcoming-matches-container">
+                            <!-- UpcomingMatchesPanel renders community matches here -->
+                        </div>
+                    </div>
+
+                    <!-- Profile Section (pinned bottom) -->
+                    <div class="sidebar-section sidebar-footer">
+                        <div id="profile-compact-container">
+                            <!-- UserProfile.renderCompact() renders here -->
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -162,21 +194,33 @@
                 <!-- WeekDisplay (Week 1) renders here -->
             </div>
 
-            <div id="panel-top-right" class="panel">
-                <div class="panel-content">
-                    <h3 class="text-lg font-semibold mb-2">Favorites</h3>
-                    <p class="text-muted-foreground">Favorite teams will be here</p>
+            <!-- Right Sidebar (spans all rows) - Slice 13.0e -->
+            <div id="panel-right" class="panel sidebar-panel">
+                <div class="sidebar-content">
+                    <!-- Compare Row: [Compare] [X] vs [X] -->
+                    <div class="sidebar-section sidebar-header">
+                        <div id="compare-controls" class="flex items-center justify-between">
+                            <!-- FilterPanel renders compare + min filters here -->
+                        </div>
+                    </div>
+
+                    <!-- Search & Filters -->
+                    <div class="sidebar-section">
+                        <div id="team-browser-header">
+                            <!-- TeamBrowser renders search + filter buttons here -->
+                        </div>
+                    </div>
+
+                    <!-- Team List (scrollable) -->
+                    <div class="sidebar-section sidebar-list">
+                        <div id="team-browser-list">
+                            <!-- TeamBrowser renders team list here -->
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Middle Row (Divider - TeamName | Tabs | MinPlayers) -->
-            <!-- Slice 13.0a: Profile moved to bottom-left, team name now here -->
-            <div id="panel-mid-left" class="panel panel-divider">
-                <div id="team-name-container" class="panel-content-compact">
-                    <!-- TeamNameDisplay renders here -->
-                </div>
-            </div>
-
+            <!-- Middle Row (Divider - Tabs only now) -->
             <div id="panel-mid-center" class="panel panel-divider">
                 <div class="divider-content divider-content-centered">
                     <div class="divider-tabs">
@@ -189,50 +233,28 @@
                 </div>
             </div>
 
-            <div id="panel-mid-right" class="panel panel-divider">
-                <div id="filter-compact-container" class="panel-content-compact">
-                    <!-- FilterPanel.renderCompact() renders here -->
-                </div>
-            </div>
-
-            <!-- Bottom Row (Week 2 / Content + Side Panels) -->
-            <div id="panel-bottom-left" class="panel">
-                <div class="panel-content h-full flex flex-col">
-                    <div id="upcoming-matches-container" class="flex-1 min-h-0 overflow-y-auto">
-                    </div>
-                    <div id="profile-compact-container" class="flex-shrink-0 border-t border-border pt-2 mt-2">
-                        <!-- UserProfile.renderCompact() renders here -->
-                    </div>
-                </div>
-            </div>
-
             <div id="panel-bottom-center" class="panel">
                 <!-- WeekDisplay (Week 2) renders here -->
             </div>
 
-            <div id="panel-bottom-right" class="panel">
-                <div id="team-browser-container" class="panel-content">
-                    <!-- TeamBrowser component renders here -->
-                </div>
-            </div>
         </main>
     </div>
 
     <!-- Mobile Drawer Containers (empty — JS populates in 10.0b) -->
 
-    <!-- Left Drawer: Team Info + Roster -->
+    <!-- Left Drawer: Team Info + Roster + Matches (Slice 13.0f: unified panel) -->
     <div id="mobile-drawer-left" class="mobile-drawer mobile-drawer-left hidden"
          aria-hidden="true" role="dialog" aria-label="Team information">
       <div class="mobile-drawer-content">
-        <!-- TeamInfo content moved here by JS in 10.0b -->
+        <!-- panel-left moved here by JS on mobile -->
       </div>
     </div>
 
-    <!-- Right Drawer: Favorites + Browse Teams -->
+    <!-- Right Drawer: Team Browser (Slice 13.0e: unified panel) -->
     <div id="mobile-drawer-right" class="mobile-drawer mobile-drawer-right hidden"
          aria-hidden="true" role="dialog" aria-label="Team browser">
       <div class="mobile-drawer-content">
-        <!-- FavoritesPanel + TeamBrowser moved here by JS in 10.0b -->
+        <!-- panel-right moved here by JS on mobile -->
       </div>
     </div>
 

@@ -1,6 +1,6 @@
 // FilterPanel - UI component for comparison filter controls
 // Slice 3.3: Comparison Filters
-// Renders in top-right panel with minimum player dropdowns
+// Slice 13.0e: Unified right panel - Compare toggle + min filters in one row
 
 const FilterPanel = (function() {
     'use strict';
@@ -8,12 +8,13 @@ const FilterPanel = (function() {
     // Private variables
     let _container = null;
     let _initialized = false;
+    let _dropdownOpen = null; // 'your' | 'opponent' | null
 
     /**
-     * Initialize FilterPanel in the top-right panel
-     * @param {string} containerId - ID of the container element (default: 'panel-top-right')
+     * Initialize FilterPanel in the compare-controls container
+     * @param {string} containerId - ID of the container element (default: 'compare-controls')
      */
-    function init(containerId = 'panel-top-right') {
+    function init(containerId = 'compare-controls') {
         if (_initialized) return;
 
         _container = document.getElementById(containerId);
@@ -35,34 +36,46 @@ const FilterPanel = (function() {
     }
 
     /**
-     * Render the filter panel UI
-     * Compact single row: Min [x] vs [x]
-     * Slice 5.0a: Updated for divider row placement
+     * Render the compare row: [Compare] [X] vs [X]
+     * Slice 13.0e: Visual state for compare, framed buttons for min filters
      */
     function _render() {
         if (!_container) return;
 
         const yourTeamMin = FilterService.getYourTeamMinimum();
         const opponentMin = FilterService.getOpponentMinimum();
+        const isComparing = typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isAutoMode();
 
         _container.innerHTML = `
-            <div class="flex items-center gap-2">
-                <span class="text-xs text-muted-foreground whitespace-nowrap">Min</span>
-                <select id="your-team-min"
-                        class="bg-muted text-foreground text-xs rounded px-2 py-1
-                               border border-border focus:border-primary focus:outline-none
-                               cursor-pointer"
-                        title="Your team minimum players">
-                    ${_renderNumberOptions(yourTeamMin)}
-                </select>
-                <span class="text-xs text-muted-foreground">vs</span>
-                <select id="opponent-min"
-                        class="bg-muted text-foreground text-xs rounded px-2 py-1
-                               border border-border focus:border-primary focus:outline-none
-                               cursor-pointer"
-                        title="Opponent minimum players">
-                    ${_renderNumberOptions(opponentMin)}
-                </select>
+            <button id="compare-toggle-btn"
+                    class="compare-toggle ${isComparing ? 'on' : 'off'}"
+                    title="${isComparing ? 'Disable comparison mode' : 'Enable comparison mode'}">
+                Compare
+            </button>
+            <div class="min-filter-group">
+                <div class="min-filter-wrapper relative">
+                    <button id="your-team-min-btn"
+                            class="min-filter-btn"
+                            data-filter="your"
+                            title="Your team minimum players">
+                        ${yourTeamMin}
+                    </button>
+                    <div id="your-team-dropdown" class="min-filter-dropdown hidden">
+                        ${_renderDropdownOptions(yourTeamMin, 'your')}
+                    </div>
+                </div>
+                <span class="min-filter-label">vs</span>
+                <div class="min-filter-wrapper relative">
+                    <button id="opponent-min-btn"
+                            class="min-filter-btn"
+                            data-filter="opponent"
+                            title="Opponent minimum players">
+                        ${opponentMin}
+                    </button>
+                    <div id="opponent-dropdown" class="min-filter-dropdown hidden">
+                        ${_renderDropdownOptions(opponentMin, 'opponent')}
+                    </div>
+                </div>
             </div>
         `;
 
@@ -70,33 +83,106 @@ const FilterPanel = (function() {
     }
 
     /**
-     * Generate option elements for dropdown (numbers only)
-     * @param {number} selectedValue - Currently selected value
-     * @returns {string} HTML string of option elements
+     * Generate dropdown options for min filter
      */
-    function _renderNumberOptions(selectedValue) {
+    function _renderDropdownOptions(selectedValue, type) {
         return [1, 2, 3, 4].map(n =>
-            `<option value="${n}" ${n === selectedValue ? 'selected' : ''}>${n}</option>`
+            `<button class="min-dropdown-option ${n === selectedValue ? 'active' : ''}"
+                     data-value="${n}" data-type="${type}">${n}</button>`
         ).join('');
     }
 
     /**
-     * Attach change handlers to dropdown elements
+     * Attach event handlers
      */
     function _attachHandlers() {
-        const yourTeamSelect = document.getElementById('your-team-min');
-        const opponentSelect = document.getElementById('opponent-min');
+        // Compare toggle
+        const compareBtn = document.getElementById('compare-toggle-btn');
+        compareBtn?.addEventListener('click', _handleCompareToggle);
 
-        if (yourTeamSelect) {
-            yourTeamSelect.addEventListener('change', (e) => {
-                FilterService.setYourTeamMinimum(e.target.value);
+        // Min filter buttons
+        const yourBtn = document.getElementById('your-team-min-btn');
+        const oppBtn = document.getElementById('opponent-min-btn');
+
+        yourBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _toggleDropdown('your');
+        });
+        oppBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _toggleDropdown('opponent');
+        });
+
+        // Dropdown option clicks
+        _container.querySelectorAll('.min-dropdown-option').forEach(opt => {
+            opt.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const value = parseInt(e.target.dataset.value);
+                const type = e.target.dataset.type;
+
+                if (type === 'your') {
+                    FilterService.setYourTeamMinimum(value);
+                    document.getElementById('your-team-min-btn').textContent = value;
+                } else {
+                    FilterService.setOpponentMinimum(value);
+                    document.getElementById('opponent-min-btn').textContent = value;
+                }
+                _closeDropdowns();
             });
+        });
+
+        // Close dropdowns on outside click
+        document.addEventListener('click', _closeDropdowns);
+    }
+
+    /**
+     * Toggle min filter dropdown
+     */
+    function _toggleDropdown(type) {
+        const dropdownId = type === 'your' ? 'your-team-dropdown' : 'opponent-dropdown';
+        const dropdown = document.getElementById(dropdownId);
+
+        if (_dropdownOpen === type) {
+            _closeDropdowns();
+        } else {
+            _closeDropdowns();
+            dropdown?.classList.remove('hidden');
+            _dropdownOpen = type;
         }
+    }
 
-        if (opponentSelect) {
-            opponentSelect.addEventListener('change', (e) => {
-                FilterService.setOpponentMinimum(e.target.value);
-            });
+    /**
+     * Close all dropdowns
+     */
+    function _closeDropdowns() {
+        document.getElementById('your-team-dropdown')?.classList.add('hidden');
+        document.getElementById('opponent-dropdown')?.classList.add('hidden');
+        _dropdownOpen = null;
+    }
+
+    /**
+     * Handle compare toggle click
+     */
+    function _handleCompareToggle() {
+        if (typeof ComparisonEngine === 'undefined') return;
+
+        const isAutoMode = ComparisonEngine.isAutoMode();
+
+        if (isAutoMode) {
+            ComparisonEngine.endComparison();
+        } else {
+            const userTeamId = typeof MatchSchedulerApp !== 'undefined'
+                ? MatchSchedulerApp.getSelectedTeam()?.id
+                : null;
+
+            if (!userTeamId) {
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showError('No team selected');
+                }
+                return;
+            }
+
+            ComparisonEngine.enableAutoMode(userTeamId);
         }
     }
 
@@ -104,23 +190,34 @@ const FilterPanel = (function() {
      * Set up global event listeners
      */
     function _setupEventListeners() {
-        // Listen for external filter changes (e.g., reset from elsewhere)
         window.addEventListener('filter-changed', _handleFilterChanged);
+        window.addEventListener('comparison-mode-changed', _handleComparisonChanged);
+        window.addEventListener('comparison-started', _handleComparisonChanged);
+        window.addEventListener('comparison-ended', _handleComparisonChanged);
     }
 
     /**
-     * Handle filter-changed events - sync dropdowns with service state
+     * Handle filter-changed events
      */
     function _handleFilterChanged() {
-        const yourTeamSelect = document.getElementById('your-team-min');
-        const opponentSelect = document.getElementById('opponent-min');
+        const yourBtn = document.getElementById('your-team-min-btn');
+        const oppBtn = document.getElementById('opponent-min-btn');
 
-        if (yourTeamSelect) {
-            yourTeamSelect.value = FilterService.getYourTeamMinimum();
-        }
-        if (opponentSelect) {
-            opponentSelect.value = FilterService.getOpponentMinimum();
-        }
+        if (yourBtn) yourBtn.textContent = FilterService.getYourTeamMinimum();
+        if (oppBtn) oppBtn.textContent = FilterService.getOpponentMinimum();
+    }
+
+    /**
+     * Handle comparison state changes
+     */
+    function _handleComparisonChanged() {
+        const btn = document.getElementById('compare-toggle-btn');
+        if (!btn) return;
+
+        const isComparing = typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isAutoMode();
+        btn.classList.toggle('on', isComparing);
+        btn.classList.toggle('off', !isComparing);
+        btn.title = isComparing ? 'Disable comparison mode' : 'Enable comparison mode';
     }
 
     /**
@@ -128,6 +225,10 @@ const FilterPanel = (function() {
      */
     function cleanup() {
         window.removeEventListener('filter-changed', _handleFilterChanged);
+        window.removeEventListener('comparison-mode-changed', _handleComparisonChanged);
+        window.removeEventListener('comparison-started', _handleComparisonChanged);
+        window.removeEventListener('comparison-ended', _handleComparisonChanged);
+        document.removeEventListener('click', _closeDropdowns);
         _container = null;
         _initialized = false;
     }

@@ -309,6 +309,184 @@ body {
   overflow: hidden; /* Ensure children respect panel bounds */
 }
 
+/* Slice 13.0f: Unified Left Sidebar - spans all 3 grid rows */
+#panel-left {
+  grid-column: 1;
+  grid-row: 1 / 4;
+}
+
+/* Slice 13.0e: Unified Right Sidebar - spans all 3 grid rows */
+#panel-right {
+  grid-column: 3;
+  grid-row: 1 / 4;
+}
+
+/* Center panels explicit placement (sidebars span all rows) */
+#panel-top-center {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+#panel-mid-center {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+#panel-bottom-center {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.sidebar-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0.75rem;
+  gap: 0.5rem;
+}
+
+.sidebar-section {
+  flex-shrink: 0;
+}
+
+.sidebar-section.sidebar-header {
+  padding-top: 0.5rem;
+  padding-bottom: 0.75rem;
+  /* No border - cleaner look (Slice 13.0e) */
+}
+
+.sidebar-section.sidebar-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.5rem;
+}
+
+/* Slice 13.0f: Pinned footer section for profile */
+.sidebar-section.sidebar-footer {
+  margin-top: auto;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Slice 13.0f: Spacing between roster and matches sections */
+#your-matches-container {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+#team-browser-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Compare row styles */
+#compare-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.compare-toggle {
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+  border: 1px solid var(--border);
+}
+
+.compare-toggle.off {
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.compare-toggle.on {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+
+.min-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.min-filter-btn {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--muted);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  min-width: 1.75rem;
+  text-align: center;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.min-filter-btn:hover {
+  background-color: var(--accent);
+  border-color: var(--primary);
+}
+
+.min-filter-label {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.min-filter-wrapper {
+  position: relative;
+}
+
+.min-filter-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 0.25rem;
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  z-index: 50;
+  overflow: hidden;
+}
+
+.min-dropdown-option {
+  display: block;
+  width: 100%;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+}
+
+.min-dropdown-option:hover {
+  background-color: var(--accent);
+}
+
+.min-dropdown-option.active {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
 /* Responsive Grid */
 @media (max-width: 768px) {
   .main-grid {
@@ -4154,13 +4332,9 @@ body {
     min-height: 0;
   }
 
-  /* Hide side panels */
-  #panel-top-left,
-  #panel-top-right,
-  #panel-mid-left,
-  #panel-mid-right,
-  #panel-bottom-left,
-  #panel-bottom-right {
+  /* Hide side panels (Slice 13.0f: unified sidebars) */
+  #panel-left,
+  #panel-right {
     display: none;
   }
 
@@ -4197,35 +4371,17 @@ body {
     display: flex;
   }
 
-  /* Panels moved into drawers need to be visible */
-  .mobile-drawer-content #panel-top-left {
+  /* Panels moved into drawers need to be visible (Slice 13.0f: unified left panel) */
+  .mobile-drawer-content #panel-left {
     display: flex;
     flex-direction: column;
     height: 100%;
   }
 
-  /* Left drawer: panel-content fills full height, tighter top padding */
-  .mobile-drawer-content #panel-top-left > .panel-content {
+  /* Left drawer: sidebar-content fills full height */
+  .mobile-drawer-content #panel-left > .sidebar-content {
     height: 100%;
-    display: flex;
-    flex-direction: column;
     padding-top: 0.5rem;
-    padding-bottom: 0;
-  }
-
-  /* Left drawer: logo section becomes horizontal row (logo left, name right) */
-  .mobile-drawer-content .team-info-container > .space-y-2 > :first-child {
-    flex-direction: row;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.375rem;
-    padding: 0 0.5rem;
-  }
-
-  /* Left drawer: if there's a wrapper around logo + inactive logo, keep it compact */
-  .mobile-drawer-content .team-info-container > .space-y-2 > :first-child > .flex {
-    gap: 0.375rem;
-    align-items: center;
   }
 
   /* Left drawer: shrink the team logo */
@@ -4242,28 +4398,13 @@ body {
     height: 1.25rem;
   }
 
-  /* Left drawer: team name row sits next to logo */
-  .mobile-drawer-content .team-info-container .group {
-    justify-content: flex-start;
-  }
-
-  /* Left drawer: team name font — larger than roster */
-  .mobile-drawer-content .team-info-container .group span.truncate {
-    font-size: 1rem;
-  }
-
   /* Left drawer: make gear icon always visible on mobile (no hover) */
   .mobile-drawer-content .team-settings-icon {
     opacity: 1;
   }
 
-  /* Left drawer: hide inline logo (not needed, large logo is visible) */
-  .mobile-drawer-content .team-logo-inline {
-    display: none;
-  }
-
   /* Left drawer: roster fills full width */
-  .mobile-drawer-content .team-info-container .space-y-0\.5 {
+  .mobile-drawer-content #roster-container .space-y-0\.5 {
     max-width: none;
     margin-left: 0;
     margin-right: 0;
@@ -4292,16 +4433,14 @@ body {
     gap: 0.25rem;
   }
 
-  /* Slice 13.0a: Grid tools drawer mobile styles removed - will be in grid header in 13.0b */
-
-  /* Right drawer: hide FilterPanel and FavoritesPanel — TeamBrowser has unified "Fav" button */
-  .mobile-drawer-content #panel-top-right,
-  .mobile-drawer-content #panel-mid-right {
-    display: none;
+  /* Left drawer: compact matches sections */
+  .mobile-drawer-content #your-matches-container,
+  .mobile-drawer-content #upcoming-matches-container {
+    font-size: 0.75rem;
   }
 
-  /* Right drawer: TeamBrowser fills full drawer height */
-  .mobile-drawer-content #panel-bottom-right {
+  /* Right drawer: Unified panel fills full drawer height (Slice 13.0e) */
+  .mobile-drawer-content #panel-right {
     display: flex;
     flex-direction: column;
     height: 100%;

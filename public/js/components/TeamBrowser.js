@@ -1,10 +1,13 @@
-// TeamBrowser.js - Browse all teams panel (bottom-right)
+// TeamBrowser.js - Browse all teams panel
+// Slice 13.0e: Unified right sidebar - split header/list containers
 // Follows Cache + Listener pattern per CLAUDE.md
 
 const TeamBrowser = (function() {
     'use strict';
 
-    let _container = null;
+    let _headerContainer = null;
+    let _listContainer = null;
+    let _container = null; // Legacy single container support
     let _unsubscribe = null;
     let _allTeams = [];
     let _currentUserId = null;
@@ -14,11 +17,28 @@ const TeamBrowser = (function() {
     // Initialization
     // ========================================
 
+    /**
+     * Initialize TeamBrowser
+     * Slice 13.0e: Supports split containers (header + list) or legacy single container
+     * @param {string} containerId - Either 'team-browser-header' for split mode, or legacy container ID
+     */
     async function init(containerId) {
-        _container = document.getElementById(containerId);
-        if (!_container) {
-            console.error('TeamBrowser: Container not found:', containerId);
-            return;
+        // Check for split container mode (Slice 13.0e)
+        _headerContainer = document.getElementById('team-browser-header');
+        _listContainer = document.getElementById('team-browser-list');
+
+        if (_headerContainer && _listContainer) {
+            // Split mode - new unified sidebar
+            _container = null;
+        } else {
+            // Legacy single container mode
+            _container = document.getElementById(containerId);
+            if (!_container) {
+                console.error('TeamBrowser: Container not found:', containerId);
+                return;
+            }
+            _headerContainer = null;
+            _listContainer = null;
         }
 
         _currentUserId = window.firebase?.auth?.currentUser?.uid;
@@ -33,7 +53,11 @@ const TeamBrowser = (function() {
         _render();
 
         // Set up filter listeners
-        TeamBrowserState.onFilterChange(() => _renderTeamList());
+        TeamBrowserState.onFilterChange(() => {
+            // When filters change, deselect teams that no longer match
+            _syncSelectionWithFilters();
+            _renderTeamList();
+        });
         TeamBrowserState.onSelectionChange(() => _renderTeamList());
 
         // Listen for favorites changes to update star display
@@ -91,8 +115,77 @@ const TeamBrowser = (function() {
     // ========================================
 
     function _render() {
-        if (!_container) return;
+        if (_headerContainer && _listContainer) {
+            // Split mode (Slice 13.0e)
+            _renderSplitMode();
+        } else if (_container) {
+            // Legacy single container mode
+            _renderLegacyMode();
+        }
 
+        _attachListeners();
+        _renderTeamList();
+    }
+
+    /**
+     * Slice 13.0e: Render to split containers (header + list)
+     */
+    function _renderSplitMode() {
+        // Header: Search + Filter buttons (two rows)
+        _headerContainer.innerHTML = `
+            <div class="browser-header">
+                <!-- Search Input -->
+                <div class="relative mb-2">
+                    <input type="search"
+                           id="team-search-input"
+                           placeholder="Search teams or players..."
+                           inputmode="search"
+                           autocomplete="off"
+                           autocorrect="off"
+                           autocapitalize="off"
+                           spellcheck="false"
+                           class="w-full px-3 py-1.5 text-sm bg-muted border border-border rounded-md
+                                  focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary
+                                  placeholder:text-muted-foreground"
+                    />
+                    <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                </div>
+
+                <!-- Row 1: Division toggles -->
+                <div class="flex gap-1 mb-1.5">
+                    <button class="division-filter-btn flex-1 ${TeamBrowserState.isDivisionActive('D1') ? 'active' : ''}" data-division="D1">Div 1</button>
+                    <button class="division-filter-btn flex-1 ${TeamBrowserState.isDivisionActive('D2') ? 'active' : ''}" data-division="D2">Div 2</button>
+                    <button class="division-filter-btn flex-1 ${TeamBrowserState.isDivisionActive('D3') ? 'active' : ''}" data-division="D3">Div 3</button>
+                </div>
+
+                <!-- Row 2: Fav filter + Select All toggle -->
+                <div class="flex gap-1">
+                    <button class="division-filter-btn fav-filter-btn flex-1 ${TeamBrowserState.isFavoritesFilterActive() ? 'active' : ''}"
+                            data-filter="fav">★ Favourites</button>
+                    <button id="select-all-toggle" class="division-filter-btn flex-1"
+                            title="Select/Deselect all visible teams">Select All</button>
+                </div>
+            </div>
+        `;
+
+        // List container structure (content rendered by _renderTeamList)
+        _listContainer.innerHTML = `
+            <div class="team-browser h-full">
+                <div id="team-list-container" class="team-list h-full overflow-y-auto space-y-1.5">
+                    <!-- Team cards rendered here -->
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Legacy single container mode
+     */
+    function _renderLegacyMode() {
         _container.innerHTML = `
             <div class="team-browser flex flex-col h-full">
                 <!-- Header with Search -->
@@ -118,13 +211,19 @@ const TeamBrowser = (function() {
                         </svg>
                     </div>
 
-                    <!-- Filter Buttons (Fav toggle + Division toggles) -->
-                    <div class="flex gap-1 flex-wrap">
-                        <button class="division-filter-btn fav-filter-btn ${TeamBrowserState.isFavoritesFilterActive() ? 'active' : ''}"
-                                data-filter="fav">★ Fav</button>
-                        <button class="division-filter-btn" data-division="D1">Div 1</button>
-                        <button class="division-filter-btn" data-division="D2">Div 2</button>
-                        <button class="division-filter-btn" data-division="D3">Div 3</button>
+                    <!-- Row 1: Division toggles -->
+                    <div class="flex gap-1 mb-1.5">
+                        <button class="division-filter-btn flex-1 ${TeamBrowserState.isDivisionActive('D1') ? 'active' : ''}" data-division="D1">Div 1</button>
+                        <button class="division-filter-btn flex-1 ${TeamBrowserState.isDivisionActive('D2') ? 'active' : ''}" data-division="D2">Div 2</button>
+                        <button class="division-filter-btn flex-1 ${TeamBrowserState.isDivisionActive('D3') ? 'active' : ''}" data-division="D3">Div 3</button>
+                    </div>
+
+                    <!-- Row 2: Fav filter + Select All toggle -->
+                    <div class="flex gap-1">
+                        <button class="division-filter-btn fav-filter-btn flex-1 ${TeamBrowserState.isFavoritesFilterActive() ? 'active' : ''}"
+                                data-filter="fav">★ Favourites</button>
+                        <button id="select-all-toggle" class="division-filter-btn flex-1"
+                                title="Select/Deselect all visible teams">Select All</button>
                     </div>
                 </div>
 
@@ -134,9 +233,6 @@ const TeamBrowser = (function() {
                 </div>
             </div>
         `;
-
-        _attachListeners();
-        _renderTeamList();
     }
 
     function _attachListeners() {
@@ -146,21 +242,45 @@ const TeamBrowser = (function() {
             TeamBrowserState.setSearchQuery(e.target.value);
         });
 
+        // Find the container that has the filter buttons
+        const filterContainer = _headerContainer || _container;
+        if (!filterContainer) return;
+
         // Fav filter button
-        const favBtn = _container.querySelector('.fav-filter-btn');
+        const favBtn = filterContainer.querySelector('.fav-filter-btn');
         favBtn?.addEventListener('click', () => {
             TeamBrowserState.toggleFavoritesFilter();
             favBtn.classList.toggle('active');
         });
 
-        // Division filter buttons (toggles)
-        _container.querySelectorAll('.division-filter-btn:not(.fav-filter-btn)').forEach(btn => {
+        // Division filter buttons (toggles) - exclude select-all-toggle
+        filterContainer.querySelectorAll('.division-filter-btn:not(.fav-filter-btn):not(#select-all-toggle)').forEach(btn => {
             btn.addEventListener('click', () => {
                 const division = btn.dataset.division;
-                TeamBrowserState.toggleDivisionFilter(division);
-                // Update visual state
-                btn.classList.toggle('active');
+                if (division) {
+                    TeamBrowserState.toggleDivisionFilter(division);
+                    btn.classList.toggle('active');
+                }
             });
+        });
+
+        // Select All toggle
+        const selectAllBtn = document.getElementById('select-all-toggle');
+        selectAllBtn?.addEventListener('click', () => {
+            const { teams } = _getSearchResults();
+            const visibleTeamIds = teams.map(t => t.id);
+
+            if (visibleTeamIds.length === 0) return;
+
+            const allSelected = TeamBrowserState.areAllSelected(visibleTeamIds);
+
+            if (allSelected) {
+                // Deselect all visible
+                TeamBrowserState.deselectTeams(visibleTeamIds);
+            } else {
+                // Select all visible
+                TeamBrowserState.selectTeams(visibleTeamIds);
+            }
         });
     }
 
@@ -244,10 +364,15 @@ const TeamBrowser = (function() {
 
     function _renderTeamList() {
         const listContainer = document.getElementById('team-list-container');
-        if (!listContainer) return;
+        if (!listContainer) {
+            return;
+        }
 
         const { teams, players, isSearching } = _getSearchResults();
         const hasResults = teams.length > 0 || players.length > 0;
+
+        // Update Select All button state
+        _updateSelectAllButton(teams);
 
         if (!hasResults) {
             listContainer.innerHTML = `
@@ -368,6 +493,42 @@ const TeamBrowser = (function() {
         });
 
         _updateSelectionInfo();
+    }
+
+    /**
+     * Update Select All button text based on current selection state
+     */
+    function _updateSelectAllButton(teams) {
+        const selectAllBtn = document.getElementById('select-all-toggle');
+        if (!selectAllBtn) return;
+
+        const visibleTeamIds = teams.map(t => t.id);
+        const allSelected = visibleTeamIds.length > 0 && TeamBrowserState.areAllSelected(visibleTeamIds);
+
+        selectAllBtn.textContent = allSelected ? 'Deselect All' : 'Select All';
+        selectAllBtn.classList.toggle('active', allSelected);
+    }
+
+    /**
+     * Sync selection with current filters - deselect teams that no longer match
+     */
+    function _syncSelectionWithFilters() {
+        const { teams } = _getSearchResults();
+        const visibleTeamIds = new Set(teams.map(t => t.id));
+        const selectedTeams = TeamBrowserState.getSelectedTeams();
+
+        // Find selected teams that are no longer visible
+        const teamsToDeselect = [];
+        selectedTeams.forEach(teamId => {
+            if (!visibleTeamIds.has(teamId)) {
+                teamsToDeselect.push(teamId);
+            }
+        });
+
+        // Deselect teams that no longer match filters
+        if (teamsToDeselect.length > 0) {
+            TeamBrowserState.deselectTeams(teamsToDeselect);
+        }
     }
 
     // ========================================

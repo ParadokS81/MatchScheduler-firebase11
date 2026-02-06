@@ -34,13 +34,10 @@ const MatchSchedulerApp = (function() {
 
     // Initialize components
     function _initializeComponents() {
-        // Initialize TeamInfo component in top-left panel
-        TeamInfo.init('panel-top-left');
+        // Slice 13.0f: Initialize TeamInfo with split containers (identity + roster)
+        TeamInfo.init('team-identity-container', 'roster-container');
 
-        // Slice 13.0a: Initialize TeamNameDisplay in mid-left panel
-        if (typeof TeamNameDisplay !== 'undefined') {
-            TeamNameDisplay.init('team-name-container');
-        }
+        // Note: TeamNameDisplay deprecated in 13.0f - name now rendered by TeamInfo
 
         // Initialize ToastService for notifications
         ToastService.init();
@@ -51,9 +48,9 @@ const MatchSchedulerApp = (function() {
             UserProfile.renderCompact('profile-compact-container');
         }
 
-        // Initialize compact filter in divider (Slice 5.0a)
+        // Initialize FilterPanel in unified sidebar (Slice 13.0e)
         if (typeof FilterPanel !== 'undefined') {
-            FilterPanel.init('filter-compact-container');
+            FilterPanel.init('compare-controls');
         }
 
         // Initialize Availability Grid components
@@ -84,10 +81,10 @@ const MatchSchedulerApp = (function() {
         console.log('🧩 Components initialized');
     }
 
-    // Initialize TeamBrowser component (Slice 3.1)
+    // Initialize TeamBrowser component (Slice 3.1, updated 13.0e for split containers)
     function _initializeTeamBrowser() {
         if (typeof TeamBrowser !== 'undefined' && TeamService.isCacheReady()) {
-            TeamBrowser.init('team-browser-container');
+            TeamBrowser.init(); // Auto-detects split containers
             console.log('🔍 TeamBrowser initialized');
         } else {
             // Retry after cache is ready
@@ -95,7 +92,7 @@ const MatchSchedulerApp = (function() {
                 if (TeamService.isCacheReady()) {
                     clearInterval(checkCache);
                     if (typeof TeamBrowser !== 'undefined') {
-                        TeamBrowser.init('team-browser-container');
+                        TeamBrowser.init(); // Auto-detects split containers
                         console.log('🔍 TeamBrowser initialized (after cache ready)');
                     }
                 }
@@ -250,9 +247,9 @@ const MatchSchedulerApp = (function() {
         // Listen for calendar tab being shown to refresh week 2 availability data
         window.addEventListener('calendar-tab-shown', _handleCalendarTabShown);
 
-        // Initialize UpcomingMatchesPanel in bottom-left panel
+        // Slice 13.0f: Initialize UpcomingMatchesPanel with split containers
         if (typeof UpcomingMatchesPanel !== 'undefined') {
-            UpcomingMatchesPanel.init('upcoming-matches-container');
+            UpcomingMatchesPanel.init('your-matches-container', 'upcoming-matches-container');
         }
 
         // Slice 12.0a: Apply saved timeslot filter on startup

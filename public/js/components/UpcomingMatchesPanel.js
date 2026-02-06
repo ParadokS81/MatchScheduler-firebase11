@@ -1,12 +1,12 @@
-// UpcomingMatchesPanel.js - Bottom-left panel showing upcoming scheduled matches
-// Shows "Your Matches" (user's teams) and "Community Matches" (all others)
+// UpcomingMatchesPanel.js - Left sidebar showing upcoming scheduled matches
+// Slice 13.0f: Split rendering - "Your Matches" and "Upcoming" in separate containers
 // Follows Cache + Listener pattern: Component owns Firebase listener, ScheduledMatchService manages cache
 
 const UpcomingMatchesPanel = (function() {
     'use strict';
 
-    let _container = null;
-    let _containerId = null;
+    let _yourMatchesContainer = null;
+    let _upcomingContainer = null;
     let _unsubscribe = null;
     let _unsubscribeAuth = null;
     let _userTeamIds = [];
@@ -16,10 +16,14 @@ const UpcomingMatchesPanel = (function() {
 
     // ─── Initialization ────────────────────────────────────────────────
 
-    async function init(containerId) {
-        _containerId = containerId;
-        _container = document.getElementById(containerId);
-        if (!_container) return;
+    async function init(yourMatchesContainerId, upcomingContainerId) {
+        _yourMatchesContainer = document.getElementById(yourMatchesContainerId);
+        _upcomingContainer = document.getElementById(upcomingContainerId);
+
+        if (!_yourMatchesContainer && !_upcomingContainer) {
+            console.warn('UpcomingMatchesPanel: No containers found');
+            return;
+        }
 
         // Listen for auth state changes so panel updates when dev mode sign-in completes
         _unsubscribeAuth = AuthService.onAuthStateChange((user) => {
@@ -35,19 +39,22 @@ const UpcomingMatchesPanel = (function() {
     }
 
     async function _initWithUser(user) {
-        if (!_container) return;
-
         // Get user's team IDs
         _userTeamIds = await _getUserTeamIds(user.uid);
 
         // Render loading state
-        _container.innerHTML = '<div class="flex items-center justify-center h-full text-muted-foreground text-xs">Loading matches...</div>';
+        if (_yourMatchesContainer) {
+            _yourMatchesContainer.innerHTML = '';
+        }
+        if (_upcomingContainer) {
+            _upcomingContainer.innerHTML = '<div class="flex items-center justify-center py-4 text-muted-foreground text-xs">Loading matches...</div>';
+        }
 
         // Set up Firestore listener for all upcoming scheduled matches
         await _setupListener();
 
         _initialized = true;
-        console.log('📅 UpcomingMatchesPanel initialized');
+        console.log('📅 UpcomingMatchesPanel initialized (split containers)');
     }
 
     async function _getUserTeamIds(userId) {
@@ -89,8 +96,6 @@ const UpcomingMatchesPanel = (function() {
     // ─── Rendering ──────────────────────────────────────────────────────
 
     function _render() {
-        if (!_container) return;
-
         const allMatches = ScheduledMatchService.getMatchesFromCache()
             .filter(m => m.status === 'upcoming');
 
@@ -111,21 +116,51 @@ const UpcomingMatchesPanel = (function() {
         yourMatches.sort(sortByDate);
         communityMatches.sort(sortByDate);
 
-        if (allMatches.length === 0) {
-            _renderEmpty('No upcoming matches scheduled');
-            return;
+        // Render "Your Matches" section
+        if (_yourMatchesContainer) {
+            if (yourMatches.length > 0) {
+                _yourMatchesContainer.innerHTML = `
+                    <div class="your-matches-section">
+                        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 text-center">Your Matches</h3>
+                        <div class="space-y-1.5">
+                            ${yourMatches.map(_renderMatchCard).join('')}
+                        </div>
+                    </div>
+                `;
+            } else if (_userTeamIds.length > 0) {
+                _yourMatchesContainer.innerHTML = `
+                    <p class="text-xs text-muted-foreground italic text-center py-2">No matches scheduled for your teams</p>
+                `;
+            } else {
+                _yourMatchesContainer.innerHTML = '';
+            }
         }
 
-        _container.innerHTML = `
-            <div class="upcoming-matches-panel h-full overflow-y-auto p-3 space-y-3">
-                ${yourMatches.length > 0 ? _renderSection('Your Matches', yourMatches) : ''}
-                ${communityMatches.length > 0 ? _renderSection('Community Matches', communityMatches) : ''}
-                ${yourMatches.length === 0 && _userTeamIds.length > 0 ? '<p class="text-xs text-muted-foreground italic">No matches scheduled for your teams yet</p>' : ''}
-            </div>
-        `;
+        // Render "Upcoming" section (community matches)
+        if (_upcomingContainer) {
+            if (communityMatches.length > 0) {
+                _upcomingContainer.innerHTML = `
+                    <div class="upcoming-matches-section h-full overflow-y-auto">
+                        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 text-center sticky top-0 bg-card py-1">Upcoming</h3>
+                        <div class="space-y-1.5">
+                            ${communityMatches.map(_renderMatchCard).join('')}
+                        </div>
+                    </div>
+                `;
+            } else if (allMatches.length === 0) {
+                _upcomingContainer.innerHTML = `
+                    <div class="h-full flex flex-col items-center justify-center py-4">
+                        <p class="text-xs text-muted-foreground italic">No upcoming matches scheduled</p>
+                    </div>
+                `;
+            } else {
+                _upcomingContainer.innerHTML = '';
+            }
+        }
 
-        // Attach event listeners to each match card (direct listeners work better than delegation)
-        _container.querySelectorAll('.match-card-compact').forEach(card => {
+        // Attach event listeners to each match card
+        const allCards = document.querySelectorAll('.match-card-compact');
+        allCards.forEach(card => {
             card.addEventListener('mouseenter', () => {
                 if (_rosterTooltipHideTimeout) {
                     clearTimeout(_rosterTooltipHideTimeout);
@@ -140,17 +175,6 @@ const UpcomingMatchesPanel = (function() {
             });
             card.addEventListener('click', () => _handleMatchCardClick(card));
         });
-    }
-
-    function _renderSection(title, matches) {
-        return `
-            <div>
-                <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 text-center">${title}</h3>
-                <div class="space-y-1.5">
-                    ${matches.map(_renderMatchCard).join('')}
-                </div>
-            </div>
-        `;
     }
 
     function _renderMatchCard(match) {
@@ -182,15 +206,15 @@ const UpcomingMatchesPanel = (function() {
         const div = teamA?.divisions?.[0] || teamB?.divisions?.[0] || '';
 
         return `
-            <div class="match-card-compact py-2"
+            <div class="match-card-compact py-1.5 cursor-pointer rounded hover:bg-muted/50 transition-colors"
                  data-match-id="${match.id}" data-team-a="${match.teamAId}" data-team-b="${match.teamBId}"
                  data-week-id="${match.weekId || ''}" data-slot-id="${match.slotId || ''}">
-                <div class="flex items-center justify-center gap-2.5">
-                    ${logoA ? `<img src="${logoA}" class="w-7 h-7 rounded-sm object-cover shrink-0" alt="">` : ''}
-                    <span class="text-base font-semibold">${_escapeHtml(tagA)}</span>
+                <div class="flex items-center justify-center gap-2">
+                    ${logoA ? `<img src="${logoA}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
+                    <span class="text-sm font-semibold">${_escapeHtml(tagA)}</span>
                     <span class="text-xs text-muted-foreground">vs</span>
-                    <span class="text-base font-semibold">${_escapeHtml(tagB)}</span>
-                    ${logoB ? `<img src="${logoB}" class="w-7 h-7 rounded-sm object-cover shrink-0" alt="">` : ''}
+                    <span class="text-sm font-semibold">${_escapeHtml(tagB)}</span>
+                    ${logoB ? `<img src="${logoB}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
                 </div>
                 <div class="flex items-center justify-center">
                     <span class="text-xs text-muted-foreground">${dateDisplay} ${dayAbbr} ${timeOnly}${div ? ` (${div})` : ''}</span>
@@ -200,12 +224,16 @@ const UpcomingMatchesPanel = (function() {
     }
 
     function _renderEmpty(message) {
-        if (!_container) return;
-        _container.innerHTML = `
-            <div class="h-full flex flex-col items-center justify-center p-3">
-                <p class="text-xs text-muted-foreground italic">${message}</p>
-            </div>
-        `;
+        if (_yourMatchesContainer) {
+            _yourMatchesContainer.innerHTML = '';
+        }
+        if (_upcomingContainer) {
+            _upcomingContainer.innerHTML = `
+                <div class="h-full flex flex-col items-center justify-center py-4">
+                    <p class="text-xs text-muted-foreground italic">${message}</p>
+                </div>
+            `;
+        }
     }
 
     function _escapeHtml(str) {
@@ -364,8 +392,8 @@ const UpcomingMatchesPanel = (function() {
         }
         _userTeamIds = [];
         _initialized = false;
-        _container = null;
-        _containerId = null;
+        _yourMatchesContainer = null;
+        _upcomingContainer = null;
     }
 
     // ─── Public API ─────────────────────────────────────────────────────

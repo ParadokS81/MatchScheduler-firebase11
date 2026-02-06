@@ -80,6 +80,40 @@ const TeamBrowserState = (function() {
         _dispatchSelectionChange();
     }
 
+    /**
+     * Select multiple teams at once (for Select All)
+     * @param {string[]} teamIds - Array of team IDs to select
+     */
+    function selectTeams(teamIds) {
+        teamIds.forEach(id => _selectedTeams.add(id));
+        if (_onSelectionChange) {
+            _onSelectionChange(_selectedTeams);
+        }
+        _dispatchSelectionChange();
+    }
+
+    /**
+     * Check if all given teams are selected
+     * @param {string[]} teamIds - Array of team IDs to check
+     * @returns {boolean} True if all teams are selected
+     */
+    function areAllSelected(teamIds) {
+        if (teamIds.length === 0) return false;
+        return teamIds.every(id => _selectedTeams.has(id));
+    }
+
+    /**
+     * Deselect multiple teams at once
+     * @param {string[]} teamIds - Array of team IDs to deselect
+     */
+    function deselectTeams(teamIds) {
+        teamIds.forEach(id => _selectedTeams.delete(id));
+        if (_onSelectionChange) {
+            _onSelectionChange(_selectedTeams);
+        }
+        _dispatchSelectionChange();
+    }
+
     function getSelectionCount() {
         return _selectedTeams.size;
     }
@@ -171,6 +205,9 @@ const TeamBrowserState = (function() {
         selectTeam,
         deselectTeam,
         clearSelection,
+        selectTeams,
+        areAllSelected,
+        deselectTeams,
         getSelectionCount,
 
         // Filters
