@@ -166,8 +166,12 @@ const UserProfile = (function() {
                     }
                 }
 
-                // Load hidden timeslots preference (Slice 12.0b)
-                if (typeof TimezoneService !== 'undefined' && _userProfile.hiddenTimeSlots) {
+                // Load hidden timeslots preference (Slice 12.0b + 13.0d)
+                // Only override defaults if user has explicitly saved a preference
+                // - undefined/null: keep defaults (1800, 1830, 1900 hidden)
+                // - []: user explicitly chose to show all
+                // - ['1800']: user's custom preference
+                if (typeof TimezoneService !== 'undefined' && Array.isArray(_userProfile.hiddenTimeSlots)) {
                     const applied = TimezoneService.setHiddenTimeSlots(_userProfile.hiddenTimeSlots);
                     if (applied) {
                         window.dispatchEvent(new CustomEvent('timeslots-changed', {

@@ -15,9 +15,12 @@ const TimezoneService = (function() {
         '2030', '2100', '2130', '2200', '2230', '2300'
     ];
 
+    // Slice 13.0d: Default hidden timeslots (18:00, 18:30, 19:00 have <1% combined usage)
+    const DEFAULT_HIDDEN_TIMESLOTS = ['1800', '1830', '1900'];
+
     let _userTimezone = null;   // IANA string, e.g., "Europe/Stockholm"
     let _initialized = false;
-    let _hiddenTimeSlots = new Set(); // Slice 12.0a: Timeslot filter engine
+    let _hiddenTimeSlots = new Set(DEFAULT_HIDDEN_TIMESLOTS); // Slice 12.0a + 13.0d: default hidden
 
     // ---------------------------------------------------------------
     // Initialization
@@ -249,6 +252,14 @@ const TimezoneService = (function() {
         return Array.from(_hiddenTimeSlots);
     }
 
+    /**
+     * Get the default hidden time slots (for new users).
+     * @returns {string[]} Array of default hidden time slot strings
+     */
+    function getDefaultHiddenTimeSlots() {
+        return DEFAULT_HIDDEN_TIMESLOTS;
+    }
+
     // ---------------------------------------------------------------
     // Grid helpers
     // ---------------------------------------------------------------
@@ -444,6 +455,7 @@ const TimezoneService = (function() {
         getVisibleTimeSlots,
         setHiddenTimeSlots,
         getHiddenTimeSlots,
+        getDefaultHiddenTimeSlots, // Slice 13.0d
         // Constants exposed for external use
         DAYS,
         DISPLAY_TIME_SLOTS

@@ -46,10 +46,6 @@ const UpcomingMatchesPanel = (function() {
         // Set up Firestore listener for all upcoming scheduled matches
         await _setupListener();
 
-        // Hover listeners for roster tooltip
-        _container.addEventListener('pointerenter', _handleMatchCardEnter, true);
-        _container.addEventListener('pointerleave', _handleMatchCardLeave, true);
-
         _initialized = true;
         console.log('📅 UpcomingMatchesPanel initialized');
     }
@@ -127,6 +123,23 @@ const UpcomingMatchesPanel = (function() {
                 ${yourMatches.length === 0 && _userTeamIds.length > 0 ? '<p class="text-xs text-muted-foreground italic">No matches scheduled for your teams yet</p>' : ''}
             </div>
         `;
+
+        // Attach event listeners to each match card (direct listeners work better than delegation)
+        _container.querySelectorAll('.match-card-compact').forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                if (_rosterTooltipHideTimeout) {
+                    clearTimeout(_rosterTooltipHideTimeout);
+                    _rosterTooltipHideTimeout = null;
+                }
+                _showRosterTooltip(card);
+            });
+            card.addEventListener('mouseleave', () => {
+                _rosterTooltipHideTimeout = setTimeout(() => {
+                    if (_rosterTooltip) _rosterTooltip.style.display = 'none';
+                }, 150);
+            });
+            card.addEventListener('click', () => _handleMatchCardClick(card));
+        });
     }
 
     function _renderSection(title, matches) {
@@ -202,25 +215,18 @@ const UpcomingMatchesPanel = (function() {
         return div.innerHTML;
     }
 
+    // ─── Match Card Click → Navigate to H2H ─────────────────────────────
+
+    function _handleMatchCardClick(card) {
+        const teamAId = card.dataset.teamA;
+        const teamBId = card.dataset.teamB;
+        if (!teamAId || !teamBId) return;
+
+        // Navigate to H2H page
+        window.location.hash = `/teams/${teamAId}/h2h/${teamBId}`;
+    }
+
     // ─── Roster Tooltip ────────────────────────────────────────────────
-
-    function _handleMatchCardEnter(e) {
-        const card = e.target.closest('.match-card-compact');
-        if (!card) return;
-        if (_rosterTooltipHideTimeout) {
-            clearTimeout(_rosterTooltipHideTimeout);
-            _rosterTooltipHideTimeout = null;
-        }
-        _showRosterTooltip(card);
-    }
-
-    function _handleMatchCardLeave(e) {
-        const card = e.target.closest('.match-card-compact');
-        if (!card) return;
-        _rosterTooltipHideTimeout = setTimeout(() => {
-            if (_rosterTooltip) _rosterTooltip.style.display = 'none';
-        }, 150);
-    }
 
     async function _showRosterTooltip(card) {
         const teamAId = card.dataset.teamA;
@@ -347,10 +353,6 @@ const UpcomingMatchesPanel = (function() {
         if (_unsubscribeAuth) {
             _unsubscribeAuth();
             _unsubscribeAuth = null;
-        }
-        if (_container) {
-            _container.removeEventListener('pointerenter', _handleMatchCardEnter, true);
-            _container.removeEventListener('pointerleave', _handleMatchCardLeave, true);
         }
         if (_rosterTooltip) {
             _rosterTooltip.remove();

@@ -105,6 +105,9 @@ const BottomPanelController = (function() {
 
         // Re-initialize the week display
         _weekDisplay2Ref.init();
+
+        // Dispatch event so app.js can refresh availability data for the recreated grid
+        window.dispatchEvent(new CustomEvent('calendar-tab-shown'));
     }
 
     /**

@@ -37,10 +37,15 @@ const MatchSchedulerApp = (function() {
         // Initialize TeamInfo component in top-left panel
         TeamInfo.init('panel-top-left');
 
+        // Slice 13.0a: Initialize TeamNameDisplay in mid-left panel
+        if (typeof TeamNameDisplay !== 'undefined') {
+            TeamNameDisplay.init('team-name-container');
+        }
+
         // Initialize ToastService for notifications
         ToastService.init();
 
-        // Initialize compact profile in divider (Slice 5.0a)
+        // Initialize compact profile in bottom-left panel (Slice 13.0a: moved from mid-left)
         // Note: renderCompact updates automatically when auth state changes
         if (typeof UserProfile !== 'undefined') {
             UserProfile.renderCompact('profile-compact-container');
@@ -104,6 +109,14 @@ const MatchSchedulerApp = (function() {
     function _updateGridLayout() {
         const grid = document.querySelector('.main-grid-v3');
         if (!grid) return;
+
+        // On mobile landscape, let CSS handle the single-row layout
+        const isMobile = window.matchMedia('(max-width: 1024px) and (orientation: landscape)').matches;
+        if (isMobile) {
+            grid.style.gridTemplateRows = ''; // Clear inline style, let CSS take over
+            return;
+        }
+
         const count = typeof TimezoneService !== 'undefined'
             ? TimezoneService.getVisibleTimeSlots().length
             : 11;
@@ -174,31 +187,34 @@ const MatchSchedulerApp = (function() {
             _updateScheduledMatchHighlights();
         });
 
+        // Listen for viewport changes (mobile ↔ desktop) to update grid layout
+        const mobileMediaQuery = window.matchMedia('(max-width: 1024px) and (orientation: landscape)');
+        mobileMediaQuery.addEventListener('change', () => {
+            _updateGridLayout();
+        });
+
         // Set up overflow click handlers for both grids (Slice 2.5)
         _setupOverflowHandlers();
 
-        // Slice 6.0b: GridActionButtons now initializes into drawer container in TeamInfo
-        // Listen for drawer-ready event from TeamInfo (dispatched when drawer HTML is rendered)
-        const initGridActionButtons = () => {
-            const container = document.getElementById('grid-tools-drawer-content');
-            if (!container) return; // Container not ready yet
+        // Slice 13.0b: GridActionButtons is now a service-only module (no container)
+        GridActionButtons.init({
+            getSelectedCells: _getAllSelectedCells,
+            clearSelections: _clearAllSelections,
+            onSyncStart: _handleSyncStart,
+            onSyncEnd: _handleSyncEnd,
+            clearAll: _handleClearAll,
+            loadTemplate: _handleLoadTemplate,
+            onDisplayModeChange: _handleDisplayModeChange
+        });
 
-            GridActionButtons.init('grid-tools-drawer-content', {
+        // Initialize TemplatesModal (Slice 13.0c: Templates modal)
+        if (typeof TemplatesModal !== 'undefined') {
+            TemplatesModal.init({
                 getSelectedCells: _getAllSelectedCells,
-                clearSelections: _clearAllSelections,
-                onSyncStart: _handleSyncStart,
-                onSyncEnd: _handleSyncEnd,
-                clearAll: _handleClearAll,
-                loadTemplate: _handleLoadTemplate,
-                onDisplayModeChange: _handleDisplayModeChange
+                onLoadTemplate: _handleLoadTemplate,
+                onClearAll: _handleClearAll
             });
-        };
-
-        // Listen for drawer-ready event (fires each time TeamInfo re-renders the drawer)
-        window.addEventListener('grid-tools-drawer-ready', initGridActionButtons);
-
-        // Try immediately in case drawer already exists
-        initGridActionButtons();
+        }
 
         // Initialize SelectionActionButton (Slice 5.0b: floating action button)
         if (typeof SelectionActionButton !== 'undefined') {
@@ -230,6 +246,9 @@ const MatchSchedulerApp = (function() {
         if (typeof BottomPanelController !== 'undefined') {
             BottomPanelController.init(_weekDisplay2);
         }
+
+        // Listen for calendar tab being shown to refresh week 2 availability data
+        window.addEventListener('calendar-tab-shown', _handleCalendarTabShown);
 
         // Initialize UpcomingMatchesPanel in bottom-left panel
         if (typeof UpcomingMatchesPanel !== 'undefined') {
@@ -405,6 +424,32 @@ const MatchSchedulerApp = (function() {
     }
 
     /**
+     * Handle calendar tab being shown - refresh week 2 availability from cache
+     * This is needed because when switching tabs, the grid is recreated but
+     * Firestore listeners only fire on data changes, not on grid recreation.
+     */
+    function _handleCalendarTabShown() {
+        if (!_selectedTeam || !_weekDisplay2) return;
+
+        const week2Id = _weekDisplay2.getWeekId();
+        const currentUserId = window.firebase?.auth?.currentUser?.uid;
+
+        if (!week2Id || !currentUserId) return;
+
+        console.log('📅 Calendar tab shown, refreshing week 2 availability');
+
+        // Get cached data and update the grid
+        const cachedData = AvailabilityService.getCachedData(_selectedTeam.id, week2Id);
+        if (cachedData) {
+            _weekDisplay2.getGrid()?.updateAvailabilityDisplay(cachedData, currentUserId);
+            _updateTeamDisplay(_weekDisplay2, cachedData, currentUserId);
+        }
+
+        // Also refresh scheduled match highlights
+        _updateScheduledMatchHighlights();
+    }
+
+    /**
      * Handle Load Template - apply template slots to a specific week grid
      * @param {string[]} slots - Array of slot IDs from template
      * @param {number} weekIndex - 0 for first week, 1 for second week
@@ -443,6 +488,11 @@ const MatchSchedulerApp = (function() {
         }
 
         _selectedTeam = team;
+
+        // Slice 13.0a: Notify TeamNameDisplay of team selection
+        window.dispatchEvent(new CustomEvent('team-selected', {
+            detail: { team }
+        }));
 
         // Notify components that the user's own team changed
         window.dispatchEvent(new CustomEvent('user-team-changed', {
@@ -658,8 +708,9 @@ const MatchSchedulerApp = (function() {
 
     // Cleanup function
     function cleanup() {
-        // Remove profile-updated listener
+        // Remove event listeners
         window.removeEventListener('profile-updated', _handleProfileUpdated);
+        window.removeEventListener('calendar-tab-shown', _handleCalendarTabShown);
 
         if (typeof UserProfile !== 'undefined') {
             UserProfile.cleanup();

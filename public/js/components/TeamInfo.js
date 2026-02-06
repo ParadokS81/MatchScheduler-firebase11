@@ -1,7 +1,7 @@
-// TeamInfo Component - Team information display for middle-left panel
+// TeamInfo Component - Team information display for top-left panel
 // Following PRD v2 Architecture with Revealing Module Pattern
 // Enhanced for Slice 5.0.1: Roster display adapts to grid display mode
-// Enhanced for Slice 6.0b: Grid Tools drawer below roster
+// Slice 13.0a: Simplified to logo + roster only (team name moved to mid-left)
 
 const TeamInfo = (function() {
     'use strict';
@@ -16,7 +16,6 @@ const TeamInfo = (function() {
     let _teamListener = null; // Direct Firebase listener for selected team
     let _userProfileListener = null;
     let _initialized = false;
-    let _drawerExpanded = false; // Slice 6.0b: Track drawer state
     
     // Initialize component
     function init(panelId) {
@@ -40,9 +39,6 @@ const TeamInfo = (function() {
         // Slice 5.0.1: Re-render roster when display mode or player colors change
         window.addEventListener('display-mode-changed', _render);
         window.addEventListener('player-colors-changed', _render);
-
-        // Slice 6.0b: Update drawer height when templates change
-        window.addEventListener('templates-updated', _updateDrawerHeight);
 
         console.log('🏆 TeamInfo component initialized');
     }
@@ -378,14 +374,14 @@ const TeamInfo = (function() {
         `;
     }
     
-    // Render teams mode
+    // Render teams mode - Slice 13.0a: Logo + roster only (no team name, no grid tools)
     function _renderTeamsMode() {
-        // Get current display mode for roster visuals and drawer header
+        // Get current display mode for roster visuals
         const displayMode = typeof PlayerDisplayService !== 'undefined'
             ? PlayerDisplayService.getDisplayMode()
             : 'initials';
 
-        // Logo + team name section - logo on top, name below, clickable
+        // Logo section - logo only, no team name row (moved to mid-left in 13.0a)
         let logoSection = '';
         if (_selectedTeam) {
             const activeLogoUrl = _selectedTeam.activeLogo?.urls?.medium;
@@ -410,30 +406,7 @@ const TeamInfo = (function() {
                 `;
             }
 
-            // Small inline logo for mobile drawer (hidden on desktop where large logo shows)
-            const inlineLogoContent = activeLogoUrl
-                ? `<img src="${activeLogoUrl}" alt="" class="w-full h-full object-cover">`
-                : `<span class="text-xs font-bold text-muted-foreground">${_selectedTeam.teamTag}</span>`;
-
-            // Team name with gear icon below logo
-            const teamNameRow = `
-                <div class="group flex items-center justify-center gap-1.5">
-                    <div class="team-logo-inline hidden w-6 h-6 rounded overflow-hidden flex-shrink-0 border border-border flex items-center justify-center">
-                        ${inlineLogoContent}
-                    </div>
-                    <span class="text-sm font-semibold text-muted-foreground truncate">${_selectedTeam.teamName}</span>
-                    <span class="team-settings-icon opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 cursor-pointer"
-                          data-action="open-settings" title="Team Settings">
-                        <svg class="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                        </svg>
-                    </span>
-                </div>
-            `;
-
+            // Slice 13.0a: No teamNameRow - just logo(s)
             logoSection = inactiveLogoHTML
                 ? `<div class="flex flex-col items-center gap-1.5 mb-3">
                         <div class="flex items-end justify-center gap-2">
@@ -443,14 +416,12 @@ const TeamInfo = (function() {
                             </div>
                             ${inactiveLogoHTML}
                         </div>
-                        ${teamNameRow}
                     </div>`
                 : `<div class="flex flex-col items-center gap-1.5 mb-3">
                         <div class="team-logo-clickable overflow-hidden w-36 h-36 flex items-center justify-center cursor-pointer transition-all"
                              data-action="team-manage" title="Manage team">
                             ${activeLogoContent}
                         </div>
-                        ${teamNameRow}
                     </div>`;
         }
 
@@ -458,9 +429,6 @@ const TeamInfo = (function() {
         let rosterHTML = '';
         if (_selectedTeam) {
             rosterHTML = _selectedTeam.playerRoster.map(player => {
-                const playerColor = typeof PlayerColorService !== 'undefined'
-                    ? PlayerColorService.getPlayerColor(player.userId)
-                    : null;
                 const colorOrDefault = typeof PlayerColorService !== 'undefined'
                     ? PlayerColorService.getPlayerColorOrDefault(player.userId)
                     : '#6B7280';
@@ -497,53 +465,17 @@ const TeamInfo = (function() {
             }).join('');
         }
 
-        // Display mode buttons for drawer header (inline, always visible)
-        const _modeBtn = (id, mode, label, content) => `
-            <button id="${id}"
-                    class="display-mode-btn px-1.5 py-0.5 text-xs rounded ${displayMode === mode ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}"
-                    data-mode="${mode}"
-                    title="${label}">${content}</button>`;
+        // Slice 13.0a: No grid tools drawer - removed (will be in grid header in 13.0b)
 
-        const displayModeButtons = `
-            <div class="flex items-center gap-0.5" id="display-mode-buttons">
-                ${_modeBtn('display-mode-initials', 'initials', 'Plain initials', 'ABC')}
-                ${_modeBtn('display-mode-coloredInitials', 'coloredInitials', 'Colored initials', '<span class="text-rainbow font-semibold">ABC</span>')}
-                ${_modeBtn('display-mode-coloredDots', 'coloredDots', 'Colored dots', '<span class="inline-flex gap-0.5"><span class="w-1.5 h-1.5 rounded-full bg-red-400"></span><span class="w-1.5 h-1.5 rounded-full bg-green-400"></span><span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span></span>')}
-                ${_modeBtn('display-mode-avatars', 'avatars', 'Avatar badges', '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>')}
-            </div>
-        `;
-
-        // Grid Tools overlay drawer with inline display mode buttons in header
-        const gridToolsDrawer = `
-            <div class="grid-tools-drawer ${_drawerExpanded ? 'drawer-open' : 'drawer-closed'}">
-                <div class="grid-tools-header w-full flex items-center gap-2 px-3 py-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors bg-card"
-                     aria-expanded="${_drawerExpanded}"
-                     aria-controls="grid-tools-drawer-content">
-                    <span class="cursor-pointer select-none flex-shrink-0" data-action="toggle-drawer">Templates</span>
-                    ${displayModeButtons}
-                    <svg class="drawer-arrow w-4 h-4 transition-transform duration-300 cursor-pointer flex-shrink-0"
-                         fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                         data-action="toggle-drawer"
-                         style="transform: rotate(${_drawerExpanded ? '180deg' : '0deg'})">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                    </svg>
-                </div>
-                <div id="grid-tools-drawer-content" class="grid-tools-drawer-body bg-card px-3 pb-3">
-                    <!-- GridActionButtons will render here (templates only) -->
-                </div>
-            </div>
-        `;
-
-        // Container
+        // Container - simplified without drawer
         return `
-            <div class="team-info-container h-full flex flex-col relative overflow-hidden">
-                <div class="space-y-2 flex-1 min-h-0 overflow-y-auto pb-6 px-1">
+            <div class="team-info-container h-full flex flex-col">
+                <div class="space-y-2 flex-1 min-h-0 overflow-y-auto scrollbar-thin px-1">
                     ${logoSection}
                     <div class="space-y-0.5 max-w-fit mx-auto">
                         ${rosterHTML}
                     </div>
                 </div>
-                ${gridToolsDrawer}
             </div>
         `;
     }
@@ -635,53 +567,9 @@ const TeamInfo = (function() {
             });
         }
 
-        // Slice 6.0b: Grid Tools drawer toggle — only label and arrow toggle, not display mode buttons
-        const drawerToggles = _panel.querySelectorAll('[data-action="toggle-drawer"]');
-        drawerToggles.forEach(el => {
-            el.addEventListener('click', _toggleGridToolsDrawer);
-        });
-
-        // Dispatch event so GridActionButtons can initialize into the drawer
-        if (_panel.querySelector('.grid-tools-header')) {
-            window.dispatchEvent(new CustomEvent('grid-tools-drawer-ready'));
-        }
+        // Slice 13.0a: Grid tools drawer removed - will be in grid header in 13.0b
     }
 
-    // Slice 6.0b: Toggle Grid Tools drawer expanded/collapsed
-    function _toggleGridToolsDrawer() {
-        const drawer = _panel.querySelector('.grid-tools-drawer');
-        const header = _panel.querySelector('.grid-tools-header');
-        const arrow = header?.querySelector('.drawer-arrow');
-
-        if (!drawer) return;
-
-        _drawerExpanded = !_drawerExpanded;
-
-        if (_drawerExpanded) {
-            // Expand - slide up to show content
-            drawer.classList.remove('drawer-closed');
-            drawer.classList.add('drawer-open');
-            header.setAttribute('aria-expanded', 'true');
-            if (arrow) arrow.style.transform = 'rotate(180deg)';
-        } else {
-            // Collapse - slide down to hide content
-            drawer.classList.remove('drawer-open');
-            drawer.classList.add('drawer-closed');
-            header.setAttribute('aria-expanded', 'false');
-            if (arrow) arrow.style.transform = 'rotate(0deg)';
-        }
-
-        // Dispatch event so GridActionButtons can know drawer state changed
-        window.dispatchEvent(new CustomEvent('grid-tools-drawer-toggled', {
-            detail: { expanded: _drawerExpanded }
-        }));
-    }
-
-    // Slice 6.0b: Placeholder for drawer height updates (not needed for overlay style)
-    function _updateDrawerHeight() {
-        // No-op for overlay drawer - height is fixed
-    }
-    
     // Handle join/create team
     function _handleJoinCreateTeam() {
         if (!_currentUser) {
@@ -822,18 +710,19 @@ const TeamInfo = (function() {
     // Cleanup function
     function cleanup() {
         _cleanupListeners();
-
-        // Slice 6.0b: Remove drawer-related event listeners
-        window.removeEventListener('templates-updated', _updateDrawerHeight);
-
         _initialized = false;
-        _drawerExpanded = false;
     }
     
+    // Slice 13.0a: Get the currently selected team (for other components to access)
+    function getSelectedTeam() {
+        return _selectedTeam;
+    }
+
     // Public API
     return {
         init,
         updateUser,
+        getSelectedTeam,
         cleanup
     };
 })();

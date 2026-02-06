@@ -2333,18 +2333,66 @@ const TeamsBrowserPanel = (function() {
 
     /**
      * Right panel default: two symmetrical columns with logo, team selector, roster.
+     * Center section shows scheduled match times between the two teams.
      */
     function _renderH2HRosterPanel() {
         const teamAId = _getH2HTeamAId();
         const teamA = _allTeams.find(t => t.id === teamAId);
         const teamB = _h2hOpponentId ? _allTeams.find(t => t.id === _h2hOpponentId) : null;
 
+        // Find scheduled matches between these two teams
+        const scheduledTimesHtml = _renderScheduledMatchTimes(teamAId, _h2hOpponentId);
+
         return `
             <div class="h2h-roster-panel">
                 <div class="h2h-roster-columns">
                     ${_renderRosterColumn(teamA, _h2hRosterA, 'A')}
+                    ${scheduledTimesHtml}
                     ${_renderRosterColumn(teamB, _h2hRosterB, 'B')}
                 </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render scheduled match times between two teams (for H2H center section).
+     */
+    function _renderScheduledMatchTimes(teamAId, teamBId) {
+        if (!teamAId || !teamBId) return '';
+        if (typeof ScheduledMatchService === 'undefined') return '';
+
+        const matches = ScheduledMatchService.getMatchesFromCache()
+            .filter(m => m.status === 'upcoming')
+            .filter(m =>
+                (m.teamAId === teamAId && m.teamBId === teamBId) ||
+                (m.teamAId === teamBId && m.teamBId === teamAId)
+            )
+            .sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
+
+        if (matches.length === 0) return '';
+
+        const timesHtml = matches.map(match => {
+            let dateStr = '';
+            if (match.scheduledDate) {
+                const d = new Date(match.scheduledDate + 'T00:00:00');
+                dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+            let timeStr = '';
+            if (typeof TimezoneService !== 'undefined' && TimezoneService.formatSlotForDisplay && match.slotId) {
+                const formatted = TimezoneService.formatSlotForDisplay(match.slotId);
+                timeStr = formatted.timeLabel || '';
+            }
+            return `
+                <div class="h2h-scheduled-match">
+                    <span class="h2h-scheduled-date">${dateStr}</span>
+                    <span class="h2h-scheduled-time">${timeStr}</span>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="h2h-scheduled-times">
+                ${timesHtml}
             </div>
         `;
     }
@@ -3358,16 +3406,15 @@ const TeamsBrowserPanel = (function() {
 
         return `
             <div class="maps-grid">
-                ${mergedMaps.map((mapData, i) => _renderMapRow(mapData, i)).join('')}
+                ${mergedMaps.map(mapData => _renderMapCard(mapData)).join('')}
             </div>
         `;
     }
 
     /**
-     * Single alternating row: even = [mapshot | stats], odd = [stats | mapshot].
+     * Single map card with mapshot background and overlay stats.
      */
-    function _renderMapRow(mapData, index) {
-        const isEven = index % 2 === 0;
+    function _renderMapCard(mapData) {
         const mapshotUrl = `https://a.quake.world/mapshots/webp/lg/${mapData.map}.webp`;
         const teamA = _allTeams.find(t => t.id === _getH2HTeamAId());
         const teamB = _allTeams.find(t => t.id === _h2hOpponentId);
@@ -3376,54 +3423,48 @@ const TeamsBrowserPanel = (function() {
 
         const annotation = _getMapAnnotation(mapData.statsA, mapData.statsB, tagA, tagB);
 
-        const statsHtml = `
-            <div class="maps-stats-side">
-                <div class="maps-map-name">${mapData.map}</div>
-                ${mapData.statsA ? `
-                    <div class="maps-team-stat">
-                        <span class="maps-tag">${_escapeHtml(tagA)}</span>
-                        <span class="maps-record">${mapData.statsA.wins}-${mapData.statsA.losses}</span>
-                        <span class="maps-winrate">(${Math.round(mapData.statsA.winRate)}%)</span>
-                        <span class="maps-fragdiff ${mapData.statsA.avgFragDiff >= 0 ? 'positive' : 'negative'}">
-                            ${mapData.statsA.avgFragDiff >= 0 ? '+' : ''}${mapData.statsA.avgFragDiff.toFixed(1)}
-                        </span>
-                    </div>
-                ` : `
-                    <div class="maps-team-stat maps-no-data">
-                        <span class="maps-tag">${_escapeHtml(tagA)}</span>
-                        <span class="text-xs text-muted-foreground">No games</span>
-                    </div>
-                `}
-                ${mapData.statsB ? `
-                    <div class="maps-team-stat">
-                        <span class="maps-tag">${_escapeHtml(tagB)}</span>
-                        <span class="maps-record">${mapData.statsB.wins}-${mapData.statsB.losses}</span>
-                        <span class="maps-winrate">(${Math.round(mapData.statsB.winRate)}%)</span>
-                        <span class="maps-fragdiff ${mapData.statsB.avgFragDiff >= 0 ? 'positive' : 'negative'}">
-                            ${mapData.statsB.avgFragDiff >= 0 ? '+' : ''}${mapData.statsB.avgFragDiff.toFixed(1)}
-                        </span>
-                    </div>
-                ` : `
-                    <div class="maps-team-stat maps-no-data">
-                        <span class="maps-tag">${_escapeHtml(tagB)}</span>
-                        <span class="text-xs text-muted-foreground">No games</span>
-                    </div>
-                `}
-                ${annotation ? `<div class="maps-annotation">${annotation}</div>` : ''}
-            </div>
-        `;
-
-        const mapshotHtml = `
-            <div class="maps-mapshot-side">
-                <img src="${mapshotUrl}" alt="${mapData.map}" class="maps-mapshot-img"
-                     onerror="this.style.display='none'">
-            </div>
-        `;
-
-        // Alternate: even rows = [mapshot | stats], odd rows = [stats | mapshot]
         return `
-            <div class="maps-row ${isEven ? 'maps-row-even' : 'maps-row-odd'}">
-                ${isEven ? mapshotHtml + statsHtml : statsHtml + mapshotHtml}
+            <div class="maps-card" style="background-image: url('${mapshotUrl}');">
+                <div class="maps-card-overlay">
+                    <div class="maps-map-name">${mapData.map}</div>
+                    <div class="maps-card-stats">
+                        ${mapData.statsA ? `
+                            <div class="maps-team-stat">
+                                <span class="maps-tag">${_escapeHtml(tagA)}</span>
+                                <span class="maps-record">${mapData.statsA.wins}-${mapData.statsA.losses}</span>
+                                <span class="maps-winrate">(${Math.round(mapData.statsA.winRate)}%)</span>
+                                <span class="maps-fragdiff ${mapData.statsA.avgFragDiff >= 0 ? 'positive' : 'negative'}">
+                                    ${mapData.statsA.avgFragDiff >= 0 ? '+' : ''}${mapData.statsA.avgFragDiff.toFixed(1)}
+                                </span>
+                            </div>
+                        ` : `
+                            <div class="maps-team-stat maps-no-data">
+                                <span class="maps-tag">${_escapeHtml(tagA)}</span>
+                                <span class="maps-no-games">No games</span>
+                                <span></span>
+                                <span></span>
+                            </div>
+                        `}
+                        ${mapData.statsB ? `
+                            <div class="maps-team-stat">
+                                <span class="maps-tag">${_escapeHtml(tagB)}</span>
+                                <span class="maps-record">${mapData.statsB.wins}-${mapData.statsB.losses}</span>
+                                <span class="maps-winrate">(${Math.round(mapData.statsB.winRate)}%)</span>
+                                <span class="maps-fragdiff ${mapData.statsB.avgFragDiff >= 0 ? 'positive' : 'negative'}">
+                                    ${mapData.statsB.avgFragDiff >= 0 ? '+' : ''}${mapData.statsB.avgFragDiff.toFixed(1)}
+                                </span>
+                            </div>
+                        ` : `
+                            <div class="maps-team-stat maps-no-data">
+                                <span class="maps-tag">${_escapeHtml(tagB)}</span>
+                                <span class="maps-no-games">No games</span>
+                                <span></span>
+                                <span></span>
+                            </div>
+                        `}
+                    </div>
+                    ${annotation ? `<div class="maps-annotation">${annotation}</div>` : ''}
+                </div>
             </div>
         `;
     }

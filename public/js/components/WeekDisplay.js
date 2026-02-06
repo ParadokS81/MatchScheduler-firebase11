@@ -49,29 +49,68 @@ const WeekDisplay = (function() {
             // Generate unique grid container ID
             const gridContainerId = `availability-grid-week-${_weekNumber}`;
 
-            // Navigation arrows (only show if navigation enabled)
+            // Only show grid tools on top grid (the one with timezone selector)
+            const showGridTools = _showTimezoneSelector;
+
+            // Left tools group (cog + templates + display modes)
+            const leftToolsHtml = showGridTools ? `
+                <div class="grid-header-tools-left">
+                    <button class="grid-tool-btn grid-tool-cog" title="Grid settings">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </button>
+                    <button class="grid-tool-btn grid-tool-hover grid-tool-templates" title="Availability templates">
+                        Templates
+                    </button>
+                    <div class="grid-tool-hover display-mode-group">
+                        ${_buildDisplayModeButtons()}
+                    </div>
+                </div>
+            ` : '<div class="grid-header-tools-left"></div>';
+
+            // Navigation arrows
             const navHtml = _showNavigation ? `
-                <button class="nav-btn week-nav-prev" data-dir="prev" title="Previous week" ${!WeekNavigation.canNavigatePrev() ? 'disabled' : ''}>
+                <button class="nav-btn week-nav-prev grid-tool-hover" data-dir="prev" title="Previous week" ${!WeekNavigation.canNavigatePrev() ? 'disabled' : ''}>
                     <span>&#9664;</span>
                 </button>
             ` : '';
 
             const navNextHtml = _showNavigation ? `
-                <button class="nav-btn week-nav-next" data-dir="next" title="Next week" ${!WeekNavigation.canNavigateNext() ? 'disabled' : ''}>
+                <button class="nav-btn week-nav-next grid-tool-hover" data-dir="next" title="Next week" ${!WeekNavigation.canNavigateNext() ? 'disabled' : ''}>
                     <span>&#9654;</span>
                 </button>
             ` : '';
 
-            // Timezone selector (only on displays that opt in)
+            // Right tools group (timeslots + timezone)
+            const timeslotsHtml = showGridTools ? `
+                <button class="grid-tool-btn grid-tool-hover grid-tool-timeslots" title="Edit visible timeslots">
+                    Timeslots
+                </button>
+            ` : '';
+
             const tzSelectorHtml = _showTimezoneSelector ? _buildTzSelector() : '';
+
+            const rightToolsHtml = `
+                <div class="grid-header-tools-right">
+                    ${timeslotsHtml}
+                    ${tzSelectorHtml}
+                </div>
+            `;
 
             _panel.innerHTML = `
                 <div class="week-display">
                     <div class="week-header-nav">
-                        ${navHtml}
-                        <h3 class="week-header">${_weekLabel}</h3>
-                        ${navNextHtml}
-                        ${tzSelectorHtml}
+                        ${leftToolsHtml}
+                        <div class="week-nav-center">
+                            ${navHtml}
+                            <h3 class="week-header">${_weekLabel}</h3>
+                            ${navNextHtml}
+                        </div>
+                        ${rightToolsHtml}
                     </div>
                     <div id="${gridContainerId}" class="week-grid-container"></div>
                 </div>
@@ -84,6 +123,85 @@ const WeekDisplay = (function() {
             if (_showTimezoneSelector) {
                 _attachTzHandlers();
             }
+            if (showGridTools) {
+                _attachGridToolsHandlers();
+            }
+        }
+
+        function _buildDisplayModeButtons() {
+            const currentMode = typeof PlayerDisplayService !== 'undefined'
+                ? PlayerDisplayService.getDisplayMode()
+                : 'initials';
+
+            const modes = [
+                { id: 'initials', label: 'Plain initials', content: 'ABC' },
+                { id: 'coloredInitials', label: 'Colored initials', content: '<span class="text-rainbow">ABC</span>' },
+                { id: 'coloredDots', label: 'Colored dots', content: '<span class="inline-flex gap-0.5"><span class="w-1.5 h-1.5 rounded-full bg-red-400"></span><span class="w-1.5 h-1.5 rounded-full bg-green-400"></span><span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span></span>' },
+                { id: 'avatars', label: 'Avatars', content: '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>' }
+            ];
+
+            return modes.map(m => `
+                <button class="display-mode-btn ${currentMode === m.id ? 'active' : ''}"
+                        data-mode="${m.id}"
+                        title="${m.label}">
+                    ${m.content}
+                </button>
+            `).join('');
+        }
+
+        function _attachGridToolsHandlers() {
+            // Templates button → open modal (or placeholder for 13.0c)
+            const templatesBtn = _panel?.querySelector('.grid-tool-templates');
+            if (templatesBtn) {
+                templatesBtn.addEventListener('click', () => {
+                    if (typeof TemplatesModal !== 'undefined') {
+                        TemplatesModal.show();
+                    } else {
+                        console.log('Templates modal coming in slice 13.0c');
+                        if (typeof ToastService !== 'undefined') {
+                            ToastService.showInfo('Templates feature coming soon!');
+                        }
+                    }
+                });
+            }
+
+            // Display mode buttons
+            const displayBtns = _panel?.querySelectorAll('.display-mode-btn');
+            displayBtns?.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const mode = btn.dataset.mode;
+                    if (mode && typeof PlayerDisplayService !== 'undefined') {
+                        PlayerDisplayService.setDisplayMode(mode);
+                        // Update button states
+                        displayBtns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+                    }
+                });
+            });
+
+            // Timeslots button → open modal
+            const timeslotsBtn = _panel?.querySelector('.grid-tool-timeslots');
+            if (timeslotsBtn) {
+                timeslotsBtn.addEventListener('click', () => {
+                    if (typeof GridActionButtons !== 'undefined') {
+                        // Use the existing timeslots modal from GridActionButtons
+                        // Trigger it via a custom event
+                        window.dispatchEvent(new CustomEvent('open-timeslots-modal'));
+                    }
+                });
+            }
+
+            // Listen for display mode changes from elsewhere
+            window.addEventListener('display-mode-changed', _handleDisplayModeChange);
+        }
+
+        function _handleDisplayModeChange() {
+            const currentMode = typeof PlayerDisplayService !== 'undefined'
+                ? PlayerDisplayService.getDisplayMode()
+                : 'initials';
+            const displayBtns = _panel?.querySelectorAll('.display-mode-btn');
+            displayBtns?.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === currentMode);
+            });
         }
 
         function _buildTzSelector() {
@@ -103,7 +221,7 @@ const WeekDisplay = (function() {
             }
 
             return `
-                <div class="tz-selector">
+                <div class="tz-selector grid-tool-hover">
                     <button class="tz-selector-btn" type="button" title="Change timezone">
                         <span class="tz-abbr">${abbr}</span>
                         <span class="tz-chevron">&#9660;</span>
@@ -121,10 +239,12 @@ const WeekDisplay = (function() {
             if (!selectorBtn || !dropdown) return;
 
             // Toggle dropdown
+            const tzSelector = _panel?.querySelector('.tz-selector');
             selectorBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const isOpen = dropdown.classList.toggle('open');
                 selectorBtn.classList.toggle('open', isOpen);
+                tzSelector?.classList.toggle('open', isOpen);
             });
 
             // Handle timezone selection
@@ -138,6 +258,7 @@ const WeekDisplay = (function() {
                 _selectTimezone(tzId);
                 dropdown.classList.remove('open');
                 selectorBtn.classList.remove('open');
+                tzSelector?.classList.remove('open');
             });
 
             // Close dropdown when clicking outside
@@ -170,6 +291,7 @@ const WeekDisplay = (function() {
                 const btn = _panel?.querySelector('.tz-selector-btn');
                 if (dropdown) dropdown.classList.remove('open');
                 if (btn) btn.classList.remove('open');
+                selector.classList.remove('open');
             }
         }
 
@@ -491,6 +613,7 @@ const WeekDisplay = (function() {
         function cleanup() {
             document.removeEventListener('click', _handleOutsideClick);
             window.removeEventListener('timezone-changed', _handleExternalTzChange);
+            window.removeEventListener('display-mode-changed', _handleDisplayModeChange);
             if (_grid) {
                 _grid.cleanup();
                 _grid = null;
