@@ -5,11 +5,10 @@ const { getAuth } = require('firebase-admin/auth');
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
 /**
- * Get Discord credentials from environment variables or .runtimeconfig.json
- * Environment variables take precedence for v2 functions
+ * Get Discord credentials from environment variables
+ * Uses .env file (deployed with functions) or .env.emulator (local dev)
  */
 function getDiscordCredentials() {
-    // Environment variables (v2 functions + emulator via .env or .secret.local files)
     const clientId = process.env.DISCORD_CLIENT_ID;
     const clientSecret = process.env.DISCORD_CLIENT_SECRET;
     return { clientId, clientSecret };

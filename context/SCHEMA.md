@@ -325,17 +325,19 @@ interface MatchProposalDocument {
   };
 
   // Confirmations — which slots each side has confirmed
-  // Key = UTC slotId (e.g., "mon_2000"), Value = { userId, countAtConfirm }
+  // Key = UTC slotId (e.g., "mon_2000"), Value = { userId, countAtConfirm, gameType }
   proposerConfirmedSlots: {
     [slotId: string]: {
       userId: string;              // Who confirmed
       countAtConfirm: number;      // Players available when confirmed
+      gameType: 'official' | 'practice';  // Game type selected by confirmer
     };
   };
   opponentConfirmedSlots: {
     [slotId: string]: {
       userId: string;
       countAtConfirm: number;
+      gameType: 'official' | 'practice';
     };
   };
 
@@ -406,6 +408,10 @@ interface ScheduledMatchDocument {
   // Status
   status: 'upcoming' | 'completed' | 'cancelled';
 
+  // Game type (official vs practice)
+  gameType: 'official' | 'practice';  // Set by confirmer, required
+  gameTypeSetBy: string;              // userId who set the game type (last confirmer)
+
   // Metadata
   confirmedAt: Date;
   confirmedByA: string;            // userId from team A who confirmed
@@ -418,7 +424,8 @@ interface ScheduledMatchDocument {
 - `blockedTeams` array-contains enables querying blocked slots per team
 - `scheduledDate` computed from weekId + slotId for display
 - Roster snapshots preserve who was available at confirmation time
-- All matches are publicly readable (community feed)
+- `gameType` is required - user must explicitly choose 'official' or 'practice' when confirming
+- All matches are publicly readable (community feed + public API for QWHub)
 - Document ID: auto-generated
 
 ---

@@ -73,10 +73,11 @@ const ProposalService = (function() {
      * Confirm a slot on a proposal
      * @param {string} proposalId
      * @param {string} slotId - UTC slot ID
+     * @param {string} gameType - 'official' or 'practice' (required)
      * @returns {Object} { success: boolean, matched?: boolean, scheduledMatchId?: string }
      */
-    async function confirmSlot(proposalId, slotId) {
-        return TeamService.callFunction('confirmSlot', { proposalId, slotId });
+    async function confirmSlot(proposalId, slotId, gameType) {
+        return TeamService.callFunction('confirmSlot', { proposalId, slotId, gameType });
     }
 
     /**

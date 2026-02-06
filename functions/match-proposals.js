@@ -290,13 +290,18 @@ exports.confirmSlot = functions
         }
 
         const userId = context.auth.uid;
-        const { proposalId, slotId } = data;
+        const { proposalId, slotId, gameType } = data;
 
         if (!proposalId || typeof proposalId !== 'string') {
             throw new functions.https.HttpsError('invalid-argument', 'proposalId is required');
         }
         if (!slotId || !isValidSlotId(slotId)) {
             throw new functions.https.HttpsError('invalid-argument', 'Invalid slotId format');
+        }
+        // Game type is required - user must explicitly choose official or practice
+        const validGameTypes = ['official', 'practice'];
+        if (!gameType || !validGameTypes.includes(gameType)) {
+            throw new functions.https.HttpsError('invalid-argument', 'gameType must be "official" or "practice"');
         }
 
         const result = await db.runTransaction(async (transaction) => {
@@ -376,7 +381,7 @@ exports.confirmSlot = functions
             const now = new Date();
 
             transaction.update(proposalRef, {
-                [`${confirmField}.${slotId}`]: { userId, countAtConfirm },
+                [`${confirmField}.${slotId}`]: { userId, countAtConfirm, gameType },
                 updatedAt: now
             });
 
@@ -415,7 +420,10 @@ exports.confirmSlot = functions
                     confirmedAt: now,
                     confirmedByA,
                     confirmedByB,
-                    createdAt: now
+                    createdAt: now,
+                    // Game type: use current confirmer's choice (they are the "last" one)
+                    gameType,
+                    gameTypeSetBy: userId
                 });
 
                 // Update proposal to confirmed

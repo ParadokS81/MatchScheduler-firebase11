@@ -24,7 +24,10 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    
+
+    <!-- Version (loaded early for indicator) -->
+    <script src="js/version.js"></script>
+
     <!-- Production console guard: suppress debug output in production -->
     <script>
         (function() {
@@ -288,6 +291,11 @@
             <span onclick="event.stopPropagation();this.parentElement.parentElement.classList.add('hidden')"
                   class="ml-2 opacity-70 hover:opacity-100 cursor-pointer">✕</span>
         </button>
+    </div>
+
+    <!-- Version Indicator (tiny, bottom-left corner) -->
+    <div id="version-indicator" class="fixed bottom-1 left-1 text-[0.6rem] text-muted-foreground/50 font-mono pointer-events-none z-10 select-none">
+        <script>document.write('v' + (window.APP_VERSION || '?'));</script>
     </div>
 
     <!-- Loading Overlay -->

@@ -4,6 +4,33 @@
 This file reinforces critical patterns that are commonly violated during implementation.
 For complete architecture specifications, refer to the Pillar documents.
 
+---
+
+## WSL Development Environment
+
+**Setup:** Windows VSCode + Claude Code extension, with WSL Ubuntu project folder.
+
+### Command Execution Rules
+Use `wsl bash -ic` (interactive) for npm scripts so nvm loads properly:
+
+**✅ Simple commands work directly:**
+```bash
+git status              # Works
+bash scripts/foo.sh     # Works
+cat / ls / grep         # Works
+```
+
+**🔧 For npm scripts, use interactive bash (`-ic` flag is critical):**
+```bash
+wsl bash -ic "cd /home/paradoks/projects/MatchScheduler && npm run deploy"
+wsl bash -ic "cd /home/paradoks/projects/MatchScheduler && npm run build"
+wsl bash -ic "cd /home/paradoks/projects/MatchScheduler && npm start"
+```
+
+The `-ic` flag runs bash in interactive mode, which loads `.bashrc` and nvm.
+
+---
+
 ## Essential References
 - **Architecture Map**: `context/ARCHITECTURE-MAP.md` - File map, module guide, subsystem overview (READ FIRST for orientation)
 - **Data Schema**: `context/SCHEMA.md` - Firestore document structures (ALWAYS check before writing backend code)

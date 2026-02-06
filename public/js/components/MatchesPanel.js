@@ -58,6 +58,7 @@ const MatchesPanel = (function() {
 
         // Attach event listeners ONCE (event delegation handles dynamic content)
         _container.addEventListener('click', _handleClick);
+        _container.addEventListener('change', _handleGameTypeChange);
         _container.addEventListener('pointerenter', _handleMatchRowEnter, true);
         _container.addEventListener('pointerleave', _handleMatchRowLeave, true);
 
@@ -424,10 +425,19 @@ const MatchesPanel = (function() {
                                 Withdraw
                             </button>
                         ` : `
-                            <button class="proposal-confirm-btn text-xs px-2 py-0.5 rounded bg-primary hover:bg-primary/80 text-primary-foreground"
-                                    data-action="confirm" data-proposal-id="${_expandedProposalId}" data-slot="${slot.slotId}">
-                                Confirm
-                            </button>
+                            <div class="flex items-center gap-1">
+                                <select class="game-type-select text-xs bg-muted border border-border rounded px-1.5 py-0.5 text-foreground"
+                                        data-slot="${slot.slotId}">
+                                    <option value="" selected disabled>Type...</option>
+                                    <option value="official">Official</option>
+                                    <option value="practice">Practice</option>
+                                </select>
+                                <button class="proposal-confirm-btn text-xs px-2 py-0.5 rounded bg-primary/50 text-primary-foreground cursor-not-allowed"
+                                        data-action="confirm" data-proposal-id="${_expandedProposalId}" data-slot="${slot.slotId}"
+                                        disabled>
+                                    Confirm
+                                </button>
+                            </div>
                         `}
                     ` : ''}
                 </div>
@@ -491,6 +501,12 @@ const MatchesPanel = (function() {
         // Division from either team
         const div = teamA?.divisions?.[0] || teamB?.divisions?.[0] || '';
 
+        // Game type badge
+        const gameType = match.gameType || 'official';
+        const gameTypeBadge = gameType === 'practice'
+            ? '<span class="text-xs text-amber-400/80 font-medium">PRAC</span>'
+            : '<span class="text-xs text-green-400/80 font-medium">OFF</span>';
+
         const canCancel = _canUserCancelMatch(match);
 
         return `
@@ -505,6 +521,7 @@ const MatchesPanel = (function() {
                     ${logoB ? `<img src="${logoB}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
                 </div>
                 <div class="flex items-center justify-center gap-2">
+                    ${gameTypeBadge}
                     <span class="text-xs text-muted-foreground">${dateDisplay} ${dayAbbr} ${timeOnly}${div ? ` (${div})` : ''}</span>
                     ${canCancel ? `
                         <button class="text-xs text-red-400/60 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -580,6 +597,33 @@ const MatchesPanel = (function() {
     }
 
     // ─── Event Handlers ────────────────────────────────────────────────
+
+    /**
+     * Handle game type dropdown change - enable/disable Confirm button
+     */
+    function _handleGameTypeChange(e) {
+        const select = e.target.closest('.game-type-select');
+        if (!select) return;
+
+        const slotId = select.dataset.slot;
+        const row = select.closest('[data-slot-id]');
+        if (!row) return;
+
+        const confirmBtn = row.querySelector('.proposal-confirm-btn');
+        if (!confirmBtn) return;
+
+        if (select.value) {
+            // Valid selection - enable button
+            confirmBtn.disabled = false;
+            confirmBtn.classList.remove('bg-primary/50', 'cursor-not-allowed');
+            confirmBtn.classList.add('bg-primary', 'hover:bg-primary/80');
+        } else {
+            // No selection - disable button
+            confirmBtn.disabled = true;
+            confirmBtn.classList.add('bg-primary/50', 'cursor-not-allowed');
+            confirmBtn.classList.remove('bg-primary', 'hover:bg-primary/80');
+        }
+    }
 
     /**
      * Central click handler using event delegation
@@ -691,11 +735,21 @@ const MatchesPanel = (function() {
      * Confirm a slot
      */
     async function _handleConfirmSlot(proposalId, slotId, btn) {
+        // Get game type from sibling select
+        const row = btn.closest('[data-slot-id]');
+        const gameTypeSelect = row?.querySelector('.game-type-select');
+        const gameType = gameTypeSelect?.value;
+
+        if (!gameType) {
+            ToastService.showError('Please select Official or Practice');
+            return;
+        }
+
         btn.disabled = true;
         btn.textContent = '...';
 
         try {
-            const result = await ProposalService.confirmSlot(proposalId, slotId);
+            const result = await ProposalService.confirmSlot(proposalId, slotId, gameType);
 
             if (result.success) {
                 if (result.matched && result.matchDetails) {
@@ -1056,6 +1110,7 @@ const MatchesPanel = (function() {
         // Remove event listeners
         if (_container) {
             _container.removeEventListener('click', _handleClick);
+            _container.removeEventListener('change', _handleGameTypeChange);
             _container.removeEventListener('pointerenter', _handleMatchRowEnter, true);
             _container.removeEventListener('pointerleave', _handleMatchRowLeave, true);
         }

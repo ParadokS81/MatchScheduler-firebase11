@@ -330,11 +330,16 @@ const TeamBrowser = (function() {
             }
         });
 
-        // Attach click handlers to player results (selects their team)
+        // Attach click handlers to player results (navigates to their team)
         listContainer.querySelectorAll('.player-result').forEach(item => {
             item.addEventListener('click', () => {
                 const teamId = item.dataset.teamId;
                 TeamBrowserState.selectTeam(teamId);
+
+                // Navigate to team details (same as clicking a team card)
+                window.dispatchEvent(new CustomEvent('team-browser-detail-select', {
+                    detail: { teamId }
+                }));
             });
 
             // Hover handlers for team roster tooltip (desktop only)
@@ -371,6 +376,7 @@ const TeamBrowser = (function() {
 
     let _teamTooltip = null;
     let _tooltipHideTimeout = null;
+    let _tooltipSourceElement = null; // Track which element triggered the tooltip
 
     function _createTeamTooltip() {
         if (_teamTooltip) return;
@@ -381,7 +387,7 @@ const TeamBrowser = (function() {
         _teamTooltip.style.display = 'none';
         document.body.appendChild(_teamTooltip);
 
-        // Keep tooltip visible when hovering over it
+        // Keep tooltip visible when hovering over it (only if source is still valid)
         _teamTooltip.addEventListener('mouseenter', () => {
             if (_tooltipHideTimeout) {
                 clearTimeout(_tooltipHideTimeout);
@@ -396,6 +402,12 @@ const TeamBrowser = (function() {
 
     function _showTeamTooltip(card, team) {
         _createTeamTooltip();
+
+        // If switching to a different element, hide immediately first
+        if (_tooltipSourceElement && _tooltipSourceElement !== card) {
+            _teamTooltip.style.display = 'none';
+        }
+        _tooltipSourceElement = card;
 
         if (_tooltipHideTimeout) {
             clearTimeout(_tooltipHideTimeout);
@@ -424,11 +436,28 @@ const TeamBrowser = (function() {
         }).join('');
 
         _teamTooltip.innerHTML = `
-            <div class="tooltip-header">${team.teamName} - ${roster.length} players</div>
+            <div class="tooltip-header">
+                <a href="#" class="tooltip-team-link" data-team-id="${team.id}">${team.teamName}</a>
+                <span class="tooltip-player-count">- ${roster.length} players</span>
+            </div>
             <div class="tooltip-list">
                 ${rosterHtml}
             </div>
         `;
+
+        // Make team name clickable to navigate to team details
+        const teamLink = _teamTooltip.querySelector('.tooltip-team-link');
+        if (teamLink) {
+            teamLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                const teamId = teamLink.dataset.teamId;
+                _hideTeamTooltipImmediate();
+                TeamBrowserState.selectTeam(teamId);
+                window.dispatchEvent(new CustomEvent('team-browser-detail-select', {
+                    detail: { teamId }
+                }));
+            });
+        }
 
         // Position tooltip near card (to the left since browser is on the right)
         const cardRect = card.getBoundingClientRect();
@@ -465,7 +494,13 @@ const TeamBrowser = (function() {
     function _hideTeamTooltip() {
         _tooltipHideTimeout = setTimeout(() => {
             if (_teamTooltip) {
-                _teamTooltip.style.display = 'none';
+                // Verify mouse isn't still over source element or tooltip
+                const isOverSource = _tooltipSourceElement?.matches(':hover');
+                const isOverTooltip = _teamTooltip.matches(':hover');
+                if (!isOverSource && !isOverTooltip) {
+                    _teamTooltip.style.display = 'none';
+                    _tooltipSourceElement = null;
+                }
             }
         }, 150); // Small delay to allow moving to tooltip
     }
@@ -478,6 +513,7 @@ const TeamBrowser = (function() {
         if (_teamTooltip) {
             _teamTooltip.style.display = 'none';
         }
+        _tooltipSourceElement = null;
     }
 
     function _renderTeamCard(team) {
@@ -602,6 +638,7 @@ const TeamBrowser = (function() {
             _teamTooltip.remove();
             _teamTooltip = null;
         }
+        _tooltipSourceElement = null;
         // Remove favorites listener
         window.removeEventListener('favorites-updated', _renderTeamList);
         TeamBrowserState.reset();

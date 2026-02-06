@@ -14,6 +14,7 @@ firebase-debug.*.log
 # Build outputs
 /public/css/main.css
 /public/js/bundle.js
+/public/js/version.js
 
 # IDE
 .vscode/

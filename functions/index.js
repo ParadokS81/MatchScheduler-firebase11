@@ -14,6 +14,7 @@ const { updateAvailability } = require('./availability');
 const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 const { updateFavorites } = require('./favorites');
 const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler } = require('./match-proposals');
+const { getScheduledGames } = require('./scheduled-games-api');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
@@ -52,6 +53,9 @@ exports.withdrawConfirmation = withdrawConfirmation;
 exports.cancelProposal = cancelProposal;
 exports.cancelScheduledMatch = cancelScheduledMatch;
 exports.toggleScheduler = toggleScheduler;
+
+// Public API (unauthenticated)
+exports.getScheduledGames = getScheduledGames;
 
 // Simple test function
 exports.helloWorld = functions.region('europe-west3').https.onRequest((request, response) => {

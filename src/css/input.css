@@ -1051,8 +1051,21 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.tooltip-team-link {
+  color: var(--foreground);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
 .tooltip-team-link:hover {
   color: var(--primary);
+  text-decoration: underline;
+}
+
+.tooltip-player-count {
+  color: var(--muted-foreground);
+  font-weight: 400;
 }
 
 .tooltip-list {
