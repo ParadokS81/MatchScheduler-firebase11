@@ -12,6 +12,7 @@ const MatchesPanel = (function() {
     let _userTeamIds = [];
     let _initialized = false;
     let _archivedExpanded = false;
+    let _selectedGameTypes = {}; // proposalId → 'official' | 'practice' | null
     let _rosterTooltip = null;
     let _rosterTooltipHideTimeout = null;
 
@@ -387,6 +388,17 @@ const MatchesPanel = (function() {
         const status = type === 'active' ? _getProposalStatus(proposal, isProposerSide) : { text: '', cls: '' };
         const weekNum = proposal.weekId?.split('-')[1] || '?';
 
+        // Card-level game type toggle state
+        const selectedType = _selectedGameTypes[proposal.id] || null;
+        // Detect opponent's confirmed game type as a hint
+        const theirConfirmedSlots = isProposerSide
+            ? (proposal.opponentConfirmedSlots || {})
+            : (proposal.proposerConfirmedSlots || {});
+        let hintType = null;
+        for (const slotData of Object.values(theirConfirmedSlots)) {
+            if (slotData.gameType) { hintType = slotData.gameType; break; }
+        }
+
         const expandedContent = isExpanded && type === 'active'
             ? _renderExpandedProposal(proposal)
             : '';
@@ -414,11 +426,26 @@ const MatchesPanel = (function() {
                         ${type === 'active' ? `<span class="text-muted-foreground text-xs">${isExpanded ? '▲' : '▼'}</span>` : ''}
                     </div>
                 </div>
-                <!-- Row 2: Min filter + Week + Status -->
+                <!-- Row 2: Min filter + Week + Game Type + Status -->
                 <div class="flex items-center gap-1.5 px-2.5 pb-2 text-xs">
                     <span class="text-muted-foreground">Min ${proposal.minFilter?.yourTeam || 1}v${proposal.minFilter?.opponent || 1}</span>
                     <span class="text-muted-foreground/50">·</span>
                     <span class="text-muted-foreground">W${weekNum}</span>
+                    ${canAct && type === 'active' ? `
+                        <span class="text-muted-foreground/50">·</span>
+                        <button class="game-type-btn px-1.5 py-0.5 rounded border transition-colors
+                                ${selectedType === 'official' ? 'border-green-500 text-green-400 bg-green-500/10' : hintType === 'official' ? 'border-green-500/50 text-green-400/60' : 'border-border text-muted-foreground'}
+                                hover:text-green-400 hover:border-green-500/50"
+                                data-action="card-game-type" data-proposal-id="${proposal.id}" data-type="official">
+                            OFF
+                        </button>
+                        <button class="game-type-btn px-1.5 py-0.5 rounded border transition-colors
+                                ${selectedType === 'practice' ? 'border-amber-500 text-amber-400 bg-amber-500/10' : hintType === 'practice' ? 'border-amber-500/50 text-amber-400/60' : 'border-border text-muted-foreground'}
+                                hover:text-amber-400 hover:border-amber-500/50"
+                                data-action="card-game-type" data-proposal-id="${proposal.id}" data-type="practice">
+                            PRAC
+                        </button>
+                    ` : ''}
                     ${status.text ? `
                         <span class="text-muted-foreground/50">·</span>
                         <span class="${status.cls}">${status.text}</span>
@@ -455,6 +482,11 @@ const MatchesPanel = (function() {
         // Filter out past slots from display
         const visibleSlots = viableSlots.filter(slot => !_isSlotPast(proposal.weekId, slot.slotId, now));
 
+        // Card-level game type selection for Confirm buttons
+        const cardGameType = _selectedGameTypes[proposal.id] || null;
+        const hasGameType = !!cardGameType;
+        const gameTypeLabel = cardGameType === 'practice' ? 'Practice' : 'Official';
+
         const slotsHtml = visibleSlots.map(slot => {
             const myConfirm = myConfirmedSlots[slot.slotId];
             const theirConfirm = theirConfirmedSlots[slot.slotId];
@@ -467,21 +499,34 @@ const MatchesPanel = (function() {
             const droppedWarning = iConfirmed && myConfirm.countAtConfirm && myCount < myConfirm.countAtConfirm;
 
             const display = TimezoneService.formatSlotForDisplay(slot.slotId);
-            const statusIcon = bothConfirmed ? '✓✓' : (theyConfirmed ? '✓ them' : (iConfirmed ? '✓ you' : ''));
+
+            // Build status text with game type labels
+            const myTypeLabel = iConfirmed && myConfirm.gameType
+                ? (myConfirm.gameType === 'practice' ? 'PRAC' : 'OFF') : '';
+            const theirTypeLabel = theyConfirmed && theirConfirm.gameType
+                ? (theirConfirm.gameType === 'practice' ? 'PRAC' : 'OFF') : '';
+
+            let statusIcon = '';
+            if (bothConfirmed) {
+                statusIcon = `✓✓ ${myTypeLabel}`;
+            } else if (theyConfirmed) {
+                statusIcon = `✓ them${theirTypeLabel ? ` (${theirTypeLabel})` : ''}`;
+            } else if (iConfirmed) {
+                statusIcon = '✓ you';
+            }
 
             let rowClasses = 'slot-row py-1.5 px-2 rounded text-sm';
             if (bothConfirmed) rowClasses += ' bg-green-500/10 border border-green-500/30';
             else if (droppedWarning) rowClasses += ' bg-amber-500/10 border border-amber-500/30';
 
-            // Game type confirmed label (for already-confirmed slots)
-            const confirmedType = iConfirmed && myConfirm.gameType
-                ? (myConfirm.gameType === 'practice' ? 'PRAC' : 'OFF')
-                : '';
-
             return `
-                <div class="${rowClasses}" data-slot-id="${slot.slotId}">
-                    <span class="slot-col-time font-medium">${display.dayLabel.slice(0, 3)} ${display.timeLabel}</span>
-                    <span class="slot-col-count text-xs text-muted-foreground">${slot.proposerCount}v${slot.opponentCount}</span>
+                <div class="${rowClasses}"
+                     data-slot-id="${slot.slotId}"
+                     data-team-a="${proposal.proposerTeamId}" data-team-b="${proposal.opponentTeamId}"
+                     data-week-id="${proposal.weekId}">
+                    <span class="slot-col-day font-medium">${display.dayLabel}</span>
+                    <span class="slot-col-time font-medium">${display.timeLabel}</span>
+                    <span class="slot-col-count text-xs text-muted-foreground cursor-help">${slot.proposerCount}v${slot.opponentCount}</span>
                     <span class="slot-col-status text-xs">
                         ${droppedWarning ? '<span class="text-amber-400" title="Player count dropped since confirmed">⚠</span>' : ''}
                         ${statusIcon ? `<span class="${bothConfirmed ? 'text-green-400' : 'text-muted-foreground'}">${statusIcon}</span>` : ''}
@@ -489,23 +534,19 @@ const MatchesPanel = (function() {
                     <div class="slot-col-actions flex items-center gap-1 justify-end">
                         ${canAct ? `
                             ${iConfirmed ? `
-                                ${confirmedType ? `<span class="text-xs text-muted-foreground">${confirmedType}</span>` : ''}
+                                ${myTypeLabel ? `<span class="text-xs text-muted-foreground">${myTypeLabel}</span>` : ''}
                                 <button class="proposal-withdraw-btn text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground"
                                         data-action="withdraw" data-proposal-id="${_expandedProposalId}" data-slot="${slot.slotId}">
                                     Withdraw
                                 </button>
                             ` : `
-                                <button class="game-type-btn text-xs px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-green-400 hover:border-green-500/50 transition-colors"
-                                        data-action="select-game-type" data-type="official" data-slot="${slot.slotId}">
-                                    OFF
-                                </button>
-                                <button class="game-type-btn text-xs px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-amber-400 hover:border-amber-500/50 transition-colors"
-                                        data-action="select-game-type" data-type="practice" data-slot="${slot.slotId}">
-                                    PRAC
-                                </button>
-                                <button class="proposal-confirm-btn text-xs px-2 py-0.5 rounded border border-border text-muted-foreground/40 cursor-not-allowed"
+                                <button class="proposal-confirm-btn text-xs px-2 py-0.5 rounded border transition-colors
+                                        ${hasGameType
+                                            ? 'bg-primary text-primary-foreground hover:bg-primary/80 border-primary'
+                                            : 'border-border text-muted-foreground/40 cursor-not-allowed'}"
                                         data-action="confirm" data-proposal-id="${_expandedProposalId}" data-slot="${slot.slotId}"
-                                        disabled title="Select OFF or PRAC first">
+                                        ${hasGameType ? '' : 'disabled'}
+                                        title="${hasGameType ? `Confirm as ${gameTypeLabel}` : 'Select OFF or PRAC above'}">
                                     Confirm
                                 </button>
                             `}
@@ -667,36 +708,21 @@ const MatchesPanel = (function() {
     // ─── Event Handlers ────────────────────────────────────────────────
 
     /**
-     * Handle game type toggle button click — highlight selected, enable Confirm
+     * Handle card-level game type toggle — stores selection and re-renders
      */
-    function _handleSelectGameType(target) {
-        const row = target.closest('[data-slot-id]');
-        if (!row) return;
-
+    function _handleCardGameType(target) {
+        const proposalId = target.dataset.proposalId;
         const gameType = target.dataset.type; // 'official' or 'practice'
+        if (!proposalId) return;
 
-        // Deselect all type buttons in this row, select clicked one
-        row.querySelectorAll('.game-type-btn').forEach(btn => {
-            btn.classList.remove('border-green-500', 'text-green-400', 'border-amber-500', 'text-amber-400', 'bg-green-500/10', 'bg-amber-500/10');
-            btn.classList.add('border-border', 'text-muted-foreground');
-        });
-        if (gameType === 'official') {
-            target.classList.remove('border-border', 'text-muted-foreground');
-            target.classList.add('border-green-500', 'text-green-400', 'bg-green-500/10');
+        // Toggle: clicking the already-selected type deselects it
+        if (_selectedGameTypes[proposalId] === gameType) {
+            delete _selectedGameTypes[proposalId];
         } else {
-            target.classList.remove('border-border', 'text-muted-foreground');
-            target.classList.add('border-amber-500', 'text-amber-400', 'bg-amber-500/10');
+            _selectedGameTypes[proposalId] = gameType;
         }
 
-        // Enable Confirm button and store game type on it
-        const confirmBtn = row.querySelector('.proposal-confirm-btn');
-        if (confirmBtn) {
-            confirmBtn.disabled = false;
-            confirmBtn.dataset.gameType = gameType;
-            confirmBtn.title = `Confirm as ${gameType === 'practice' ? 'Practice' : 'Official'}`;
-            confirmBtn.classList.remove('text-muted-foreground/40', 'cursor-not-allowed', 'border-border');
-            confirmBtn.classList.add('bg-primary', 'text-primary-foreground', 'hover:bg-primary/80', 'border-primary');
-        }
+        _renderAll();
     }
 
     /**
@@ -715,8 +741,8 @@ const MatchesPanel = (function() {
                 e.stopPropagation();
                 await _handleDiscordContact(proposalId);
                 return; // Don't let toggle-expand fire
-            case 'select-game-type':
-                _handleSelectGameType(target);
+            case 'card-game-type':
+                _handleCardGameType(target);
                 return;
             case 'toggle-expand':
                 await _handleToggleExpand(proposalId);
@@ -816,8 +842,8 @@ const MatchesPanel = (function() {
      * Confirm a slot
      */
     async function _handleConfirmSlot(proposalId, slotId, btn) {
-        // Get game type from the confirm button's data attribute (set by toggle selection)
-        const gameType = btn.dataset.gameType;
+        // Get game type from card-level toggle
+        const gameType = _selectedGameTypes[proposalId];
 
         if (!gameType) {
             ToastService.showError('Select OFF or PRAC first');
@@ -1147,24 +1173,29 @@ const MatchesPanel = (function() {
     // ─── Roster Tooltip ────────────────────────────────────────────────
 
     function _handleMatchRowEnter(e) {
+        // Trigger on scheduled match rows OR slot count badges in proposal cards
         const row = e.target.closest('.upcoming-match-row');
-        if (!row) return;
+        const slotCount = e.target.closest('.slot-col-count');
+        const target = row || (slotCount ? slotCount.closest('.slot-row') : null);
+        if (!target) return;
         if (_rosterTooltipHideTimeout) {
             clearTimeout(_rosterTooltipHideTimeout);
             _rosterTooltipHideTimeout = null;
         }
-        _showRosterTooltip(row);
+        _showRosterTooltip(target, slotCount || row);
     }
 
     function _handleMatchRowLeave(e) {
         const row = e.target.closest('.upcoming-match-row');
-        if (!row) return;
+        const slotCount = e.target.closest('.slot-col-count');
+        if (!row && !slotCount) return;
         _rosterTooltipHideTimeout = setTimeout(() => {
             if (_rosterTooltip) _rosterTooltip.style.display = 'none';
         }, 150);
     }
 
-    async function _showRosterTooltip(row) {
+    async function _showRosterTooltip(row, positionEl) {
+        const anchorEl = positionEl || row;
         const teamAId = row.dataset.teamA;
         const teamBId = row.dataset.teamB;
         const weekId = row.dataset.weekId;
@@ -1244,6 +1275,9 @@ const MatchesPanel = (function() {
                     </div>
                 </div>
             </div>
+            <div class="match-tooltip-footer">
+                <a href="#/teams/${teamAId}/h2h/${teamBId}" class="match-tooltip-h2h-link">View Head-to-Head</a>
+            </div>
         `;
 
         // Create or reuse tooltip element
@@ -1251,12 +1285,25 @@ const MatchesPanel = (function() {
             _rosterTooltip = document.createElement('div');
             _rosterTooltip.className = 'match-tooltip';
             document.body.appendChild(_rosterTooltip);
+
+            // Keep tooltip visible when hovering over it (so links are clickable)
+            _rosterTooltip.addEventListener('mouseenter', () => {
+                if (_rosterTooltipHideTimeout) {
+                    clearTimeout(_rosterTooltipHideTimeout);
+                    _rosterTooltipHideTimeout = null;
+                }
+            });
+            _rosterTooltip.addEventListener('mouseleave', () => {
+                _rosterTooltipHideTimeout = setTimeout(() => {
+                    if (_rosterTooltip) _rosterTooltip.style.display = 'none';
+                }, 150);
+            });
         }
 
         _rosterTooltip.innerHTML = html;
 
-        // Position tooltip near the row
-        const rowRect = row.getBoundingClientRect();
+        // Position tooltip near the anchor element (count badge or match row)
+        const rowRect = anchorEl.getBoundingClientRect();
         _rosterTooltip.style.visibility = 'hidden';
         _rosterTooltip.style.display = 'block';
         const ttRect = _rosterTooltip.getBoundingClientRect();
@@ -1314,6 +1361,7 @@ const MatchesPanel = (function() {
         _userTeamIds = [];
         _expandedProposalId = null;
         _archivedExpanded = false;
+        _selectedGameTypes = {};
         _initialized = false;
 
         console.log('🧹 MatchesPanel cleaned up');

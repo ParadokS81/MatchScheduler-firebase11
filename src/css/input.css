@@ -102,6 +102,30 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Global dark-themed scrollbar - applies to all scrollable elements */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-foreground);
+}
+
 /* Application Container */
 .app-container {
   display: flex;
@@ -1464,9 +1488,18 @@ body {
   vertical-align: middle;
 }
 
-/* Star Button */
+/* Star Button - hidden by default, visible on card hover or when starred */
 .star-btn {
   flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.team-card:hover .star-btn,
+.star-btn.starred {
+  opacity: 1;
 }
 
 .star-btn.starred svg {
@@ -1603,6 +1636,27 @@ body {
 
 .match-tooltip-grid .opponents-column {
   /* Opponents column - can have multiple teams stacked */
+}
+
+/* Footer with H2H link */
+.match-tooltip-footer {
+  margin-top: 0.5rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.match-tooltip-h2h-link {
+  color: var(--primary);
+  font-size: 0.6875rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.match-tooltip-h2h-link:hover {
+  opacity: 0.8;
+  text-decoration: underline;
 }
 
 /* H2H page: scheduled match times between team columns */
@@ -1760,6 +1814,12 @@ body {
 
 .grid-cell.has-scheduled-match:hover {
   background-color: oklch(0.50 0.14 277) !important;
+}
+
+/* Selected state overrides scheduled match background */
+.grid-cell.has-scheduled-match.selected {
+  background-color: var(--primary) !important;
+  border-color: var(--primary);
 }
 
 /* Hide player badges in scheduled match cells — logos replace them */
@@ -3967,7 +4027,7 @@ body {
 /* Slot row grid layout for table-like alignment in expanded cards */
 .slot-row {
     display: grid;
-    grid-template-columns: 5.5rem 2.5rem auto 1fr;
+    grid-template-columns: 6rem 3.5rem 2.5rem auto 1fr;
     align-items: center;
     gap: 0.5rem;
 }
@@ -4505,13 +4565,14 @@ body {
     border-radius: 0.1875rem;
   }
 
-  /* Star button touch area in drawer */
+  /* Star button touch area in drawer - always visible on mobile */
   .mobile-drawer-content .star-btn {
     min-width: 2.25rem;
     min-height: 2.25rem;
     display: flex;
     align-items: center;
     justify-content: center;
+    opacity: 1;
   }
 
   /* Smaller star icon on mobile */

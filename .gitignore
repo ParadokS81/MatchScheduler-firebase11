@@ -64,3 +64,6 @@ temp/
 *.sw?
 service-account.json
 functions/.env
+
+# Feedback review screenshots (downloaded locally)
+feedback-reviews/

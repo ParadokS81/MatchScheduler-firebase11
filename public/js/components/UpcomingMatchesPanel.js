@@ -334,12 +334,28 @@ const UpcomingMatchesPanel = (function() {
                     </div>
                 </div>
             </div>
+            <div class="match-tooltip-footer">
+                <a href="#/teams/${teamAId}/h2h/${teamBId}" class="match-tooltip-h2h-link">View Head-to-Head</a>
+            </div>
         `;
 
         if (!_rosterTooltip) {
             _rosterTooltip = document.createElement('div');
             _rosterTooltip.className = 'match-tooltip';
             document.body.appendChild(_rosterTooltip);
+
+            // Keep tooltip visible when hovering over it (so links are clickable)
+            _rosterTooltip.addEventListener('mouseenter', () => {
+                if (_rosterTooltipHideTimeout) {
+                    clearTimeout(_rosterTooltipHideTimeout);
+                    _rosterTooltipHideTimeout = null;
+                }
+            });
+            _rosterTooltip.addEventListener('mouseleave', () => {
+                _rosterTooltipHideTimeout = setTimeout(() => {
+                    if (_rosterTooltip) _rosterTooltip.style.display = 'none';
+                }, 150);
+            });
         }
 
         _rosterTooltip.innerHTML = html;
