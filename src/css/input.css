@@ -1046,6 +1046,14 @@ body {
   border-color: var(--primary);
 }
 
+/* Make player badges readable on selected cells (primary background).
+   Must override .current-user (uses --primary) and .colored (uses inline style). */
+.grid-cell.selected .player-badge,
+.grid-cell.selected .player-badge.initials.current-user,
+.grid-cell.selected .player-badge.initials.colored {
+  color: var(--primary-foreground) !important;
+}
+
 /* User's own availability indicator - NO border needed since badges show availability */
 /* The colored badge inside the cell already indicates the user is available */
 .grid-cell.user-available {

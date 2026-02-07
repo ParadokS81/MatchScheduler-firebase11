@@ -25,7 +25,7 @@ const updateAvailability = functions
     }
 
     const userId = context.auth.uid;
-    const { teamId, weekId, action, slotIds } = data;
+    const { teamId, weekId, action, slotIds, targetUserId } = data;
 
     // Validate inputs
     if (!teamId || typeof teamId !== 'string') {
@@ -59,6 +59,13 @@ const updateAvailability = functions
         throw new functions.https.HttpsError('invalid-argument', 'Invalid week format. Use YYYY-WW');
     }
 
+    // Validate optional targetUserId
+    if (targetUserId !== undefined && (typeof targetUserId !== 'string' || !targetUserId)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid target user ID');
+    }
+
+    const effectiveUserId = targetUserId || userId;
+
     // Verify user is member of team
     const teamDoc = await db.collection('teams').doc(teamId).get();
     if (!teamDoc.exists) {
@@ -68,10 +75,27 @@ const updateAvailability = functions
     const teamData = teamDoc.data();
     const playerRoster = teamData.playerRoster || [];
 
-    // Check if user is in the playerRoster array
+    // Caller must be a team member
     const isMember = playerRoster.some(player => player.userId === userId);
     if (!isMember) {
         throw new functions.https.HttpsError('permission-denied', 'You are not a member of this team');
+    }
+
+    // If acting on behalf of another user, caller must be leader/scheduler
+    if (targetUserId && targetUserId !== userId) {
+        const isLeader = teamData.leaderId === userId;
+        const isScheduler = (teamData.schedulers || []).includes(userId);
+        if (!isLeader && !isScheduler) {
+            throw new functions.https.HttpsError(
+                'permission-denied',
+                'Only leaders and schedulers can add availability for other players'
+            );
+        }
+        // Target must also be a team member
+        const targetIsMember = playerRoster.some(player => player.userId === targetUserId);
+        if (!targetIsMember) {
+            throw new functions.https.HttpsError('invalid-argument', 'Target player is not a member of this team');
+        }
     }
 
     // Build update object for atomic operations
@@ -100,16 +124,17 @@ const updateAvailability = functions
     // Note: update() properly handles dot notation as field paths
     slotIds.forEach(slotId => {
         if (action === 'add') {
-            updateData[`slots.${slotId}`] = FieldValue.arrayUnion(userId);
+            updateData[`slots.${slotId}`] = FieldValue.arrayUnion(effectiveUserId);
         } else {
-            updateData[`slots.${slotId}`] = FieldValue.arrayRemove(userId);
+            updateData[`slots.${slotId}`] = FieldValue.arrayRemove(effectiveUserId);
         }
     });
 
     // Use update() which correctly interprets dot notation as nested paths
     await availRef.update(updateData);
 
-    console.log(`Availability ${action}: ${userId} ${action === 'add' ? 'added to' : 'removed from'} ${slotIds.length} slots in ${docId}`);
+    const proxyInfo = targetUserId && targetUserId !== userId ? ` (by ${userId})` : '';
+    console.log(`Availability ${action}: ${effectiveUserId} ${action === 'add' ? 'added to' : 'removed from'} ${slotIds.length} slots in ${docId}${proxyInfo}`);
 
     return { success: true };
 });

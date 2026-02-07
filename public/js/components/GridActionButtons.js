@@ -114,6 +114,74 @@ const GridActionButtons = (function() {
         }
     }
 
+    async function _handleAddOther(targetUserId) {
+        const teamId = MatchSchedulerApp.getSelectedTeam()?.id;
+        if (!teamId) {
+            ToastService.showError('Please select a team first');
+            return;
+        }
+
+        const selectedCells = _getSelectedCells ? _getSelectedCells() : [];
+        if (selectedCells.length === 0) return;
+
+        if (_onSyncStart) _onSyncStart(selectedCells);
+
+        try {
+            const cellsByWeek = _groupCellsByWeek(selectedCells);
+
+            for (const [weekId, slotIds] of Object.entries(cellsByWeek)) {
+                const result = await AvailabilityService.addPlayerToSlots(
+                    teamId, weekId, slotIds, targetUserId
+                );
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
+            }
+
+            if (_clearSelections) _clearSelections();
+
+        } catch (error) {
+            console.error('Add other failed:', error);
+            ToastService.showError(error.message || 'Failed to add availability for player');
+        } finally {
+            if (_onSyncEnd) _onSyncEnd();
+        }
+    }
+
+    async function _handleRemoveOther(targetUserId) {
+        const teamId = MatchSchedulerApp.getSelectedTeam()?.id;
+        if (!teamId) {
+            ToastService.showError('Please select a team first');
+            return;
+        }
+
+        const selectedCells = _getSelectedCells ? _getSelectedCells() : [];
+        if (selectedCells.length === 0) return;
+
+        if (_onSyncStart) _onSyncStart(selectedCells);
+
+        try {
+            const cellsByWeek = _groupCellsByWeek(selectedCells);
+
+            for (const [weekId, slotIds] of Object.entries(cellsByWeek)) {
+                const result = await AvailabilityService.removePlayerFromSlots(
+                    teamId, weekId, slotIds, targetUserId
+                );
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
+            }
+
+            if (_clearSelections) _clearSelections();
+
+        } catch (error) {
+            console.error('Remove other failed:', error);
+            ToastService.showError(error.message || 'Failed to remove availability for player');
+        } finally {
+            if (_onSyncEnd) _onSyncEnd();
+        }
+    }
+
     // ---------------------------------------------------------------
     // Template operations
     // ---------------------------------------------------------------
@@ -415,7 +483,9 @@ const GridActionButtons = (function() {
         cleanup,
         // Operations for SelectionActionButton
         addMe: _handleAddMe,
+        addOther: _handleAddOther,
         removeMe: _handleRemoveMe,
+        removeOther: _handleRemoveOther,
         clearAll: _handleClearAll,
         saveTemplate: _handleSaveTemplate
     };
