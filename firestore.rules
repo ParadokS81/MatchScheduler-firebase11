@@ -419,6 +419,12 @@ service cloud.firestore {
       allow write: if false;
     }
     
+    // Feedback collection - submitted via Cloud Function only
+    match /feedback/{feedbackId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
     // Deny all other access by default
     match /{document=**} {
       // Admin access via custom claims (set with Firebase Admin SDK)

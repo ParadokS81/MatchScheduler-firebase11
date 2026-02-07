@@ -24,5 +24,11 @@ service firebase.storage {
       allow read: if true;
       allow write: if false; // Only Cloud Function writes
     }
+
+    // Feedback screenshot uploads - authenticated users write to own path
+    match /feedback-uploads/{userId}/{fileName} {
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read: if true; // Public read so download URL works for admin review
+    }
   }
 }

@@ -526,20 +526,37 @@ const UserProfile = (function() {
             const initials = _userProfile.initials || '';
 
             _compactContainer.innerHTML = `
-                <button id="profile-compact-btn" class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity" title="Edit Profile">
-                    ${photoURL ?
-                        `<img src="${photoURL}" alt="avatar" class="w-8 h-8 rounded-full object-cover">` :
-                        `<div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-                            <svg class="w-4 h-4 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                            </svg>
-                        </div>`
-                    }
-                    <span class="text-sm font-medium text-foreground">${displayName}${initials ? ` · ${initials}` : ''}</span>
-                </button>
+                <div class="flex flex-col gap-1">
+                    <button id="feedback-compact-btn" class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity text-muted-foreground hover:text-foreground" title="Give Feedback">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                        <span class="text-xs">Give Feedback</span>
+                    </button>
+                    <button id="profile-compact-btn" class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity" title="Edit Profile">
+                        ${photoURL ?
+                            `<img src="${photoURL}" alt="avatar" class="w-8 h-8 rounded-full object-cover">` :
+                            `<div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+                                <svg class="w-4 h-4 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                                </svg>
+                            </div>`
+                        }
+                        <span class="text-sm font-medium text-foreground">${displayName}${initials ? ` · ${initials}` : ''}</span>
+                    </button>
+                </div>
             `;
 
-            // Attach click handler
+            // Attach click handlers
+            const feedbackBtn = _compactContainer.querySelector('#feedback-compact-btn');
+            if (feedbackBtn) {
+                feedbackBtn.addEventListener('click', () => {
+                    if (typeof FeedbackModal !== 'undefined') {
+                        FeedbackModal.show();
+                    }
+                });
+            }
+
             const btn = _compactContainer.querySelector('#profile-compact-btn');
             if (btn) {
                 btn.addEventListener('click', () => {
