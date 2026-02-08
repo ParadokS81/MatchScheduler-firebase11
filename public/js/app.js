@@ -738,6 +738,12 @@ const MatchSchedulerApp = (function() {
         window.removeEventListener('profile-updated', _handleProfileUpdated);
         window.removeEventListener('calendar-tab-shown', _handleCalendarTabShown);
 
+        // Clean up scheduled match listener
+        if (_scheduledMatchUnsub) {
+            _scheduledMatchUnsub();
+            _scheduledMatchUnsub = null;
+        }
+
         if (typeof UserProfile !== 'undefined') {
             UserProfile.cleanup();
         }

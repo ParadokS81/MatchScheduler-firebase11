@@ -14,6 +14,10 @@ const LogoUploadService = (function() {
      * @returns {Promise<{success: boolean, error?: string}>}
      */
     async function uploadLogo(teamId, userId, croppedBlob, onProgress) {
+        if (!teamId || !userId) {
+            return { success: false, error: 'Missing team or user ID' };
+        }
+
         const { ref, uploadBytesResumable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js');
 
         const storage = window.firebase.storage;

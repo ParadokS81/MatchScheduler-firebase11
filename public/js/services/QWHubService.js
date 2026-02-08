@@ -9,6 +9,7 @@ const QWHubService = (function() {
     const API_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5jc3Boa2pmb21pbmlteHp0amlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE2OTY5Mzg1NjMsImV4cCI6MjAxMjUxNDU2M30.NN6hjlEW-qB4Og9hWAVlgvUdwrbBO13s8OkAJuBGVbo';
 
     const _matchCache = new Map(); // teamTag -> { data, fetchedAt }
+    const _pendingRequests = new Map(); // cacheKey -> Promise (in-flight dedup)
     const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
     /**
@@ -263,6 +264,18 @@ const QWHubService = (function() {
             return cached.data;
         }
 
+        // Deduplicate: if this exact request is already in-flight, reuse it
+        if (_pendingRequests.has(cacheKey)) {
+            return _pendingRequests.get(cacheKey);
+        }
+
+        const promise = _fetchTeamMapStats(apiTag, cacheKey, months);
+        _pendingRequests.set(cacheKey, promise);
+        promise.finally(() => _pendingRequests.delete(cacheKey));
+        return promise;
+    }
+
+    async function _fetchTeamMapStats(apiTag, cacheKey, months) {
         // Calculate date range
         const since = new Date();
         since.setMonth(since.getMonth() - months);
@@ -341,6 +354,18 @@ const QWHubService = (function() {
             return cached.data;
         }
 
+        // Deduplicate: if this exact request is already in-flight, reuse it
+        if (_pendingRequests.has(cacheKey)) {
+            return _pendingRequests.get(cacheKey);
+        }
+
+        const promise = _fetchMatchHistory(apiTag, cacheKey, months);
+        _pendingRequests.set(cacheKey, promise);
+        promise.finally(() => _pendingRequests.delete(cacheKey));
+        return promise;
+    }
+
+    async function _fetchMatchHistory(apiTag, cacheKey, months) {
         // Calculate date range
         const since = new Date();
         since.setMonth(since.getMonth() - months);
@@ -423,6 +448,7 @@ const QWHubService = (function() {
      */
     function clearCache() {
         _matchCache.clear();
+        _pendingRequests.clear();
         _statsCache.clear();
     }
 

@@ -885,10 +885,19 @@ const TeamManagementModal = (function() {
      * Handle manage logo - opens LogoUploadModal
      */
     function _handleManageLogo() {
+        // Capture values before close() clears them
+        const teamId = _teamId;
+        const userId = _currentUserId;
         close();
 
+        if (!teamId || !userId) {
+            console.error('Missing teamId or userId for logo upload');
+            ToastService.showError('Team data not loaded');
+            return;
+        }
+
         if (typeof LogoUploadModal !== 'undefined') {
-            LogoUploadModal.show(_teamId, _currentUserId);
+            LogoUploadModal.show(teamId, userId);
         } else {
             console.error('LogoUploadModal not loaded');
             ToastService.showError('Logo upload not available');
@@ -899,10 +908,11 @@ const TeamManagementModal = (function() {
      * Handle remove player - opens KickPlayerModal
      */
     function _handleRemovePlayer() {
+        const teamId = _teamId;
         close();
 
         if (typeof KickPlayerModal !== 'undefined') {
-            KickPlayerModal.show(_teamId);
+            KickPlayerModal.show(teamId);
         } else {
             console.error('KickPlayerModal not loaded');
             ToastService.showError('Remove player not available');

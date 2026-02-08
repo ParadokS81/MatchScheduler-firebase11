@@ -207,8 +207,8 @@ exports.updateProfile = functions
 
     // Validate and add initials
     if (initials) {
-        if (!/^[A-Z]{3}$/.test(initials)) {
-            throw new functions.https.HttpsError('invalid-argument', 'Initials must be exactly 3 uppercase letters');
+        if (!/^[A-Z]{1,3}$/.test(initials)) {
+            throw new functions.https.HttpsError('invalid-argument', 'Initials must be 1-3 uppercase letters');
         }
         updates.initials = initials.toUpperCase();
     }

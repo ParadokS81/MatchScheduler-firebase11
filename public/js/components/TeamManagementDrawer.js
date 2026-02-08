@@ -650,6 +650,11 @@ const TeamManagementDrawer = (function() {
                 ToastService.showError('Please log in to manage logo');
                 return;
             }
+            if (!_teamData?.id) {
+                console.error('No team ID available for logo upload');
+                ToastService.showError('Team data not loaded');
+                return;
+            }
             LogoUploadModal.show(_teamData.id, currentUser.uid);
         } else {
             console.error('LogoUploadModal not loaded');

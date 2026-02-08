@@ -304,11 +304,16 @@ const ProfileModal = (function() {
             const photoURL = formData.get('photoURL');
             if (avatarSource) {
                 profileData.avatarSource = avatarSource;
-                // For custom with pending upload, Cloud Function will set photoURL
-                // Otherwise use the value from the form
-                if (avatarSource !== 'custom' || _userProfile?.customAvatarUrl) {
-                    profileData.photoURL = photoURL || null;
+                // Never send blob: or data: URLs to backend - those are local previews only
+                // For pending custom uploads, processAvatarUpload Cloud Function sets the real URL
+                const isSafeUrl = photoURL && !photoURL.startsWith('blob:') && !photoURL.startsWith('data:');
+                if (isSafeUrl) {
+                    profileData.photoURL = photoURL;
+                } else if (avatarSource !== 'custom') {
+                    // Non-custom sources with no URL → clear photoURL (e.g. initials)
+                    profileData.photoURL = null;
                 }
+                // For custom source with pending upload: skip photoURL, let Cloud Function handle it
             }
 
             // Add timezone (Slice 7.0c)
@@ -466,7 +471,7 @@ const ProfileModal = (function() {
         if (_userProfile?.customAvatarUrl) return 'custom';
         if (_userProfile?.discordAvatarHash) return 'discord';
         if (_userProfile?.authProvider === 'google' && _currentUser?.photoURL) return 'google';
-        return 'default';
+        return 'initials';
     }
 
     // Resolve avatar URL based on source
