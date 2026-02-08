@@ -310,6 +310,9 @@ const MatchesPanel = (function() {
                 ${archived.length > 0 ? _renderArchivedSection(archived) : ''}
             </div>
         `;
+
+        // Signal render complete (used by expandProposal for deferred scroll)
+        window.dispatchEvent(new CustomEvent('matches-panel-rendered'));
     }
 
     /**
@@ -371,14 +374,18 @@ const MatchesPanel = (function() {
         const proposerLogo = proposerTeam?.activeLogo?.urls?.small || '';
         const opponentLogo = opponentTeam?.activeLogo?.urls?.small || '';
 
-        // Compute viable slot count for badge
+        // Compute viable slot count for badge (with standin math for practice)
         let slotCount = 0;
         if (type === 'active') {
+            const standinSettings = proposal.gameType === 'practice'
+                ? { proposerStandin: !!proposal.proposerStandin, opponentStandin: !!proposal.opponentStandin }
+                : undefined;
             const slots = ProposalService.computeViableSlots(
                 proposal.proposerTeamId,
                 proposal.opponentTeamId,
                 proposal.weekId,
-                proposal.minFilter
+                proposal.minFilter,
+                standinSettings
             );
             const now = new Date();
             slotCount = slots.filter(s => !_isSlotPast(proposal.weekId, s.slotId, now)).length;
@@ -388,7 +395,10 @@ const MatchesPanel = (function() {
         const status = type === 'active' ? _getProposalStatus(proposal, isProposerSide) : { text: '', cls: '' };
         const weekNum = proposal.weekId?.split('-')[1] || '?';
 
-        // Card-level game type toggle state
+        // Card-level game type toggle state — pre-populate from proposal doc if not set locally
+        if (!_selectedGameTypes[proposal.id] && proposal.gameType) {
+            _selectedGameTypes[proposal.id] = proposal.gameType;
+        }
         const selectedType = _selectedGameTypes[proposal.id] || null;
         // Detect opponent's confirmed game type as a hint
         const theirConfirmedSlots = isProposerSide
@@ -431,7 +441,12 @@ const MatchesPanel = (function() {
                     <span class="text-muted-foreground">Min ${proposal.minFilter?.yourTeam || 1}v${proposal.minFilter?.opponent || 1}</span>
                     <span class="text-muted-foreground/50">·</span>
                     <span class="text-muted-foreground">W${weekNum}</span>
-                    ${canAct && type === 'active' ? `
+                    ${canAct && type === 'active' ? (() => {
+                        const myStandin = isProposerSide ? proposal.proposerStandin : proposal.opponentStandin;
+                        const theirStandin = isProposerSide ? proposal.opponentStandin : proposal.proposerStandin;
+                        const gameTypeIsSet = selectedType || proposal.gameType;
+                        const isPrac = gameTypeIsSet === 'practice';
+                        return `
                         <span class="text-muted-foreground/50">·</span>
                         <button class="game-type-btn px-1.5 py-0.5 rounded border transition-colors
                                 ${selectedType === 'official' ? 'border-green-500 text-green-400 bg-green-500/10' : hintType === 'official' ? 'border-green-500/50 text-green-400/60' : 'border-border text-muted-foreground'}
@@ -445,7 +460,16 @@ const MatchesPanel = (function() {
                                 data-action="card-game-type" data-proposal-id="${proposal.id}" data-type="practice">
                             PRAC
                         </button>
-                    ` : ''}
+                        ${isPrac ? `
+                            <button class="px-1.5 py-0.5 rounded border text-xs transition-colors
+                                    ${myStandin ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10' : 'border-border text-muted-foreground hover:text-cyan-400 hover:border-cyan-500/50'}"
+                                    data-action="toggle-standin" data-proposal-id="${proposal.id}"
+                                    title="Toggle standin (+1) for your team">
+                                SI${myStandin ? ' ✓' : ''}
+                            </button>
+                            ${theirStandin ? '<span class="text-cyan-400/60 text-xs" title="Opponent has standin enabled">+SI</span>' : ''}
+                        ` : ''}`;
+                    })() : ''}
                     ${status.text ? `
                         <span class="text-muted-foreground/50">·</span>
                         <span class="${status.cls}">${status.text}</span>
@@ -460,11 +484,15 @@ const MatchesPanel = (function() {
      * Render expanded proposal with live slots
      */
     function _renderExpandedProposal(proposal) {
+        const standinSettings = proposal.gameType === 'practice'
+            ? { proposerStandin: !!proposal.proposerStandin, opponentStandin: !!proposal.opponentStandin }
+            : undefined;
         const viableSlots = ProposalService.computeViableSlots(
             proposal.proposerTeamId,
             proposal.opponentTeamId,
             proposal.weekId,
-            proposal.minFilter
+            proposal.minFilter,
+            standinSettings
         );
 
         const now = new Date();
@@ -526,7 +554,7 @@ const MatchesPanel = (function() {
                      data-week-id="${proposal.weekId}">
                     <span class="slot-col-day font-medium">${display.dayLabel}</span>
                     <span class="slot-col-time font-medium">${display.timeLabel}</span>
-                    <span class="slot-col-count text-xs text-muted-foreground cursor-help">${slot.proposerCount}v${slot.opponentCount}</span>
+                    <span class="slot-col-count text-xs text-muted-foreground cursor-help">${slot.proposerStandin ? slot.proposerCount + '<span class="text-cyan-400">+1</span>' : slot.proposerCount}v${slot.opponentStandin ? slot.opponentCount + '<span class="text-cyan-400">+1</span>' : slot.opponentCount}</span>
                     <span class="slot-col-status text-xs">
                         ${droppedWarning ? '<span class="text-amber-400" title="Player count dropped since confirmed">⚠</span>' : ''}
                         ${statusIcon ? `<span class="${bothConfirmed ? 'text-green-400' : 'text-muted-foreground'}">${statusIcon}</span>` : ''}
@@ -708,21 +736,55 @@ const MatchesPanel = (function() {
     // ─── Event Handlers ────────────────────────────────────────────────
 
     /**
-     * Handle card-level game type toggle — stores selection and re-renders
+     * Handle card-level game type toggle — persists to proposal doc via backend
      */
-    function _handleCardGameType(target) {
+    async function _handleCardGameType(target) {
         const proposalId = target.dataset.proposalId;
         const gameType = target.dataset.type; // 'official' or 'practice'
         if (!proposalId) return;
 
         // Toggle: clicking the already-selected type deselects it
-        if (_selectedGameTypes[proposalId] === gameType) {
-            delete _selectedGameTypes[proposalId];
-        } else {
-            _selectedGameTypes[proposalId] = gameType;
-        }
+        const newType = _selectedGameTypes[proposalId] === gameType ? null : gameType;
 
+        // Optimistic update
+        if (newType) {
+            _selectedGameTypes[proposalId] = newType;
+        } else {
+            delete _selectedGameTypes[proposalId];
+        }
         _renderAll();
+
+        // Persist to backend (only if setting, not unsetting)
+        if (newType) {
+            try {
+                await ProposalService.updateProposalSettings({ proposalId, gameType: newType });
+            } catch (err) {
+                console.error('Failed to update game type:', err);
+            }
+        }
+    }
+
+    /**
+     * Handle standin toggle — persists to proposal doc via backend
+     */
+    async function _handleStandinToggle(target) {
+        const proposalId = target.dataset.proposalId;
+        if (!proposalId) return;
+
+        const proposal = ProposalService.getProposal(proposalId);
+        if (!proposal) return;
+
+        const isProposerSide = _isUserOnSide(proposal, 'proposer');
+        const currentValue = isProposerSide ? proposal.proposerStandin : proposal.opponentStandin;
+        const newValue = !currentValue;
+
+        // Optimistic UI update via re-render (listener will confirm)
+        try {
+            await ProposalService.updateProposalSettings({ proposalId, standin: newValue });
+        } catch (err) {
+            console.error('Failed to toggle standin:', err);
+            ToastService.showError('Failed to update standin');
+        }
     }
 
     /**
@@ -743,6 +805,9 @@ const MatchesPanel = (function() {
                 return; // Don't let toggle-expand fire
             case 'card-game-type':
                 _handleCardGameType(target);
+                return;
+            case 'toggle-standin':
+                _handleStandinToggle(target);
                 return;
             case 'toggle-expand':
                 await _handleToggleExpand(proposalId);
@@ -1047,13 +1112,17 @@ const MatchesPanel = (function() {
         const top3 = sorted.slice(0, 3);
         const remaining = sorted.length - 3;
 
+        const deepLink = proposal.id
+            ? `https://scheduler.quake.world/#/matches/${proposal.id}`
+            : 'https://scheduler.quake.world';
+
         if (top3.length === 0) {
             return [
                 `Hey! We proposed a match: ${myTag} vs ${theirTag} (W${weekNum})`,
                 '',
                 'No viable slots yet \u2014 check availability!',
                 '',
-                'https://scheduler.quake.world'
+                deepLink
             ].join('\n');
         }
 
@@ -1066,7 +1135,9 @@ const MatchesPanel = (function() {
         for (const slot of top3) {
             const display = TimezoneService.formatSlotForDisplay(slot.slotId);
             const shortDay = (display.dayLabel || '').slice(0, 3);
-            lines.push(`\u25B8 ${shortDay} ${display.timeLabel} (${slot.proposerCount}v${slot.opponentCount})`);
+            const pCount = slot.proposerStandin ? `${slot.proposerCount}+1` : `${slot.proposerCount}`;
+            const oCount = slot.opponentStandin ? `${slot.opponentCount}+1` : `${slot.opponentCount}`;
+            lines.push(`\u25B8 ${shortDay} ${display.timeLabel} (${pCount}v${oCount})`);
         }
 
         if (remaining > 0) {
@@ -1075,7 +1146,7 @@ const MatchesPanel = (function() {
         }
 
         lines.push('');
-        lines.push('Check proposal: https://scheduler.quake.world');
+        lines.push(`Check proposal: ${deepLink}`);
 
         return lines.join('\n');
     }
@@ -1091,12 +1162,16 @@ const MatchesPanel = (function() {
         const opponentTeamId = isProposerSide ? proposal.opponentTeamId : proposal.proposerTeamId;
         const opponentTeam = TeamService.getTeamFromCache(opponentTeamId);
 
-        // Compute viable slots for message (filtered for past)
+        // Compute viable slots for message (filtered for past, with standin)
+        const standinSettings = proposal.gameType === 'practice'
+            ? { proposerStandin: !!proposal.proposerStandin, opponentStandin: !!proposal.opponentStandin }
+            : undefined;
         const viableSlots = ProposalService.computeViableSlots(
             proposal.proposerTeamId,
             proposal.opponentTeamId,
             proposal.weekId,
-            proposal.minFilter
+            proposal.minFilter,
+            standinSettings
         );
         const now = new Date();
         const activeSlots = viableSlots.filter(s => !_isSlotPast(proposal.weekId, s.slotId, now));
@@ -1189,6 +1264,11 @@ const MatchesPanel = (function() {
         const row = e.target.closest('.upcoming-match-row');
         const slotCount = e.target.closest('.slot-col-count');
         if (!row && !slotCount) return;
+
+        // Don't hide if pointer moved to another element within the same row
+        const sourceRow = row || (slotCount ? slotCount.closest('.slot-row') : null);
+        if (sourceRow && e.relatedTarget && sourceRow.contains(e.relatedTarget)) return;
+
         _rosterTooltipHideTimeout = setTimeout(() => {
             if (_rosterTooltip) _rosterTooltip.style.display = 'none';
         }, 150);
@@ -1369,8 +1449,40 @@ const MatchesPanel = (function() {
 
     // ─── Public API ────────────────────────────────────────────────────
 
+    /**
+     * Expand a specific proposal by ID (used by Router for deep links).
+     * If proposal not yet loaded, defers to next render cycle.
+     */
+    function expandProposal(proposalId) {
+        if (!proposalId) return;
+
+        _expandedProposalId = proposalId;
+        _renderAll();
+
+        // Scroll to the card after render
+        requestAnimationFrame(() => {
+            const card = _container?.querySelector(`[data-proposal-id="${proposalId}"]`);
+            if (card) {
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else {
+                // Proposal may not be loaded yet — retry after listener fires
+                const retryHandler = () => {
+                    requestAnimationFrame(() => {
+                        const retryCard = _container?.querySelector(`[data-proposal-id="${proposalId}"]`);
+                        if (retryCard) {
+                            retryCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    });
+                    window.removeEventListener('matches-panel-rendered', retryHandler);
+                };
+                window.addEventListener('matches-panel-rendered', retryHandler, { once: true });
+            }
+        });
+    }
+
     return {
         init,
-        cleanup
+        cleanup,
+        expandProposal
     };
 })();

@@ -86,7 +86,7 @@ const FilterPanel = (function() {
      * Generate dropdown options for min filter
      */
     function _renderDropdownOptions(selectedValue, type) {
-        return [1, 2, 3, 4].map(n =>
+        return [3, 4].map(n =>
             `<button class="min-dropdown-option ${n === selectedValue ? 'active' : ''}"
                      data-value="${n}" data-type="${type}">${n}</button>`
         ).join('');

@@ -452,11 +452,20 @@ const TeamManagementModal = (function() {
         saveBtn.textContent = 'Saving...';
 
         try {
-            await TeamService.updateTeamTag(_teamId, newTag);
-            _teamData.teamTag = newTag;
-            saveBtn.classList.add('hidden');
-            feedback.textContent = 'Saved!';
-            feedback.className = 'text-xs text-green-500';
+            const result = await TeamService.callFunction('updateTeamSettings', {
+                teamId: _teamId,
+                teamTag: newTag
+            });
+
+            if (result.success) {
+                _teamData.teamTag = newTag;
+                saveBtn.classList.add('hidden');
+                feedback.textContent = 'Saved!';
+                feedback.className = 'text-xs text-green-500';
+            } else {
+                feedback.textContent = result.error || 'Failed to save. Please try again.';
+                feedback.className = 'text-xs text-destructive';
+            }
         } catch (error) {
             console.error('Error saving team tag:', error);
             feedback.textContent = 'Failed to save. Please try again.';
@@ -596,7 +605,7 @@ const TeamManagementModal = (function() {
         if (!joinCode || !teamName) return;
 
         // Enhanced copy string per PRD
-        const copyText = `Use code: ${joinCode} to join ${teamName} at ${window.location.origin}`;
+        const copyText = `Use code: ${joinCode} to join ${teamName} at https://scheduler.quake.world`;
 
         try {
             await navigator.clipboard.writeText(copyText);
@@ -623,14 +632,15 @@ const TeamManagementModal = (function() {
      * Handle regenerate join code - shows confirmation, then regenerates
      */
     async function _handleRegenerateJoinCode() {
-        // Capture teamId before close() clears it
+        // Capture state before close() clears it
         const teamId = _teamId;
+        const teamName = _teamData?.teamName || '';
 
         // Close this modal first, then show regenerate modal
         close();
 
         // Use the same regenerate modal pattern from TeamManagementDrawer
-        const result = await _showRegenerateModal(teamId);
+        const result = await _showRegenerateModal(teamId, teamName);
 
         // If user wants to reopen team settings, they can click the gear again
     }
@@ -638,7 +648,7 @@ const TeamManagementModal = (function() {
     /**
      * Show regenerate join code modal with confirmation and copy
      */
-    async function _showRegenerateModal(teamId) {
+    async function _showRegenerateModal(teamId, teamName) {
         return new Promise((resolve) => {
             const modalHTML = `
                 <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
@@ -735,7 +745,7 @@ const TeamManagementModal = (function() {
                     });
 
                     if (result.success) {
-                        _showRegenerateSuccess(result.data.joinCode, escHandler, resolve);
+                        _showRegenerateSuccess(result.data.joinCode, teamName, escHandler, resolve);
                     } else {
                         ToastService.showError(result.error || 'Failed to regenerate code');
                         confirmBtn.disabled = false;
@@ -754,7 +764,7 @@ const TeamManagementModal = (function() {
     /**
      * Show success state after regenerating join code
      */
-    function _showRegenerateSuccess(newJoinCode, escHandler, resolve) {
+    function _showRegenerateSuccess(newJoinCode, teamName, escHandler, resolve) {
         // Update header
         const title = document.getElementById('regenerate-modal-title');
         if (title) title.textContent = 'New Join Code Generated!';
@@ -804,7 +814,7 @@ const TeamManagementModal = (function() {
         };
 
         copyBtn?.addEventListener('click', async () => {
-            const copyText = `Use code: ${newJoinCode} to join ${_teamData.teamName} at ${window.location.origin}`;
+            const copyText = `Use code: ${newJoinCode} to join ${teamName} at https://scheduler.quake.world`;
 
             try {
                 await navigator.clipboard.writeText(copyText);

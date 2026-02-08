@@ -7,7 +7,8 @@
  * URL structure:
  *   #/calendar, #/teams, #/teams/{id}, #/teams/{id}/history,
  *   #/teams/{id}/h2h, #/teams/{id}/h2h/{opponentId},
- *   #/players, #/players/by-team, #/matches, #/tournament
+ *   #/players, #/players/by-team, #/matches, #/matches/{proposalId},
+ *   #/tournament
  */
 const Router = (function() {
     'use strict';
@@ -77,6 +78,13 @@ const Router = (function() {
                 if (typeof TeamsBrowserPanel !== 'undefined') {
                     if (route.teamId) {
                         TeamsBrowserPanel.selectTeam(route.teamId);
+                        // Apply history params before switching tab so they're set when history loads
+                        if (route.params?.map) {
+                            TeamsBrowserPanel.filterByMap(route.params.map);
+                        }
+                        if (route.params?.period) {
+                            TeamsBrowserPanel.setHistoryPeriod(parseInt(route.params.period, 10));
+                        }
                         if (route.subTab && route.subTab !== 'details') {
                             TeamsBrowserPanel.switchTab(route.subTab);
                         }
@@ -88,6 +96,16 @@ const Router = (function() {
                         TeamsBrowserPanel.deselectTeam();
                     }
                 }
+            }
+
+            // Deep state: match proposal expansion
+            if (route.tab === 'matches' && route.proposalId) {
+                // Defer expansion — MatchesPanel loads proposals async via listener
+                setTimeout(() => {
+                    if (typeof MatchesPanel !== 'undefined' && MatchesPanel.expandProposal) {
+                        MatchesPanel.expandProposal(route.proposalId);
+                    }
+                }, 500);
             }
 
             // Players sort mode
@@ -102,8 +120,11 @@ const Router = (function() {
     }
 
     function _parseHash(hash) {
-        const path = (hash || '').replace(/^#\/?/, '');
-        const segments = path.split('/').filter(Boolean);
+        const raw = (hash || '').replace(/^#\/?/, '');
+        // Split off query string: "teams/abc/history?map=dm3" → path + params
+        const [pathPart, queryPart] = raw.split('?');
+        const segments = pathPart.split('/').filter(Boolean);
+        const params = queryPart ? Object.fromEntries(new URLSearchParams(queryPart)) : {};
 
         if (segments.length === 0) return { tab: 'calendar' };
 
@@ -112,7 +133,11 @@ const Router = (function() {
         if (tab === 'teams' && segments.length >= 2) {
             const subTab = VALID_SUB_TABS.has(segments[2]) ? segments[2] : 'details';
             const opponentId = (subTab === 'h2h' && segments[3]) ? segments[3] : null;
-            return { tab: 'teams', teamId: segments[1], subTab, opponentId };
+            return { tab: 'teams', teamId: segments[1], subTab, opponentId, params };
+        }
+
+        if (tab === 'matches' && segments.length >= 2) {
+            return { tab: 'matches', proposalId: segments[1] };
         }
 
         if (tab === 'players' && segments[1] === 'by-team') {
@@ -144,11 +169,13 @@ const Router = (function() {
 
     /**
      * Called by TeamsBrowserPanel.switchTab() for sub-tab changes.
+     * Accepts optional query params object, e.g. { map: 'dm3' }.
      */
-    function pushTeamSubTab(teamId, subTab) {
+    function pushTeamSubTab(teamId, subTab, params) {
         if (_isRestoring) return;
         const suffix = (subTab && subTab !== 'details') ? `/${subTab}` : '';
-        _pushHash(`#/teams/${teamId}${suffix}`);
+        const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+        _pushHash(`#/teams/${teamId}${suffix}${qs}`);
     }
 
     /**
@@ -167,6 +194,18 @@ const Router = (function() {
         if (_isRestoring) return;
         const suffix = sortMode === 'teams' ? '/by-team' : '';
         _pushHash(`#/players${suffix}`);
+    }
+
+    /**
+     * Called when a proposal is expanded in MatchesPanel.
+     */
+    function pushProposal(proposalId) {
+        if (_isRestoring) return;
+        if (proposalId) {
+            _pushHash(`#/matches/${proposalId}`);
+        } else {
+            _pushHash('#/matches');
+        }
     }
 
     function _pushHash(hash) {
@@ -191,6 +230,7 @@ const Router = (function() {
         cleanup,
         pushTeamSubTab,
         pushH2HOpponent,
-        pushPlayerSort
+        pushPlayerSort,
+        pushProposal
     };
 })();

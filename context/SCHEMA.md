@@ -69,6 +69,13 @@ interface UserDocument {
                                      // Max 7 hidden (min 4 must remain visible)
                                      // Valid values: 1800, 1830, 1900, 1930, 2000, 2030, 2100, 2130, 2200, 2230, 2300
 
+  // Extra timeslots outside base range (Slice 14.0a)
+  extraTimeSlots: string[] | null;   // CET HHMM strings outside base 1800-2300 range
+                                     // Default: null (no extra slots)
+                                     // Example: ['1200', '1230', '1300', '1330']
+                                     // Max: 37 entries (48 total - 11 base)
+                                     // Validated by updateProfile Cloud Function
+
   // Metadata
   createdAt: Timestamp;
   lastUpdatedAt: Timestamp;
@@ -324,9 +331,14 @@ interface MatchProposalDocument {
 
   // Filter used to compute viable slots
   minFilter: {
-    yourTeam: number;              // 1-4
-    opponent: number;              // 1-4
+    yourTeam: number;              // 3-4
+    opponent: number;              // 3-4
   };
+
+  // Game type + standin settings
+  gameType: 'official' | 'practice';  // Set at creation, changeable by either leader
+  proposerStandin: boolean;        // +1 virtual player for proposer (practice only)
+  opponentStandin: boolean;        // +1 virtual player for opponent (practice only)
 
   // Confirmations — which slots each side has confirmed
   // Key = UTC slotId (e.g., "mon_2000"), Value = { userId, countAtConfirm, gameType }
@@ -515,3 +527,5 @@ const docId = `${teamId}_${weekId}`;
 - **2026-01-31**: Added timezone field to user document, slot IDs now UTC-based (Slice 7.0a)
 - **2026-01-31**: Added matchProposals, scheduledMatches collections + schedulers field on teams (Slice 8.0a)
 - **2026-02-05**: Added hiddenTimeSlots field to user document (Slice 12.0c)
+- **2026-02-08**: Added extraTimeSlots field to user document (Slice 14.0a)
+- **2026-02-08**: Added gameType, proposerStandin, opponentStandin to matchProposals; min filter range changed to 3-4

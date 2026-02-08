@@ -20,6 +20,9 @@ const AvailabilityGrid = (function() {
     // Threshold to distinguish click from drag (in pixels)
     const DRAG_THRESHOLD = 5;
 
+    // Slice 14.0b: Scroll threshold — add scrollable class when slots exceed base count
+    const SCROLL_THRESHOLD = 11;
+
     /**
      * Get ordinal suffix for a number (1st, 2nd, 3rd, etc.)
      */
@@ -462,6 +465,11 @@ const AvailabilityGrid = (function() {
             // Reference date for timezone conversion
             const refDate = DateUtils.getMondayOfWeek(_weekId);
 
+            // Slice 14.0b: Determine if grid needs scrolling
+            const timeSlots = _getTimeSlots();
+            const isMobile = window.matchMedia('(max-width: 1024px)').matches;
+            const isScrollable = !isMobile && timeSlots.length > SCROLL_THRESHOLD;
+
             // Build the grid HTML - compact for 1080p
             // Cell IDs use CET base times; data-utc-slot carries the UTC Firestore key
             _container.innerHTML = `
@@ -475,8 +483,8 @@ const AvailabilityGrid = (function() {
                     </div>
 
                     <!-- Time Rows -->
-                    <div class="grid-body">
-                        ${_getTimeSlots().map(time => {
+                    <div class="grid-body${isScrollable ? ' scrollable' : ''}">
+                        ${timeSlots.map(time => {
                             // Convert CET base time to user's local time for display
                             const displayTime = typeof TimezoneService !== 'undefined'
                                 ? TimezoneService.baseToLocalDisplay(time, refDate)
@@ -496,6 +504,28 @@ const AvailabilityGrid = (function() {
             `;
 
             _attachEventListeners();
+
+            // Slice 14.0b: Auto-scroll to EU evening window when grid is scrollable
+            if (isScrollable) {
+                _scrollToDefaultPosition();
+            }
+        }
+
+        /**
+         * Slice 14.0b: Scroll grid body so EU evening window (19:30 CET) is near the top
+         */
+        function _scrollToDefaultPosition() {
+            const gridBody = _container?.querySelector('.grid-body');
+            if (!gridBody) return;
+
+            // Target: 1930 CET — first "real action" slot for most EU users
+            const targetRow = gridBody.querySelector('.time-label[data-time="1930"]');
+            if (targetRow) {
+                const row = targetRow.closest('.grid-row');
+                if (row) {
+                    gridBody.scrollTop = row.offsetTop - gridBody.offsetTop;
+                }
+            }
         }
 
         /**

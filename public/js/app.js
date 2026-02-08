@@ -117,7 +117,9 @@ const MatchSchedulerApp = (function() {
         const count = typeof TimezoneService !== 'undefined'
             ? TimezoneService.getVisibleTimeSlots().length
             : 11;
-        grid.style.gridTemplateRows = `${count / 11}fr 3rem 1fr`;
+        // Slice 14.0b: Cap at 1fr — extra slots handled by scroll, not by making panel taller
+        const fraction = Math.min(count / 11, 1);
+        grid.style.gridTemplateRows = `${fraction}fr 3rem 1fr`;
     }
 
     // Initialize availability grid components
@@ -233,6 +235,31 @@ const MatchSchedulerApp = (function() {
         window.addEventListener('player-colors-changed', () => {
             if (_weekDisplay1) _weekDisplay1.refreshDisplay();
             if (_weekDisplay2) _weekDisplay2.refreshDisplay();
+        });
+
+        // Refresh grids when display mode changes (initials/avatars)
+        window.addEventListener('display-mode-changed', (e) => {
+            _handleDisplayModeChange(e.detail?.mode);
+        });
+
+        // Refresh grids when team roster changes (new member joins/leaves)
+        window.addEventListener('roster-changed', (e) => {
+            const updatedTeam = e.detail?.team;
+            if (updatedTeam && _selectedTeam && updatedTeam.id === _selectedTeam.id) {
+                _selectedTeam = updatedTeam;
+                const currentUserId = window.firebase?.auth?.currentUser?.uid;
+                if (currentUserId) {
+                    if (_weekDisplay1) {
+                        const data1 = AvailabilityService.getCachedData(_selectedTeam.id, _weekDisplay1.getWeekId());
+                        if (data1) _updateTeamDisplay(_weekDisplay1, data1, currentUserId);
+                    }
+                    if (_weekDisplay2) {
+                        const data2 = AvailabilityService.getCachedData(_selectedTeam.id, _weekDisplay2.getWeekId());
+                        if (data2) _updateTeamDisplay(_weekDisplay2, data2, currentUserId);
+                    }
+                }
+                console.log('👥 Grid refreshed with updated roster');
+            }
         });
 
         // Register selection change handlers
@@ -619,8 +646,10 @@ const MatchSchedulerApp = (function() {
     function _updateScheduledMatchHighlights() {
         if (typeof ScheduledMatchService === 'undefined') return;
 
+        const currentTeamId = _selectedTeam ? _selectedTeam.id : null;
         const allMatches = ScheduledMatchService.getMatchesFromCache()
-            .filter(m => m.status === 'upcoming');
+            .filter(m => m.status === 'upcoming')
+            .filter(m => currentTeamId && (m.teamAId === currentTeamId || m.teamBId === currentTeamId));
 
         if (_weekDisplay1) {
             const week1Id = _weekDisplay1.getWeekId();

@@ -38,6 +38,11 @@ const TeamsBrowserPanel = (function() {
     // Stats table tab state
     let _activeStatsTab = 'performance'; // 'performance' | 'weapons' | 'resources'
 
+    // Map stats load generation counter (prevents stale async renders)
+    let _mapStatsGeneration = 0;
+    let _mapStatsRenderedHtml = {};  // { teamTag: html } - cached rendered stats
+    let _mapStatsTotalText = {};    // { teamTag: string } - cached total text
+
     // Slice 11.0a: H2H state
     let _h2hTeamAId = null;           // Override Team A id (null = use _selectedTeamId)
     let _h2hOpponentId = null;        // Selected Team B id (from MatchScheduler teams)
@@ -540,7 +545,7 @@ const TeamsBrowserPanel = (function() {
                     </div>
                     <div id="map-stats-content" data-team-tag="${team.teamTag || ''}">
                         ${hasTag
-                            ? '<div class="text-xs text-muted-foreground">Loading activity...</div>'
+                            ? (_mapStatsRenderedHtml[team.teamTag] || '<div class="text-xs text-muted-foreground">Loading activity...</div>')
                             : `<div class="text-xs text-muted-foreground">
                                 <p>Match history not available</p>
                                 <p class="mt-1">Team leader can set QW Hub tag in Team Settings</p>
@@ -549,7 +554,7 @@ const TeamsBrowserPanel = (function() {
                     </div>
                     ${hasTag ? `
                         <div class="team-details-activity-footer">
-                            <span class="team-details-activity-total" id="map-stats-total"></span>
+                            <span class="team-details-activity-total" id="map-stats-total">${_mapStatsTotalText[team.teamTag] || ''}</span>
                             <button class="team-details-h2h-btn"
                                     onclick="TeamsBrowserPanel.switchTab('h2h')">
                                 Compare H2H &rarr;
@@ -574,8 +579,13 @@ const TeamsBrowserPanel = (function() {
         let label = document.getElementById('map-stats-label');
         if (!container || container.dataset.teamTag !== teamTag) return;
 
+        const gen = ++_mapStatsGeneration;
+
         try {
             const stats = await QWHubService.getTeamMapStats(teamTag, 6);
+
+            // Bail if a newer call was started while we were awaiting
+            if (gen !== _mapStatsGeneration) return;
 
             // Re-query DOM after async (original elements may have been replaced by re-render)
             container = document.getElementById('map-stats-content');
@@ -593,28 +603,38 @@ const TeamsBrowserPanel = (function() {
             }
 
             // Update footer total
+            _mapStatsTotalText[teamTag] = `${stats.totalMatches} matches`;
             const totalEl = document.getElementById('map-stats-total');
             if (totalEl) {
-                totalEl.textContent = `${stats.totalMatches} matches`;
+                totalEl.textContent = _mapStatsTotalText[teamTag];
             }
 
-            // Find max for bar scaling
-            const maxCount = stats.maps[0]?.total || 1;
-
-            container.innerHTML = `
+            const statsHtml = `
                 <div class="map-stats-list">
-                    ${stats.maps.map(m => `
+                    <div class="map-stat-header">
+                        <span>Map</span>
+                        <span>Played</span>
+                        <span>Record</span>
+                    </div>
+                    ${stats.maps.map(m => {
+                        const winPct = m.total > 0 ? Math.round((m.wins / m.total) * 100) : 0;
+                        const lossPct = m.total > 0 ? Math.round((m.losses / m.total) * 100) : 0;
+                        return `
                         <div class="map-stat-row">
-                            <span class="map-stat-name">${m.map}</span>
-                            <div class="map-stat-bar">
-                                <div class="map-stat-bar-fill" style="width: ${Math.round((m.total / maxCount) * 100)}%"></div>
-                            </div>
+                            <span class="map-stat-name map-stat-link" onclick="TeamsBrowserPanel.showMapHistory('${_escapeHtml(m.map)}')">${m.map}</span>
                             <span class="map-stat-count">${m.total}</span>
-                            <span class="map-stat-record"><span class="win">${m.wins}</span><span class="sep">-</span><span class="loss">${m.losses}</span>${m.draws > 0 ? `<span class="sep">-</span>${m.draws}` : ''}</span>
-                        </div>
-                    `).join('')}
+                            <span class="map-stat-wins">${m.wins}</span>
+                            <div class="map-stat-bar">
+                                <div class="map-stat-bar-win" style="width: ${winPct}%"></div>
+                                <div class="map-stat-bar-loss" style="width: ${lossPct}%"></div>
+                            </div>
+                            <span class="map-stat-losses">${m.losses}</span>
+                        </div>`;
+                    }).join('')}
                 </div>
             `;
+            _mapStatsRenderedHtml[teamTag] = statsHtml;
+            container.innerHTML = statsHtml;
         } catch (error) {
             console.error('Failed to load map stats:', error);
             container = document.getElementById('map-stats-content');
@@ -1098,10 +1118,9 @@ const TeamsBrowserPanel = (function() {
         // Determine which breakdowns to show based on active filters
         const hasMapFilter = !!_historyMapFilter;
         const hasOppFilter = !!_historyOpponentFilter;
-        const showMaps = !hasMapFilter || hasOppFilter; // Show maps unless only map is filtered
-        const showOpponents = !hasOppFilter || hasMapFilter; // Show opponents unless only opp is filtered
-        // If both filters active, show both (edge case)
-        // If no filters, show both (default)
+        // Simple two-column breakdown only when no filters (enriched replaces it when filtered)
+        const showMaps = !hasMapFilter && !hasOppFilter;
+        const showOpponents = !hasMapFilter && !hasOppFilter;
 
         // --- Map breakdown ---
         let mapsHtml = '';
@@ -1170,19 +1189,98 @@ const TeamsBrowserPanel = (function() {
             `;
         }
 
-        // Use single column layout when only one breakdown is shown
-        const isSingleCol = !showMaps || !showOpponents;
-        const breakdownHtml = `
-            <div class="mh-breakdown-columns ${isSingleCol ? 'mh-breakdown-single' : ''}">
+        // When a single filter is active, show enriched breakdown for the cross-dimension
+        let enrichedHtml = '';
+        if (hasMapFilter && !hasOppFilter) {
+            enrichedHtml = _renderEnrichedBreakdown(matches, 'opponent');
+        } else if (hasOppFilter && !hasMapFilter) {
+            enrichedHtml = _renderEnrichedBreakdown(matches, 'map');
+        }
+
+        // Only show breakdown grid when there's content
+        const hasBreakdown = mapsHtml || oppsHtml;
+        const breakdownHtml = hasBreakdown ? `
+            <div class="mh-breakdown-columns ${!showMaps || !showOpponents ? 'mh-breakdown-single' : ''}">
                 ${mapsHtml}
                 ${oppsHtml}
             </div>
-        `;
+        ` : '';
 
         return `
             <div class="mh-summary-panel">
                 ${activityHtml}
                 ${breakdownHtml}
+                ${enrichedHtml}
+            </div>
+        `;
+    }
+
+    /**
+     * Render enriched breakdown table with win/loss bars, frag diff, and form dots.
+     * @param {Array} matches - filtered match list
+     * @param {'opponent'|'map'} groupBy - dimension to group by
+     */
+    function _renderEnrichedBreakdown(matches, groupBy) {
+        const agg = {};
+        matches.forEach(m => {
+            const key = groupBy === 'opponent' ? m.opponentTag : m.map;
+            if (!agg[key]) agg[key] = { name: key, total: 0, wins: 0, losses: 0, fragDiff: 0, recent: [] };
+            const entry = agg[key];
+            entry.total++;
+            if (m.result === 'W') entry.wins++;
+            else if (m.result === 'L') entry.losses++;
+            entry.fragDiff += (m.ourScore - m.opponentScore);
+            entry.recent.push(m.result);
+        });
+
+        const rows = Object.values(agg).sort((a, b) => b.total - a.total);
+        const label = groupBy === 'opponent' ? 'Opponents' : 'Maps';
+        const nameLabel = groupBy === 'opponent' ? 'Team' : 'Map';
+
+        return `
+            <div class="mh-enriched-breakdown">
+                <div class="mh-section-label">${label}</div>
+                <div class="mh-enriched-table">
+                    <div class="mh-enriched-hdr">
+                        <span class="mh-en-name">${nameLabel}</span>
+                        <span class="mh-en-count">#</span>
+                        <span class="mh-en-wins"></span>
+                        <span class="mh-en-bar">W/L</span>
+                        <span class="mh-en-losses"></span>
+                        <span class="mh-en-diff">&Delta;</span>
+                        <span class="mh-en-form">Form</span>
+                    </div>
+                    ${rows.map(r => {
+                        const winPct = r.total > 0 ? Math.round((r.wins / r.total) * 100) : 0;
+                        const lossPct = r.total > 0 ? Math.round((r.losses / r.total) * 100) : 0;
+                        const avgDiff = r.total > 0 ? Math.round(r.fragDiff / r.total) : 0;
+                        const diffSign = avgDiff > 0 ? '+' : '';
+                        const diffClass = avgDiff > 0 ? 'mh-en-diff-pos' : avgDiff < 0 ? 'mh-en-diff-neg' : '';
+                        // Last 5 results, most recent first
+                        const form = r.recent.slice(-5).reverse();
+                        const formDots = form.map(res =>
+                            `<span class="mh-en-dot ${res === 'W' ? 'mh-en-dot-win' : res === 'L' ? 'mh-en-dot-loss' : 'mh-en-dot-draw'}"></span>`
+                        ).join('');
+
+                        const clickAction = groupBy === 'opponent'
+                            ? `TeamsBrowserPanel.filterByOpponent('${_escapeHtml(r.name)}')`
+                            : `TeamsBrowserPanel.filterByMap('${_escapeHtml(r.name)}')`;
+
+                        return `
+                        <div class="mh-enriched-row" onclick="${clickAction}">
+                            <span class="mh-en-name">${_escapeHtml(r.name)}</span>
+                            <span class="mh-en-count">${r.total}</span>
+                            <span class="mh-en-wins">${r.wins}</span>
+                            <div class="mh-en-bar">
+                                <div class="mh-en-bar-win" style="width: ${winPct}%"></div>
+                                <div class="mh-en-bar-loss" style="width: ${lossPct}%"></div>
+                            </div>
+                            <span class="mh-en-losses">${r.losses}</span>
+                            <span class="mh-en-diff ${diffClass}">${diffSign}${avgDiff}</span>
+                            <span class="mh-en-form">${formDots}</span>
+                        </div>`;
+                    }).join('')}
+                </div>
             </div>
         `;
     }
@@ -1601,12 +1699,24 @@ const TeamsBrowserPanel = (function() {
         }
     }
 
+    /** Build URL query params for current history filters (only non-default values). */
+    function _getHistoryUrlParams() {
+        const p = {};
+        if (_historyMapFilter) p.map = _historyMapFilter;
+        if (_historyPeriod !== 3) p.period = _historyPeriod;
+        return Object.keys(p).length ? p : undefined;
+    }
+
     function filterByMap(map) {
         _historyMapFilter = map;
         // Sync dropdown
         const select = document.getElementById('mh-map-filter');
         if (select) select.value = map;
         _applyFiltersAndUpdate();
+        // Update URL with current filters
+        if (_selectedTeamId && _activeTab === 'history' && typeof Router !== 'undefined') {
+            Router.pushTeamSubTab(_selectedTeamId, 'history', _getHistoryUrlParams());
+        }
     }
 
     /**
@@ -1630,6 +1740,11 @@ const TeamsBrowserPanel = (function() {
         _statsLoading = false;
         _historyMapFilter = '';
         _historyOpponentFilter = '';
+
+        // Update URL with new period
+        if (_selectedTeamId && typeof Router !== 'undefined') {
+            Router.pushTeamSubTab(_selectedTeamId, 'history', _getHistoryUrlParams());
+        }
 
         // Find current team tag from DOM
         const splitPanel = document.querySelector('.match-history-split');
@@ -2410,7 +2525,7 @@ const TeamsBrowserPanel = (function() {
             .sort((a, b) => a.teamName.localeCompare(b.teamName));
 
         const hasRoster = rosterData && rosterData.players?.length > 0;
-        const maxGames = hasRoster ? (rosterData.players[0]?.games || 1) : 1;
+        const maxGames = hasRoster ? (rosterData.totalGames || rosterData.players[0]?.games || 1) : 1;
 
         return `
             <div class="h2h-roster-col">
@@ -3668,9 +3783,25 @@ const TeamsBrowserPanel = (function() {
             if (tabName === 'h2h' && _h2hOpponentId) {
                 Router.pushH2HOpponent(_selectedTeamId, _h2hOpponentId);
             } else {
-                Router.pushTeamSubTab(_selectedTeamId, tabName);
+                const params = tabName === 'history' ? _getHistoryUrlParams() : undefined;
+                Router.pushTeamSubTab(_selectedTeamId, tabName, params);
             }
         }
+    }
+
+    /** Set history period without re-fetching (used by Router before switchTab). */
+    function setHistoryPeriod(months) {
+        _historyPeriod = months;
+    }
+
+    /**
+     * Navigate from Details map stats to History with a map pre-selected.
+     * Details stats cover 6 months, so match that period.
+     */
+    function showMapHistory(mapName) {
+        _historyMapFilter = mapName;
+        _historyPeriod = 6;
+        switchTab('history');
     }
 
     // ========================================
@@ -4252,6 +4383,8 @@ const TeamsBrowserPanel = (function() {
         clearFormPreview,
         selectFormResult,
         clearFormSelection,
+        showMapHistory,
+        setHistoryPeriod,
         // Router integration
         selectTeam,
         deselectTeam,

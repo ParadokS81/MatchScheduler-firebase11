@@ -25,9 +25,17 @@ const TimezoneService = (function() {
     // Slice 13.0d: Default hidden timeslots (18:00, 18:30, 19:00 have <1% combined usage)
     const DEFAULT_HIDDEN_TIMESLOTS = ['1800', '1830', '1900'];
 
+    // Slice 14.0a: All possible half-hour slots in a day (48 entries: '0000' through '2330')
+    const ALL_HALF_HOUR_SLOTS = [];
+    for (let h = 0; h < 24; h++) {
+        ALL_HALF_HOUR_SLOTS.push(String(h).padStart(2, '0') + '00');
+        ALL_HALF_HOUR_SLOTS.push(String(h).padStart(2, '0') + '30');
+    }
+
     let _userTimezone = null;   // IANA string, e.g., "Europe/Stockholm"
     let _initialized = false;
     let _hiddenTimeSlots = new Set(DEFAULT_HIDDEN_TIMESLOTS); // Slice 12.0a + 13.0d: default hidden
+    let _extraTimeSlots = new Set(); // Slice 14.0a: extra slots outside base range
 
     // ---------------------------------------------------------------
     // Initialization
@@ -232,12 +240,20 @@ const TimezoneService = (function() {
     // ---------------------------------------------------------------
 
     /**
-     * Get the currently visible time slots (all minus hidden).
+     * Get the currently visible time slots (base minus hidden, plus extras), sorted chronologically.
      * @returns {string[]} Array of visible local time strings
      */
     function getVisibleTimeSlots() {
-        if (_hiddenTimeSlots.size === 0) return DISPLAY_TIME_SLOTS;
-        return DISPLAY_TIME_SLOTS.filter(s => !_hiddenTimeSlots.has(s));
+        // Base slots minus hidden
+        let slots = DISPLAY_TIME_SLOTS.filter(s => !_hiddenTimeSlots.has(s));
+        // Add extra slots (only those NOT in base range, to avoid duplicates)
+        if (_extraTimeSlots.size > 0) {
+            const extras = Array.from(_extraTimeSlots)
+                .filter(s => !DISPLAY_TIME_SLOTS.includes(s));
+            slots = slots.concat(extras);
+        }
+        // Sort chronologically by numeric value
+        return slots.sort((a, b) => parseInt(a) - parseInt(b));
     }
 
     /**
@@ -271,6 +287,39 @@ const TimezoneService = (function() {
      */
     function getDefaultHiddenTimeSlots() {
         return DEFAULT_HIDDEN_TIMESLOTS;
+    }
+
+    // ---------------------------------------------------------------
+    // Extra timeslots (Slice 14.0a)
+    // ---------------------------------------------------------------
+
+    /**
+     * Set extra time slots (outside base 18:00-23:00 CET range).
+     * Invalid HHMM strings are silently filtered out.
+     * @param {string[]} extraSlots - Array of HHMM time strings
+     * @returns {boolean} true (always succeeds after filtering)
+     */
+    function setExtraTimeSlots(extraSlots) {
+        _extraTimeSlots = new Set(
+            extraSlots.filter(s => ALL_HALF_HOUR_SLOTS.includes(s))
+        );
+        return true;
+    }
+
+    /**
+     * Get the currently set extra time slots.
+     * @returns {string[]} Array of extra HHMM time strings
+     */
+    function getExtraTimeSlots() {
+        return Array.from(_extraTimeSlots);
+    }
+
+    /**
+     * Get all possible half-hour slots in a day (48 entries).
+     * @returns {string[]} Array of HHMM strings from '0000' to '2330'
+     */
+    function getAllHalfHourSlots() {
+        return ALL_HALF_HOUR_SLOTS;
     }
 
     // ---------------------------------------------------------------
@@ -503,6 +552,10 @@ const TimezoneService = (function() {
         setHiddenTimeSlots,
         getHiddenTimeSlots,
         getDefaultHiddenTimeSlots, // Slice 13.0d
+        // Slice 14.0a: Extra timeslots
+        setExtraTimeSlots,
+        getExtraTimeSlots,
+        getAllHalfHourSlots,
         // Constants exposed for external use
         DAYS,
         DISPLAY_TIME_SLOTS

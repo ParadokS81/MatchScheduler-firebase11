@@ -322,7 +322,7 @@ const TeamManagementDrawer = (function() {
         if (!joinCode || !teamName) return;
         
         // Enhanced copy string per PRD
-        const copyText = `Use code: ${joinCode} to join ${teamName} at ${window.location.origin}`;
+        const copyText = `Use code: ${joinCode} to join ${teamName} at https://scheduler.quake.world`;
         
         try {
             await navigator.clipboard.writeText(copyText);
@@ -532,7 +532,7 @@ const TeamManagementDrawer = (function() {
                 
                 copyBtn.addEventListener('click', async () => {
                     // Copy the enhanced format
-                    const copyText = `Use code: ${newJoinCode} to join ${_teamData.teamName} at ${window.location.origin}`;
+                    const copyText = `Use code: ${newJoinCode} to join ${_teamData.teamName} at https://scheduler.quake.world`;
                     
                     try {
                         await navigator.clipboard.writeText(copyText);

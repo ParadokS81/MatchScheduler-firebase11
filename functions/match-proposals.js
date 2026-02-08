@@ -128,7 +128,7 @@ exports.createProposal = functions
         }
 
         const userId = context.auth.uid;
-        const { proposerTeamId, opponentTeamId, weekId, minFilter } = data;
+        const { proposerTeamId, opponentTeamId, weekId, minFilter, gameType, proposerStandin } = data;
 
         // Validate inputs
         if (!proposerTeamId || typeof proposerTeamId !== 'string') {
@@ -151,12 +151,19 @@ exports.createProposal = functions
         }
         const yourTeam = parseInt(minFilter.yourTeam);
         const opponent = parseInt(minFilter.opponent);
-        if (isNaN(yourTeam) || yourTeam < 1 || yourTeam > 4) {
-            throw new functions.https.HttpsError('invalid-argument', 'minFilter.yourTeam must be 1-4');
+        if (isNaN(yourTeam) || yourTeam < 3 || yourTeam > 4) {
+            throw new functions.https.HttpsError('invalid-argument', 'minFilter.yourTeam must be 3-4');
         }
-        if (isNaN(opponent) || opponent < 1 || opponent > 4) {
-            throw new functions.https.HttpsError('invalid-argument', 'minFilter.opponent must be 1-4');
+        if (isNaN(opponent) || opponent < 3 || opponent > 4) {
+            throw new functions.https.HttpsError('invalid-argument', 'minFilter.opponent must be 3-4');
         }
+        // Validate game type
+        const validGameTypes = ['official', 'practice'];
+        if (!gameType || !validGameTypes.includes(gameType)) {
+            throw new functions.https.HttpsError('invalid-argument', 'gameType must be "official" or "practice"');
+        }
+        // Standin only valid for practice
+        const standinValue = gameType === 'practice' && proposerStandin === true;
 
         // Read team docs
         const [proposerDoc, opponentDoc] = await Promise.all([
@@ -223,6 +230,9 @@ exports.createProposal = functions
             opponentTeamId,
             weekId,
             minFilter: { yourTeam, opponent },
+            gameType,
+            proposerStandin: standinValue,
+            opponentStandin: false,
             proposerConfirmedSlots: {},
             opponentConfirmedSlots: {},
             confirmedSlotId: null,
@@ -264,6 +274,7 @@ exports.createProposal = functions
                     opponentTeamName: opponentTeam.teamName,
                     weekId,
                     minFilter: { yourTeam, opponent },
+                    gameType,
                     createdBy: userId
                 }
             });
@@ -855,5 +866,90 @@ exports.toggleScheduler = functions
         console.error('❌ Error toggling scheduler:', error);
         if (error instanceof functions.https.HttpsError) throw error;
         throw new functions.https.HttpsError('internal', 'Failed to toggle scheduler: ' + error.message);
+    }
+});
+
+// ─── updateProposalSettings ──────────────────────────────────────────────────
+
+exports.updateProposalSettings = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    try {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+        }
+
+        const userId = context.auth.uid;
+        const { proposalId, gameType, standin } = data;
+
+        if (!proposalId || typeof proposalId !== 'string') {
+            throw new functions.https.HttpsError('invalid-argument', 'proposalId is required');
+        }
+
+        // Read proposal
+        const proposalRef = db.collection('matchProposals').doc(proposalId);
+        const proposalDoc = await proposalRef.get();
+
+        if (!proposalDoc.exists) {
+            throw new functions.https.HttpsError('not-found', 'Proposal not found');
+        }
+
+        const proposal = proposalDoc.data();
+
+        if (proposal.status !== 'active') {
+            throw new functions.https.HttpsError('failed-precondition', 'Proposal is no longer active');
+        }
+
+        // Read team docs for authorization
+        const [proposerTeamDoc, opponentTeamDoc] = await Promise.all([
+            db.collection('teams').doc(proposal.proposerTeamId).get(),
+            db.collection('teams').doc(proposal.opponentTeamId).get()
+        ]);
+
+        const proposerTeam = proposerTeamDoc.data();
+        const opponentTeam = opponentTeamDoc.data();
+
+        const isProposerSide = isAuthorized(proposerTeam, userId);
+        const isOpponentSide = isAuthorized(opponentTeam, userId);
+
+        if (!isProposerSide && !isOpponentSide) {
+            throw new functions.https.HttpsError('permission-denied', 'Only leaders or schedulers can update proposal settings');
+        }
+
+        const updates = { updatedAt: new Date() };
+
+        // Update game type if provided
+        if (gameType !== undefined) {
+            const validGameTypes = ['official', 'practice'];
+            if (!validGameTypes.includes(gameType)) {
+                throw new functions.https.HttpsError('invalid-argument', 'gameType must be "official" or "practice"');
+            }
+            updates.gameType = gameType;
+            // Switching to official resets both standin flags
+            if (gameType === 'official') {
+                updates.proposerStandin = false;
+                updates.opponentStandin = false;
+            }
+        }
+
+        // Update standin if provided (only for practice)
+        if (standin !== undefined) {
+            const effectiveGameType = gameType || proposal.gameType;
+            if (effectiveGameType !== 'practice') {
+                throw new functions.https.HttpsError('invalid-argument', 'Standin is only available for practice matches');
+            }
+            const standinField = isProposerSide ? 'proposerStandin' : 'opponentStandin';
+            updates[standinField] = !!standin;
+        }
+
+        await proposalRef.update(updates);
+
+        console.log('✅ Proposal settings updated:', proposalId, updates);
+        return { success: true };
+
+    } catch (error) {
+        console.error('❌ Error updating proposal settings:', error);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to update proposal settings: ' + error.message);
     }
 });

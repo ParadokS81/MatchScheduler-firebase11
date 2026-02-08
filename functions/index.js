@@ -13,7 +13,7 @@ const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings,
 const { updateAvailability } = require('./availability');
 const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 const { updateFavorites } = require('./favorites');
-const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler } = require('./match-proposals');
+const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler, updateProposalSettings } = require('./match-proposals');
 const { getScheduledGames } = require('./scheduled-games-api');
 const { submitFeedback } = require('./feedback');
 
@@ -54,6 +54,7 @@ exports.withdrawConfirmation = withdrawConfirmation;
 exports.cancelProposal = cancelProposal;
 exports.cancelScheduledMatch = cancelScheduledMatch;
 exports.toggleScheduler = toggleScheduler;
+exports.updateProposalSettings = updateProposalSettings;
 
 // Public API (unauthenticated)
 exports.getScheduledGames = getScheduledGames;

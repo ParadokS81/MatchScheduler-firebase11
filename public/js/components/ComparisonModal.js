@@ -10,6 +10,12 @@ const ComparisonModal = (function() {
     let _keydownHandler = null;
     let _selectedOpponentIndex = 0;
     let _currentData = null; // Store current modal data for re-rendering
+    let _selectedGameType = null; // 'official' | 'practice' | null
+    let _withStandin = false; // Standin toggle (practice only)
+    let _proposalStep = 1; // 1=match type, 2=propose, 3=contact
+    let _createdProposalId = null;
+    let _discordMessage = null; // Pre-built message for step 3
+    let _opponentDiscordUserId = null; // Resolved in background
 
     /**
      * Escape HTML to prevent XSS
@@ -443,6 +449,116 @@ const ComparisonModal = (function() {
     }
 
     /**
+     * Render the 3-step horizontal stepper for the proposal flow.
+     * Step 1: Match Type (OFF/PRAC + standin)
+     * Step 2: Propose Match
+     * Step 3: Contact Opponent (Discord)
+     */
+    function _renderStepper() {
+        const step1Done = !!_selectedGameType;
+        const step2Done = _proposalStep >= 3;
+        const step1Active = _proposalStep === 1 || (!step1Done && _proposalStep < 2);
+        const step2Active = _proposalStep === 2 || (step1Done && !step2Done);
+        const step3Active = _proposalStep === 3;
+
+        const checkSvg = `<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+        const discordIcon = `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.04.001-.088-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>`;
+
+        // Step circle helper
+        const circle = (num, done, active) => {
+            if (done) return `<div class="w-5 h-5 rounded-full bg-green-500/20 border border-green-500 flex items-center justify-center text-green-400">${checkSvg}</div>`;
+            if (active) return `<div class="w-5 h-5 rounded-full bg-primary/20 border border-primary flex items-center justify-center text-primary text-xs font-bold">${num}</div>`;
+            return `<div class="w-5 h-5 rounded-full bg-muted/30 border border-border flex items-center justify-center text-muted-foreground/40 text-xs">${num}</div>`;
+        };
+
+        // Connector line
+        const line = (done) => `<div class="flex-1 h-px ${done ? 'bg-green-500/50' : 'bg-border'} mx-1"></div>`;
+
+        // Step 1 content: Official/Practice + standin
+        const step1Content = `
+            <div class="flex items-center gap-1.5 mt-1.5">
+                <button id="game-type-off" class="px-2.5 py-0.5 rounded border text-xs font-medium transition-colors
+                        ${_selectedGameType === 'official' ? 'border-green-500 text-green-400 bg-green-500/10' : 'border-border text-muted-foreground hover:text-green-400 hover:border-green-500/50'}">
+                    Official
+                </button>
+                <button id="game-type-prac" class="px-2.5 py-0.5 rounded border text-xs font-medium transition-colors
+                        ${_selectedGameType === 'practice' ? 'border-amber-500 text-amber-400 bg-amber-500/10' : 'border-border text-muted-foreground hover:text-amber-400 hover:border-amber-500/50'}">
+                    Practice
+                </button>
+                ${_selectedGameType === 'practice' ? `
+                    <button id="standin-toggle" class="px-2 py-0.5 rounded border text-xs transition-colors
+                            ${_withStandin ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10' : 'border-border text-muted-foreground hover:text-cyan-400 hover:border-cyan-500/50'}"
+                            title="+1 standin for your team">
+                        ${_withStandin ? 'Standin ✓' : 'Add Standin'}
+                    </button>
+                ` : ''}
+            </div>
+        `;
+
+        // Step 2 content: Propose button
+        const step2Content = step2Done
+            ? `<div class="mt-1.5 text-xs text-green-400">Created!</div>`
+            : `<button id="propose-match-btn" class="mt-1.5 px-3 py-1 rounded text-xs font-medium transition-colors
+                    ${step1Done
+                        ? 'bg-primary text-primary-foreground hover:bg-primary/80'
+                        : 'bg-muted/30 text-muted-foreground/40 cursor-not-allowed'}"
+                    ${step1Done ? '' : 'disabled'}>
+                Propose
+            </button>`;
+
+        // Step 3 content: Discord + Copy (full buttons)
+        const escapedMsg = _discordMessage ? _escapeHtml(_discordMessage).replace(/\n/g, '&#10;') : '';
+        const step3Content = step3Active
+            ? `<div class="flex items-center gap-1.5 mt-1.5">
+                <button id="post-proposal-discord" class="px-2.5 py-1 rounded text-xs font-medium bg-[#5865F2] hover:bg-[#4752C4] text-white flex items-center gap-1"
+                        data-message="${escapedMsg}">
+                    Contact Leader ${discordIcon}
+                </button>
+                <button id="post-proposal-copy" class="px-2.5 py-1 rounded text-xs border border-border text-muted-foreground hover:text-foreground"
+                        data-message="${escapedMsg}">
+                    Copy Message
+                </button>
+            </div>`
+            : `<div class="mt-1.5 text-xs text-muted-foreground/30">${discordIcon}</div>`;
+
+        return `
+            <div class="flex items-start mb-2">
+                <!-- Step 1 -->
+                <div class="flex flex-col items-center flex-1 min-w-0">
+                    <div class="flex items-center w-full">
+                        <div class="flex-1"></div>
+                        ${circle(1, step1Done, step1Active)}
+                        ${line(step1Done)}
+                    </div>
+                    <div class="text-xs mt-1 ${step1Active ? 'text-foreground' : 'text-muted-foreground'} font-medium">Match Type</div>
+                    ${step1Content}
+                </div>
+                <!-- Step 2 -->
+                <div class="flex flex-col items-center flex-1 min-w-0">
+                    <div class="flex items-center w-full">
+                        ${line(step1Done)}
+                        ${circle(2, step2Done, step2Active && step1Done)}
+                        ${line(step2Done)}
+                    </div>
+                    <div class="text-xs mt-1 ${step2Active && step1Done ? 'text-foreground' : 'text-muted-foreground'} font-medium">Propose</div>
+                    ${step2Content}
+                </div>
+                <!-- Step 3 -->
+                <div class="flex flex-col items-center flex-1 min-w-0">
+                    <div class="flex items-center w-full">
+                        ${line(step2Done)}
+                        ${circle(3, false, step3Active)}
+                        <div class="flex-1"></div>
+                    </div>
+                    <div class="text-xs mt-1 ${step3Active ? 'text-foreground' : 'text-muted-foreground'} font-medium">Contact</div>
+                    ${step3Content}
+                </div>
+            </div>
+            <button id="comparison-modal-done" class="btn btn-secondary w-full text-sm">${step3Active ? 'Done' : 'Close'}</button>
+        `;
+    }
+
+    /**
      * Render the full modal with VS layout
      */
     function _renderModal(weekId, slotId, userTeamInfo, matches, isLeader, leaderDiscordInfo, canSchedule) {
@@ -505,7 +621,7 @@ const ComparisonModal = (function() {
                                 selectedMatch.unavailablePlayers,
                                 false,
                                 isLeader ? leaderDiscordInfo[selectedMatch.leaderId] : null,
-                                isLeader,
+                                isLeader && !canSchedule,
                                 slotId,
                                 weekId,
                                 userTeamInfo,
@@ -514,16 +630,11 @@ const ComparisonModal = (function() {
                         </div>
                     </div>
 
-                    <!-- Footer -->
-                    <div class="p-4 border-t border-border shrink-0 flex gap-2">
-                        ${canSchedule ? `
-                            <button id="propose-match-btn" class="btn btn-primary flex-1">
-                                Propose Match
-                            </button>
-                        ` : ''}
-                        <button id="comparison-modal-done" class="btn ${canSchedule ? 'btn-secondary' : 'btn-primary'} flex-1">
-                            Close
-                        </button>
+                    <!-- Footer: Stepper or Close -->
+                    <div class="p-4 border-t border-border shrink-0">
+                        ${canSchedule ? _renderStepper() : `
+                            <button id="comparison-modal-done" class="btn btn-primary w-full">Close</button>
+                        `}
                     </div>
                 </div>
             </div>
@@ -574,28 +685,54 @@ const ComparisonModal = (function() {
             });
         });
 
+        // Game type toggle buttons
+        const _reRenderModal = () => {
+            _renderModal(
+                _currentData.weekId, _currentData.slotId,
+                _currentData.userTeamInfo, _currentData.matches,
+                _currentData.isLeader, _currentData.leaderDiscordInfo,
+                _currentData.canSchedule
+            );
+        };
+        document.getElementById('game-type-off')?.addEventListener('click', () => {
+            _selectedGameType = 'official';
+            _withStandin = false; // No standin for officials
+            _reRenderModal();
+        });
+        document.getElementById('game-type-prac')?.addEventListener('click', () => {
+            _selectedGameType = 'practice';
+            _reRenderModal();
+        });
+        document.getElementById('standin-toggle')?.addEventListener('click', () => {
+            _withStandin = !_withStandin;
+            _reRenderModal();
+        });
+
         // Propose Match button
         const proposeBtn = document.getElementById('propose-match-btn');
         if (proposeBtn) {
             proposeBtn.addEventListener('click', async () => {
+                if (!_selectedGameType) return;
                 proposeBtn.disabled = true;
                 proposeBtn.textContent = 'Creating...';
 
                 try {
                     const selectedMatch = _currentData.matches[_selectedOpponentIndex] || _currentData.matches[0];
-                    const comparisonState = ComparisonEngine.getComparisonState();
-                    const minFilter = comparisonState.filters || { yourTeam: 1, opponent: 1 };
+                    // Proposals always use 4v4 — standin covers the 3+1 case
+                    const minFilter = { yourTeam: 4, opponent: 4 };
 
                     const result = await ProposalService.createProposal({
                         proposerTeamId: _currentData.userTeamInfo.teamId,
                         opponentTeamId: selectedMatch.teamId,
                         weekId: _currentData.weekId,
-                        minFilter
+                        minFilter,
+                        gameType: _selectedGameType,
+                        proposerStandin: _selectedGameType === 'practice' && _withStandin
                     });
 
                     if (result.success) {
                         // Show post-creation step with Discord contact prompt
-                        _showPostProposalStep(selectedMatch);
+                        _showPostProposalStep(selectedMatch, result.proposalId);
                     } else {
                         ToastService.showError(result.error || 'Failed to create proposal');
                         proposeBtn.disabled = false;
@@ -667,6 +804,39 @@ const ComparisonModal = (function() {
             });
         });
 
+        // Step 3: Discord DM button (in stepper)
+        const discordBtn = document.getElementById('post-proposal-discord');
+        if (discordBtn) {
+            discordBtn.addEventListener('click', async () => {
+                const msg = discordBtn.dataset.message.replace(/&#10;/g, '\n');
+                try {
+                    await navigator.clipboard.writeText(msg);
+                    ToastService.showSuccess('Message copied! Paste in Discord');
+                } catch (err) { /* silent */ }
+                if (_opponentDiscordUserId) {
+                    setTimeout(() => {
+                        window.open(`discord://-/users/${_opponentDiscordUserId}`, '_blank');
+                    }, 100);
+                }
+            });
+        }
+
+        // Step 3: Copy button (in stepper)
+        const copyBtn = document.getElementById('post-proposal-copy');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', async () => {
+                const msg = copyBtn.dataset.message.replace(/&#10;/g, '\n');
+                try {
+                    await navigator.clipboard.writeText(msg);
+                    ToastService.showSuccess('Message copied!');
+                    copyBtn.textContent = '✓';
+                    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+                } catch (err) {
+                    ToastService.showError('Failed to copy');
+                }
+            });
+        }
+
         // ESC key to close
         _keydownHandler = (e) => {
             if (e.key === 'Escape' && _isOpen) close();
@@ -675,31 +845,29 @@ const ComparisonModal = (function() {
     }
 
     /**
-     * Show the post-proposal-creation step with Discord contact prompt
+     * Advance to step 3 after proposal creation — builds Discord message and re-renders stepper
      */
-    function _showPostProposalStep(selectedMatch) {
+    function _showPostProposalStep(selectedMatch, proposalId) {
         const weekId = _currentData.weekId;
         const userTeamInfo = _currentData.userTeamInfo;
         const weekNum = weekId.split('-')[1];
-        const comparisonState = ComparisonEngine.getComparisonState();
-        const minFilter = comparisonState.filters || { yourTeam: 1, opponent: 1 };
+        const minFilter = { yourTeam: 4, opponent: 4 };
 
-        // Compute viable slots for message
+        // Compute viable slots for message (with standin if applicable)
+        const standinSettings = _selectedGameType === 'practice' && _withStandin
+            ? { proposerStandin: true, opponentStandin: false }
+            : undefined;
         const viableSlots = ProposalService.computeViableSlots(
-            userTeamInfo.teamId,
-            selectedMatch.teamId,
-            weekId,
-            minFilter
+            userTeamInfo.teamId, selectedMatch.teamId, weekId, minFilter, standinSettings
         );
 
-        // Sort by total players descending, take top 3
+        // Build Discord message
         const sorted = [...viableSlots].sort((a, b) =>
             (b.proposerCount + b.opponentCount) - (a.proposerCount + a.opponentCount)
         );
         const top3 = sorted.slice(0, 3);
         const remaining = sorted.length - 3;
 
-        // Build message
         const lines = [
             `Hey! We proposed a match: ${userTeamInfo.teamTag} vs ${selectedMatch.teamTag} (W${weekNum})`,
             '',
@@ -711,7 +879,7 @@ const ComparisonModal = (function() {
             lines.push(`\u25B8 ${shortDay} ${display.timeLabel} (${slot.proposerCount}v${slot.opponentCount})`);
         }
         if (top3.length === 0) {
-            lines.length = 2; // Keep header + blank line
+            lines.length = 2;
             lines.push('No viable slots yet \u2014 check availability!');
         }
         if (remaining > 0) {
@@ -719,106 +887,35 @@ const ComparisonModal = (function() {
             lines.push(`+${remaining} more time${remaining !== 1 ? 's' : ''} available`);
         }
         lines.push('');
-        lines.push('Check proposal: https://scheduler.quake.world');
-        const message = lines.join('\n');
+        const deepLink = proposalId
+            ? `https://scheduler.quake.world/#/matches/${proposalId}`
+            : 'https://scheduler.quake.world';
+        lines.push(`Check proposal: ${deepLink}`);
 
-        const escapedMessage = _escapeHtml(message).replace(/\n/g, '&#10;');
+        _discordMessage = lines.join('\n');
+        _createdProposalId = proposalId;
+        _proposalStep = 3;
 
-        const discordIcon = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>`;
-
-        // Replace modal body
-        const body = _container.querySelector('.p-4.overflow-y-auto.flex-1');
-        if (body) {
-            body.innerHTML = `
-                <div class="p-6 text-center">
-                    <div class="text-green-400 text-4xl mb-3">&#10003;</div>
-                    <h3 class="text-lg font-semibold text-foreground mb-1">Proposal Created!</h3>
-                    <p class="text-sm text-muted-foreground mb-4">
-                        ${_escapeHtml(userTeamInfo.teamTag)} vs ${_escapeHtml(selectedMatch.teamTag)} — Week ${weekNum}
-                    </p>
-
-                    <div class="text-left bg-muted/30 rounded p-3 mb-4 text-xs font-mono text-muted-foreground whitespace-pre-wrap max-h-32 overflow-y-auto">${_escapeHtml(message)}</div>
-
-                    <p class="text-sm text-muted-foreground mb-3">
-                        Send this to the opponent leader so they know to check:
-                    </p>
-
-                    <div class="flex items-center gap-2 justify-center flex-wrap">
-                        <button class="btn btn-sm bg-[#5865F2] hover:bg-[#4752C4] text-white flex items-center gap-1"
-                                id="post-proposal-discord" data-message="${escapedMessage}">
-                            ${discordIcon}
-                            <span>Contact on Discord</span>
-                        </button>
-                        <button class="btn btn-sm btn-secondary" id="post-proposal-copy" data-message="${escapedMessage}">
-                            Copy Message
-                        </button>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Replace footer with just Done button
-        const footer = _container.querySelector('.p-4.border-t.border-border.shrink-0');
-        if (footer) {
-            footer.innerHTML = `<button id="comparison-modal-done-post" class="btn btn-primary flex-1">Done</button>`;
-            document.getElementById('comparison-modal-done-post')?.addEventListener('click', close);
-        }
-
-        // Wire up Discord + Copy buttons
-        _attachPostProposalListeners(selectedMatch);
-    }
-
-    /**
-     * Attach event listeners for the post-proposal Discord/Copy buttons
-     */
-    async function _attachPostProposalListeners(selectedMatch) {
-        const copyBtn = document.getElementById('post-proposal-copy');
-        const discordBtn = document.getElementById('post-proposal-discord');
-
-        // Copy button
-        copyBtn?.addEventListener('click', async () => {
-            const msg = copyBtn.dataset.message.replace(/&#10;/g, '\n');
-            try {
-                await navigator.clipboard.writeText(msg);
-                ToastService.showSuccess('Message copied to clipboard!');
-                const origHtml = copyBtn.innerHTML;
-                copyBtn.innerHTML = `<svg class="w-4 h-4 inline" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> Copied!`;
-                setTimeout(() => { copyBtn.innerHTML = origHtml; }, 2000);
-            } catch (err) {
-                console.error('Copy failed:', err);
-                ToastService.showError('Failed to copy message');
-            }
-        });
-
-        // Fetch opponent leader Discord info
+        // Resolve opponent leader Discord ID in background
         const opponentTeam = TeamService.getTeamFromCache(selectedMatch.teamId);
         const leaderId = opponentTeam?.leaderId;
-
-        if (leaderId && discordBtn) {
-            try {
-                const discordInfo = await _getUserDiscordInfo(leaderId);
-                if (discordInfo?.discordUserId) {
-                    discordBtn.addEventListener('click', async () => {
-                        const msg = discordBtn.dataset.message.replace(/&#10;/g, '\n');
-                        try {
-                            await navigator.clipboard.writeText(msg);
-                            ToastService.showSuccess('Message copied! Paste in Discord');
-                        } catch (err) { /* silent */ }
-                        setTimeout(() => {
-                            window.open(`discord://-/users/${discordInfo.discordUserId}`, '_blank');
-                        }, 100);
-                    });
-                } else {
-                    // No Discord user ID — hide Discord button
-                    discordBtn.style.display = 'none';
+        if (leaderId) {
+            _getUserDiscordInfo(leaderId).then(info => {
+                if (info?.discordUserId) {
+                    _opponentDiscordUserId = info.discordUserId;
                 }
-            } catch (err) {
-                console.warn('Failed to fetch leader Discord info:', err);
-                discordBtn.style.display = 'none';
-            }
-        } else if (discordBtn) {
-            discordBtn.style.display = 'none';
+            }).catch(() => {});
         }
+
+        // Re-render to update stepper to step 3
+        _renderModal(
+            _currentData.weekId, _currentData.slotId,
+            _currentData.userTeamInfo, _currentData.matches,
+            _currentData.isLeader, _currentData.leaderDiscordInfo,
+            _currentData.canSchedule
+        );
+
+        ToastService.showSuccess('Proposal created!');
     }
 
     /**
@@ -888,6 +985,12 @@ const ComparisonModal = (function() {
         _isOpen = false;
         _currentData = null;
         _selectedOpponentIndex = 0;
+        _selectedGameType = null;
+        _withStandin = false;
+        _proposalStep = 1;
+        _createdProposalId = null;
+        _discordMessage = null;
+        _opponentDiscordUserId = null;
     }
 
     /**

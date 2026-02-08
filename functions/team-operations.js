@@ -700,8 +700,40 @@ exports.leaveTeam = functions
             console.log('📝 Leave event transaction set, will commit with transaction');
         });
         
+        // After transaction: clean up availability (outside transaction for query)
+        const availabilitySnap = await db.collection('availability')
+            .where('teamId', '==', teamId)
+            .get();
+
+        if (!availabilitySnap.empty) {
+            const cleanupBatch = db.batch();
+            let cleanedSlots = 0;
+            availabilitySnap.docs.forEach(doc => {
+                const data = doc.data();
+                const slots = data.slots || {};
+                let hasChanges = false;
+
+                Object.keys(slots).forEach(slotKey => {
+                    if (Array.isArray(slots[slotKey]) && slots[slotKey].includes(userId)) {
+                        slots[slotKey] = slots[slotKey].filter(uid => uid !== userId);
+                        hasChanges = true;
+                        cleanedSlots++;
+                    }
+                });
+
+                if (hasChanges) {
+                    cleanupBatch.update(doc.ref, { slots });
+                }
+            });
+
+            if (cleanedSlots > 0) {
+                await cleanupBatch.commit();
+                console.log(`🧹 Cleaned ${cleanedSlots} availability slots for departed player ${userId}`);
+            }
+        }
+
         console.log('✅ Player left team successfully:', { teamId, userId, isLastMember });
-        
+
         return {
             success: true,
             data: {
@@ -966,7 +998,7 @@ exports.updateTeamSettings = functions
         }
 
         const userId = context.auth.uid;
-        const { teamId, maxPlayers, hideRosterNames, hideFromComparison } = data;
+        const { teamId, teamTag, maxPlayers, hideRosterNames, hideFromComparison } = data;
 
         // Validate input
         if (!teamId || typeof teamId !== 'string') {
@@ -974,14 +1006,27 @@ exports.updateTeamSettings = functions
         }
 
         // At least one setting must be provided
+        const hasTeamTag = teamTag !== undefined;
         const hasMaxPlayers = maxPlayers !== undefined;
         const hasHideRosterNames = hideRosterNames !== undefined;
         const hasHideFromComparison = hideFromComparison !== undefined;
 
-        if (!hasMaxPlayers && !hasHideRosterNames && !hasHideFromComparison) {
+        if (!hasTeamTag && !hasMaxPlayers && !hasHideRosterNames && !hasHideFromComparison) {
             throw new functions.https.HttpsError('invalid-argument', 'At least one setting must be provided');
         }
 
+        if (hasTeamTag) {
+            if (typeof teamTag !== 'string') {
+                throw new functions.https.HttpsError('invalid-argument', 'teamTag must be a string');
+            }
+            const trimmedTag = teamTag.trim();
+            if (trimmedTag.length < 1 || trimmedTag.length > 4) {
+                throw new functions.https.HttpsError('invalid-argument', 'teamTag must be 1-4 characters');
+            }
+            if (!/^[a-zA-Z0-9\[\]\(\)\{\}\-_.,!]+$/.test(trimmedTag)) {
+                throw new functions.https.HttpsError('invalid-argument', 'teamTag contains invalid characters');
+            }
+        }
         if (hasMaxPlayers && (typeof maxPlayers !== 'number' || maxPlayers < 4 || maxPlayers > 20)) {
             throw new functions.https.HttpsError('invalid-argument', 'maxPlayers must be between 4 and 20');
         }
@@ -1011,12 +1056,19 @@ exports.updateTeamSettings = functions
         }
 
         // Build update object dynamically
+        const trimmedTag = hasTeamTag ? teamTag.trim() : null;
         const updateData = { lastActivityAt: FieldValue.serverTimestamp() };
+        if (hasTeamTag) updateData.teamTag = trimmedTag;
         if (hasMaxPlayers) updateData.maxPlayers = maxPlayers;
         if (hasHideRosterNames) updateData.hideRosterNames = hideRosterNames;
         if (hasHideFromComparison) updateData.hideFromComparison = hideFromComparison;
 
         await db.collection('teams').doc(teamId).update(updateData);
+
+        // Propagate tag change to active proposals and upcoming matches
+        if (hasTeamTag && trimmedTag !== team.teamTag) {
+            await _propagateTeamTagChange(teamId, trimmedTag);
+        }
 
         // Log event
         const now = new Date();
@@ -1027,6 +1079,10 @@ exports.updateTeamSettings = functions
         const eventId = `${dateStr}-${timeStr}-${teamNameClean}-settings_updated_${randomSuffix}`;
 
         const details = {};
+        if (hasTeamTag) {
+            details.oldTeamTag = team.teamTag;
+            details.newTeamTag = trimmedTag;
+        }
         if (hasMaxPlayers) {
             details.oldMaxPlayers = team.maxPlayers;
             details.newMaxPlayers = maxPlayers;
@@ -1072,3 +1128,57 @@ exports.updateTeamSettings = functions
         throw new functions.https.HttpsError('internal', 'Failed to update team settings: ' + error.message);
     }
 });
+
+/**
+ * Propagate team tag change to active proposals and upcoming matches.
+ * Completed/cancelled matches keep the historical tag.
+ */
+async function _propagateTeamTagChange(teamId, newTag) {
+    const batch = db.batch();
+    let updateCount = 0;
+
+    // Update active proposals where this team is proposer
+    const asProposer = await db.collection('matchProposals')
+        .where('proposerTeamId', '==', teamId)
+        .where('status', '==', 'active')
+        .get();
+    asProposer.docs.forEach(doc => {
+        batch.update(doc.ref, { proposerTeamTag: newTag });
+        updateCount++;
+    });
+
+    // Update active proposals where this team is opponent
+    const asOpponent = await db.collection('matchProposals')
+        .where('opponentTeamId', '==', teamId)
+        .where('status', '==', 'active')
+        .get();
+    asOpponent.docs.forEach(doc => {
+        batch.update(doc.ref, { opponentTeamTag: newTag });
+        updateCount++;
+    });
+
+    // Update upcoming scheduled matches where this team is team A
+    const asTeamA = await db.collection('scheduledMatches')
+        .where('teamAId', '==', teamId)
+        .where('status', '==', 'upcoming')
+        .get();
+    asTeamA.docs.forEach(doc => {
+        batch.update(doc.ref, { teamATag: newTag });
+        updateCount++;
+    });
+
+    // Update upcoming scheduled matches where this team is team B
+    const asTeamB = await db.collection('scheduledMatches')
+        .where('teamBId', '==', teamId)
+        .where('status', '==', 'upcoming')
+        .get();
+    asTeamB.docs.forEach(doc => {
+        batch.update(doc.ref, { teamBTag: newTag });
+        updateCount++;
+    });
+
+    if (updateCount > 0) {
+        await batch.commit();
+        console.log(`📋 Propagated tag change to ${updateCount} proposals/matches for team ${teamId}`);
+    }
+}

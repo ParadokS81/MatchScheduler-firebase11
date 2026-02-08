@@ -278,6 +278,57 @@ const GridActionButtons = (function() {
     }
 
     // ---------------------------------------------------------------
+    // Extra Timeslot Helpers (Slice 14.0c)
+    // ---------------------------------------------------------------
+
+    // Get next half-hour slot (e.g., '1230' → '1300', '2330' → '0000')
+    function _nextHalfHour(slot) {
+        let mins = parseInt(slot.slice(0, 2)) * 60 + parseInt(slot.slice(2));
+        mins += 30;
+        if (mins >= 1440) mins -= 1440;
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return String(h).padStart(2, '0') + String(m).padStart(2, '0');
+    }
+
+    // Group individual HHMM slots into contiguous ranges
+    // e.g., ['1200','1230','1300'] → [{ from: '1200', to: '1300' }]
+    function _groupSlotsIntoRanges(slots) {
+        if (!slots || slots.length === 0) return [];
+
+        const sorted = [...slots].sort((a, b) => parseInt(a) - parseInt(b));
+        const ranges = [];
+        let rangeStart = sorted[0];
+        let prev = sorted[0];
+
+        for (let i = 1; i < sorted.length; i++) {
+            const expected = _nextHalfHour(prev);
+            if (sorted[i] === expected) {
+                prev = sorted[i];
+            } else {
+                ranges.push({ from: rangeStart, to: prev });
+                rangeStart = sorted[i];
+                prev = sorted[i];
+            }
+        }
+        ranges.push({ from: rangeStart, to: prev });
+        return ranges;
+    }
+
+    // Expand a from/to range into individual HHMM slots
+    // e.g., ('1200', '1330') → ['1200', '1230', '1300', '1330']
+    function _expandRange(from, to) {
+        const slots = [];
+        let current = from;
+        for (let i = 0; i < 48; i++) {
+            slots.push(current);
+            if (current === to) break;
+            current = _nextHalfHour(current);
+        }
+        return slots;
+    }
+
+    // ---------------------------------------------------------------
     // Timeslot Editor Modal
     // ---------------------------------------------------------------
 
@@ -295,22 +346,115 @@ const GridActionButtons = (function() {
         '2300': { count: 1207, pct: 10.6 }
     };
 
+    // Format CET time from HHMM string (e.g., '1200' → '12:00')
+    function _formatCet(slot) {
+        return slot.slice(0, 2) + ':' + slot.slice(2);
+    }
+
+    // Pending extra slots for the modal session (null = unchanged, array = modified)
+    let _pendingExtraSlots = null;
+
+    function _buildExtraTimeslotsSection() {
+        const currentExtras = _pendingExtraSlots !== null
+            ? _pendingExtraSlots
+            : TimezoneService.getExtraTimeSlots();
+        const refDate = new Date();
+
+        // Build dropdown options — all 48 half-hour slots minus base range
+        const baseSet = new Set(TimezoneService.DISPLAY_TIME_SLOTS);
+        const allSlots = TimezoneService.getAllHalfHourSlots();
+        const availableSlots = allSlots.filter(s => !baseSet.has(s));
+
+        const optionsHtml = availableSlots.map(slot => {
+            const localDisplay = TimezoneService.baseToLocalDisplay(slot, refDate);
+            const cetDisplay = _formatCet(slot);
+            return `<option value="${slot}">${localDisplay} (${cetDisplay} CET)</option>`;
+        }).join('');
+
+        const rangesHtml = _buildRangesListHtml(currentExtras);
+
+        return `
+            <div class="mt-3 border-t border-border pt-3">
+                <button id="extra-timeslots-toggle" class="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground w-full text-left">
+                    <span class="extra-toggle-arrow">\u25B8</span>
+                    <span>Add extra timeslots</span>
+                </button>
+                <div id="extra-timeslots-panel" class="hidden mt-2">
+                    <p class="text-xs text-muted-foreground mb-2">
+                        Add slots outside the standard evening window.<br>
+                        Only you see these — other players are not affected.
+                    </p>
+                    <div class="flex items-center gap-2 mb-2">
+                        <label class="text-xs text-muted-foreground">From</label>
+                        <select id="extra-from" class="bg-input border border-border rounded text-sm px-2 py-1 flex-1">
+                            ${optionsHtml}
+                        </select>
+                        <label class="text-xs text-muted-foreground">To</label>
+                        <select id="extra-to" class="bg-input border border-border rounded text-sm px-2 py-1 flex-1">
+                            ${optionsHtml}
+                        </select>
+                        <button id="extra-add-btn" class="btn-primary px-2 py-1 rounded text-xs">Add</button>
+                    </div>
+                    <div id="extra-ranges-list" class="mb-1">
+                        ${rangesHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function _buildRangesListHtml(extras) {
+        const ranges = _groupSlotsIntoRanges(extras);
+        const refDate = new Date();
+
+        if (ranges.length === 0) {
+            return '<p class="text-xs text-muted-foreground">None added</p>';
+        }
+
+        return ranges.map(range => {
+            const fromLocal = TimezoneService.baseToLocalDisplay(range.from, refDate);
+            const toLocal = TimezoneService.baseToLocalDisplay(range.to, refDate);
+            const fromCet = _formatCet(range.from);
+            const toCet = _formatCet(range.to);
+            return `
+                <div class="flex items-center justify-between py-1">
+                    <span class="text-sm">${fromLocal} – ${toLocal} <span class="text-muted-foreground text-xs">(${fromCet}–${toCet} CET)</span></span>
+                    <button class="extra-range-remove text-muted-foreground hover:text-destructive text-xs px-1"
+                            data-from="${range.from}" data-to="${range.to}">&times;</button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function _refreshExtraRangesList(modal) {
+        const listEl = modal.querySelector('#extra-ranges-list');
+        if (!listEl) return;
+        const extras = _pendingExtraSlots !== null
+            ? _pendingExtraSlots
+            : TimezoneService.getExtraTimeSlots();
+        listEl.innerHTML = _buildRangesListHtml(extras);
+    }
+
     function _showTimeslotsModal() {
+        // Reset pending extras — null means "unchanged from current state"
+        _pendingExtraSlots = null;
+
         const allSlots = TimezoneService.DISPLAY_TIME_SLOTS;
         const hiddenSlots = new Set(TimezoneService.getHiddenTimeSlots());
+        const currentExtras = TimezoneService.getExtraTimeSlots();
 
         const modal = document.createElement('div');
         modal.className = 'fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4 backdrop-blur-sm';
 
-        const visibleCount = allSlots.length - hiddenSlots.size;
+        const visibleCount = allSlots.length - hiddenSlots.size + currentExtras.length;
 
         modal.innerHTML = `
-            <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm">
-                <div class="flex items-center justify-between p-4 border-b border-border">
+            <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm max-h-[90vh] flex flex-col">
+                <div class="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
                     <h3 class="text-lg font-semibold">Edit Timeslots</h3>
-                    <span class="text-sm text-muted-foreground"><span id="timeslots-visible-count">${visibleCount}</span>/${allSlots.length} vis.</span>
+                    <span class="text-sm text-muted-foreground"><span id="timeslots-visible-count">${visibleCount}</span> visible</span>
                 </div>
-                <div class="p-4">
+                <div class="p-4 overflow-y-auto flex-1 min-h-0">
                     <p class="text-xs text-muted-foreground mb-3">Toggle timeslots to free up space. Minimum 4 must remain visible.</p>
                     <div class="space-y-0.5" id="timeslot-toggles">
                         ${allSlots.map(slot => {
@@ -336,8 +480,9 @@ const GridActionButtons = (function() {
                         }).join('')}
                     </div>
                     <p class="text-xs text-muted-foreground mt-3">EU 4on4 game frequency (15k games)<br>Peak hours: 21:00-22:30</p>
+                    ${_buildExtraTimeslotsSection()}
                 </div>
-                <div class="flex justify-end gap-2 p-4 border-t border-border">
+                <div class="flex justify-end gap-2 p-4 border-t border-border flex-shrink-0">
                     <button id="timeslots-cancel-btn" class="btn-secondary px-4 py-2 rounded text-sm">Cancel</button>
                     <button id="timeslots-save-btn" class="btn-primary px-4 py-2 rounded text-sm">Save</button>
                 </div>
@@ -352,7 +497,10 @@ const GridActionButtons = (function() {
         function updateToggleStates() {
             const checked = modal.querySelectorAll('.slot-checkbox:checked');
             const checkedCount = checked.length;
-            countEl.textContent = checkedCount;
+            const extraCount = _pendingExtraSlots !== null
+                ? _pendingExtraSlots.length
+                : TimezoneService.getExtraTimeSlots().length;
+            countEl.textContent = checkedCount + extraCount;
 
             checkboxes.forEach(cb => {
                 if (cb.checked && checkedCount <= 4) {
@@ -372,6 +520,53 @@ const GridActionButtons = (function() {
         });
 
         updateToggleStates();
+
+        // Extra timeslots: toggle expand/collapse
+        modal.querySelector('#extra-timeslots-toggle')?.addEventListener('click', () => {
+            const panel = modal.querySelector('#extra-timeslots-panel');
+            const arrow = modal.querySelector('.extra-toggle-arrow');
+            if (panel) {
+                panel.classList.toggle('hidden');
+                if (arrow) arrow.textContent = panel.classList.contains('hidden') ? '\u25B8' : '\u25BE';
+            }
+        });
+
+        // Extra timeslots: add range
+        modal.querySelector('#extra-add-btn')?.addEventListener('click', () => {
+            const from = modal.querySelector('#extra-from').value;
+            const to = modal.querySelector('#extra-to').value;
+
+            if (parseInt(from) > parseInt(to)) {
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showError('"From" time must be before "To" time');
+                }
+                return;
+            }
+
+            const newSlots = _expandRange(from, to);
+            const currentExtras = _pendingExtraSlots !== null
+                ? _pendingExtraSlots
+                : TimezoneService.getExtraTimeSlots();
+            _pendingExtraSlots = [...new Set([...currentExtras, ...newSlots])];
+            _refreshExtraRangesList(modal);
+            updateToggleStates();
+        });
+
+        // Extra timeslots: remove range (delegated)
+        modal.querySelector('#extra-ranges-list')?.addEventListener('click', (e) => {
+            const removeBtn = e.target.closest('.extra-range-remove');
+            if (!removeBtn) return;
+
+            const from = removeBtn.dataset.from;
+            const to = removeBtn.dataset.to;
+            const rangeSlots = new Set(_expandRange(from, to));
+            const currentExtras = _pendingExtraSlots !== null
+                ? _pendingExtraSlots
+                : TimezoneService.getExtraTimeSlots();
+            _pendingExtraSlots = currentExtras.filter(s => !rangeSlots.has(s));
+            _refreshExtraRangesList(modal);
+            updateToggleStates();
+        });
 
         const handleKeydown = (e) => {
             if (e.key === 'Escape') {
@@ -393,23 +588,32 @@ const GridActionButtons = (function() {
             });
 
             const applied = TimezoneService.setHiddenTimeSlots(unchecked);
-            if (applied) {
-                window.dispatchEvent(new CustomEvent('timeslots-changed', {
-                    detail: { hiddenTimeSlots: unchecked }
-                }));
-
-                saveBtn.disabled = true;
-                saveBtn.textContent = 'Saving...';
-
-                try {
-                    await _persistHiddenTimeslots(unchecked);
-                } catch (error) {
-                    // Error already handled in _persistHiddenTimeslots
-                }
-            } else {
+            if (!applied) {
                 if (typeof ToastService !== 'undefined') {
                     ToastService.showError('Minimum 4 timeslots must remain visible');
                 }
+                return;
+            }
+
+            // Apply extra slots (if modified in this session)
+            const extraSlots = _pendingExtraSlots !== null
+                ? _pendingExtraSlots
+                : TimezoneService.getExtraTimeSlots();
+            TimezoneService.setExtraTimeSlots(extraSlots);
+
+            // Dispatch change event for grid rebuild
+            window.dispatchEvent(new CustomEvent('timeslots-changed', {
+                detail: { hiddenTimeSlots: unchecked, extraTimeSlots: extraSlots }
+            }));
+
+            // Persist to Firestore
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            try {
+                await _persistTimeslotPreferences(unchecked, extraSlots);
+            } catch (error) {
+                // Error handled inside persist function
             }
             closeModal();
         });
@@ -422,10 +626,13 @@ const GridActionButtons = (function() {
         });
     }
 
-    async function _persistHiddenTimeslots(hiddenSlots) {
+    async function _persistTimeslotPreferences(hiddenSlots, extraSlots) {
         try {
             if (typeof AuthService !== 'undefined') {
-                await AuthService.updateProfile({ hiddenTimeSlots: hiddenSlots });
+                await AuthService.updateProfile({
+                    hiddenTimeSlots: hiddenSlots,
+                    extraTimeSlots: extraSlots
+                });
             }
         } catch (error) {
             console.error('Failed to save timeslot preferences:', error);

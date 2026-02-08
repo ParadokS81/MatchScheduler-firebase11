@@ -177,6 +177,14 @@ const UserProfile = (function() {
                         }));
                     }
                 }
+
+                // Load extra timeslots preference (Slice 14.0a)
+                if (typeof TimezoneService !== 'undefined' && Array.isArray(_userProfile.extraTimeSlots)) {
+                    TimezoneService.setExtraTimeSlots(_userProfile.extraTimeSlots);
+                    window.dispatchEvent(new CustomEvent('timeslots-changed', {
+                        detail: { extraTimeSlots: _userProfile.extraTimeSlots }
+                    }));
+                }
             } else {
                 console.log('⚠️ User document not found - this should not happen with new flow');
                 _userProfile = null;
@@ -527,12 +535,22 @@ const UserProfile = (function() {
 
             _compactContainer.innerHTML = `
                 <div class="flex flex-col gap-1">
-                    <button id="feedback-compact-btn" class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity text-muted-foreground hover:text-foreground" title="Give Feedback">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                        </svg>
-                        <span class="text-xs">Give Feedback</span>
-                    </button>
+                    <div class="flex items-center gap-3">
+                        <button id="feedback-compact-btn" class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity text-muted-foreground hover:text-foreground" title="Give Feedback">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            </svg>
+                            <span class="text-xs">Give Feedback</span>
+                        </button>
+                        ${window.matchMedia('(display-mode: standalone)').matches ? `
+                            <button id="pwa-refresh-btn" class="ml-auto p-1 cursor-pointer hover:opacity-80 transition-opacity text-muted-foreground hover:text-foreground" title="Refresh">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                                </svg>
+                            </button>
+                        ` : ''}
+                    </div>
                     <button id="profile-compact-btn" class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity" title="Edit Profile">
                         ${photoURL ?
                             `<img src="${photoURL}" alt="avatar" class="w-8 h-8 rounded-full object-cover">` :
@@ -555,6 +573,11 @@ const UserProfile = (function() {
                         FeedbackModal.show();
                     }
                 });
+            }
+
+            const refreshBtn = _compactContainer.querySelector('#pwa-refresh-btn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => window.location.reload());
             }
 
             const btn = _compactContainer.querySelector('#profile-compact-btn');

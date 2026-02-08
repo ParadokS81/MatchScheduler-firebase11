@@ -108,6 +108,15 @@ const ProposalService = (function() {
         return TeamService.callFunction('cancelScheduledMatch', { matchId });
     }
 
+    /**
+     * Update proposal settings (game type, standin)
+     * @param {Object} data - { proposalId, gameType?, standin? }
+     * @returns {Object} { success: boolean }
+     */
+    async function updateProposalSettings(data) {
+        return TeamService.callFunction('updateProposalSettings', data);
+    }
+
     // ─── Viable Slot Computation ───────────────────────────────────────
 
     /**
@@ -118,9 +127,10 @@ const ProposalService = (function() {
      * @param {string} opponentTeamId
      * @param {string} weekId
      * @param {Object} minFilter - { yourTeam: number, opponent: number }
+     * @param {Object} [standinSettings] - { proposerStandin: boolean, opponentStandin: boolean }
      * @returns {Array<{ slotId, proposerCount, opponentCount, proposerRoster, opponentRoster }>}
      */
-    function computeViableSlots(proposerTeamId, opponentTeamId, weekId, minFilter) {
+    function computeViableSlots(proposerTeamId, opponentTeamId, weekId, minFilter, standinSettings) {
         // Get availability from cache
         const proposerAvail = AvailabilityService.getCachedData(proposerTeamId, weekId);
         const opponentAvail = AvailabilityService.getCachedData(opponentTeamId, weekId);
@@ -134,6 +144,10 @@ const ProposalService = (function() {
         const proposerBlocked = ScheduledMatchService.getBlockedSlotsForTeam(proposerTeamId, weekId);
         const opponentBlocked = ScheduledMatchService.getBlockedSlotsForTeam(opponentTeamId, weekId);
 
+        // Standin adds virtual +1, capped at 4
+        const pStandin = standinSettings?.proposerStandin ? 1 : 0;
+        const oStandin = standinSettings?.opponentStandin ? 1 : 0;
+
         const viableSlots = [];
         const allSlotIds = new Set([
             ...Object.keys(proposerSlots),
@@ -146,13 +160,17 @@ const ProposalService = (function() {
 
             const proposerPlayers = proposerSlots[slotId] || [];
             const opponentPlayers = opponentSlots[slotId] || [];
+            const effectiveProposer = Math.min(4, proposerPlayers.length + pStandin);
+            const effectiveOpponent = Math.min(4, opponentPlayers.length + oStandin);
 
-            if (proposerPlayers.length >= minFilter.yourTeam &&
-                opponentPlayers.length >= minFilter.opponent) {
+            if (effectiveProposer >= minFilter.yourTeam &&
+                effectiveOpponent >= minFilter.opponent) {
                 viableSlots.push({
                     slotId,
                     proposerCount: proposerPlayers.length,
                     opponentCount: opponentPlayers.length,
+                    proposerStandin: pStandin > 0 && proposerPlayers.length < 4,
+                    opponentStandin: oStandin > 0 && opponentPlayers.length < 4,
                     proposerRoster: proposerPlayers,
                     opponentRoster: opponentPlayers
                 });
@@ -187,6 +205,7 @@ const ProposalService = (function() {
         withdrawConfirmation,
         cancelProposal,
         cancelScheduledMatch,
+        updateProposalSettings,
         // Computation
         computeViableSlots
     };

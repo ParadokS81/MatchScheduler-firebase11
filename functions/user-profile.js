@@ -182,13 +182,14 @@ exports.updateProfile = functions
     }
 
     const { uid } = context.auth;
-    const { displayName, initials, discordUsername, discordUserId, avatarSource, photoURL, timezone, hiddenTimeSlots } = data;
+    const { displayName, initials, discordUsername, discordUserId, avatarSource, photoURL, timezone, hiddenTimeSlots, extraTimeSlots } = data;
 
     // Validate input - at least one field must be provided
     const hasAnyField = displayName || initials ||
         discordUsername !== undefined || discordUserId !== undefined ||
         avatarSource !== undefined || photoURL !== undefined ||
-        timezone !== undefined || hiddenTimeSlots !== undefined;
+        timezone !== undefined || hiddenTimeSlots !== undefined ||
+        extraTimeSlots !== undefined;
 
     if (!hasAnyField) {
         throw new functions.https.HttpsError('invalid-argument', 'At least one field must be provided');
@@ -238,7 +239,7 @@ exports.updateProfile = functions
 
     // Handle avatar source preference
     if (avatarSource !== undefined) {
-        const validSources = ['custom', 'discord', 'google', 'initials'];
+        const validSources = ['custom', 'discord', 'google', 'initials', 'default'];
         if (!validSources.includes(avatarSource)) {
             throw new functions.https.HttpsError('invalid-argument', 'Invalid avatar source');
         }
@@ -273,6 +274,23 @@ exports.updateProfile = functions
             throw new functions.https.HttpsError('invalid-argument', 'At least 4 time slots must remain visible');
         }
         updates.hiddenTimeSlots = hiddenTimeSlots;
+    }
+
+    // Handle extraTimeSlots update (Slice 14.0a)
+    if (extraTimeSlots !== undefined) {
+        if (!Array.isArray(extraTimeSlots)) {
+            throw new functions.https.HttpsError('invalid-argument', 'extraTimeSlots must be an array');
+        }
+        const validPattern = /^([01]\d|2[0-3])(00|30)$/;
+        for (const slot of extraTimeSlots) {
+            if (!validPattern.test(slot)) {
+                throw new functions.https.HttpsError('invalid-argument', `Invalid extra time slot: ${slot}`);
+            }
+        }
+        if (extraTimeSlots.length > 37) {
+            throw new functions.https.HttpsError('invalid-argument', 'Too many extra time slots');
+        }
+        updates.extraTimeSlots = extraTimeSlots;
     }
 
     try {

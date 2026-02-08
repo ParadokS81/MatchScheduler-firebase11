@@ -214,6 +214,11 @@ const TeamInfo = (function() {
                             _selectedTeam.activeLogo?.logoId !== teamData.activeLogo?.logoId;
 
                         if (hasChanged) {
+                            // Check if roster membership changed (for grid re-render)
+                            const oldRosterIds = (_selectedTeam?.playerRoster || []).map(p => p.userId).sort().join(',');
+                            const newRosterIds = (teamData.playerRoster || []).map(p => p.userId).sort().join(',');
+                            const rosterMembershipChanged = oldRosterIds !== newRosterIds;
+
                             _selectedTeam = teamData;
 
                             // Update team in userTeams array
@@ -228,6 +233,15 @@ const TeamInfo = (function() {
                             }
 
                             _render();
+
+                            // Notify grid to re-render with updated roster
+                            if (rosterMembershipChanged) {
+                                window.dispatchEvent(new CustomEvent('roster-changed', {
+                                    detail: { team: teamData }
+                                }));
+                                console.log('👥 Roster membership changed, notifying grid');
+                            }
+
                             console.log('🔄 Team data updated via direct listener:', teamData.teamName);
                         } else {
                             console.log('📦 Team listener fired but no data change detected');
