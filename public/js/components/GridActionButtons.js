@@ -316,7 +316,9 @@ const GridActionButtons = (function() {
                         ${allSlots.map(slot => {
                             const freq = GAME_FREQUENCY[slot] || { pct: 0 };
                             const isChecked = !hiddenSlots.has(slot);
-                            const timeLabel = slot.slice(0, 2) + ':' + slot.slice(2);
+                            const timeLabel = typeof TimezoneService !== 'undefined' && TimezoneService.baseToLocalDisplay
+                                ? TimezoneService.baseToLocalDisplay(slot)
+                                : slot.slice(0, 2) + ':' + slot.slice(2);
                             const barWidth = Math.max(0.5, (freq.pct / 20.1) * 95);
                             return `
                                 <label class="flex items-center gap-3 py-1.5 cursor-pointer">

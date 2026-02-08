@@ -459,8 +459,11 @@ const AvailabilityGrid = (function() {
             // Get day labels with dates for this week
             const dayLabelsWithDates = getDayLabelsWithDates(_weekId);
 
+            // Reference date for timezone conversion
+            const refDate = DateUtils.getMondayOfWeek(_weekId);
+
             // Build the grid HTML - compact for 1080p
-            // Cell IDs are local display positions; data-utc-slot carries the UTC Firestore key
+            // Cell IDs use CET base times; data-utc-slot carries the UTC Firestore key
             _container.innerHTML = `
                 <div class="availability-grid-container">
                     <!-- Day Headers Row -->
@@ -473,16 +476,21 @@ const AvailabilityGrid = (function() {
 
                     <!-- Time Rows -->
                     <div class="grid-body">
-                        ${_getTimeSlots().map(time => `
+                        ${_getTimeSlots().map(time => {
+                            // Convert CET base time to user's local time for display
+                            const displayTime = typeof TimezoneService !== 'undefined'
+                                ? TimezoneService.baseToLocalDisplay(time, refDate)
+                                : formatTime(time);
+                            return `
                             <div class="grid-row">
-                                <div class="time-label clickable" data-time="${time}">${formatTime(time)}</div>
+                                <div class="time-label clickable" data-time="${time}">${displayTime}</div>
                                 ${DAYS.map(day => {
-                                    const localCellId = `${day}_${time}`;
-                                    const utcSlotId = _localToUtc(localCellId);
-                                    return `<div class="grid-cell" data-cell-id="${localCellId}" data-utc-slot="${utcSlotId}"></div>`;
+                                    const cellId = `${day}_${time}`;
+                                    const utcSlotId = _localToUtc(cellId);
+                                    return `<div class="grid-cell" data-cell-id="${cellId}" data-utc-slot="${utcSlotId}"></div>`;
                                 }).join('')}
                             </div>
-                        `).join('')}
+                        `;}).join('')}
                     </div>
                 </div>
             `;

@@ -7,7 +7,14 @@ const TimezoneService = (function() {
 
     const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
-    // Default display range: 18:00 - 23:00 local time (11 slots, 30-min intervals)
+    // Base/reference timezone: CET (Central European Time)
+    // The grid rows represent EU evening slots anchored to this timezone.
+    // Changing the user's timezone only changes the displayed time labels,
+    // not which real-world time slots are shown.
+    const BASE_TIMEZONE = 'Europe/Berlin';
+
+    // Base grid time slots in CET (18:00-23:00 CET, 11 slots, 30-min intervals)
+    // These define which rows the grid has. Display labels are converted to user's local time.
     const DISPLAY_START_HOUR = 18;
     const DISPLAY_END_HOUR = 23;
     const DISPLAY_TIME_SLOTS = [
@@ -97,6 +104,18 @@ const TimezoneService = (function() {
     }
 
     /**
+     * Get UTC offset in minutes for the base/reference timezone (Europe/Berlin).
+     * Used internally to anchor the grid to CET evening times.
+     * @param {Date} [date] - The date to check offset for (DST varies by date)
+     * @returns {number} Offset in minutes (e.g., +60 for CET winter, +120 for CEST summer)
+     */
+    function getBaseOffsetMinutes(date = new Date()) {
+        const utcStr = date.toLocaleString('en-US', { timeZone: 'UTC' });
+        const baseStr = date.toLocaleString('en-US', { timeZone: BASE_TIMEZONE });
+        return (new Date(baseStr) - new Date(utcStr)) / 60000;
+    }
+
+    /**
      * Extract date parts using Intl.DateTimeFormat for a specific timezone.
      * @private
      */
@@ -127,77 +146,43 @@ const TimezoneService = (function() {
     // ---------------------------------------------------------------
 
     /**
-     * Convert a local display slot to a UTC slot ID for Firestore storage.
-     * Handles day wrapping (e.g., EST mon 23:00 local → tue 04:00 UTC).
-     *
-     * @param {string} localDay - Day in user's local time ('mon', 'tue', ...)
-     * @param {string} localTime - Time in user's local time ('2100', '1830', ...)
-     * @param {Date} [refDate] - Reference date for DST-correct offset calculation
-     * @returns {{ day: string, time: string, slotId: string }}
+     * Private helper: convert a time slot using an explicit minute offset.
+     * Subtracts offset (local → UTC direction).
+     * @private
      */
-    function localToUtcSlot(localDay, localTime, refDate) {
-        const offsetMin = getOffsetMinutes(refDate || new Date());
-
-        const localHour = parseInt(localTime.slice(0, 2));
-        const localMin = parseInt(localTime.slice(2));
-        const localTotalMin = localHour * 60 + localMin;
-
-        // Subtract offset to get UTC (local = UTC + offset, so UTC = local - offset)
-        let utcTotalMin = localTotalMin - offsetMin;
+    function _toUtcWithOffset(day, time, offsetMin) {
+        const hour = parseInt(time.slice(0, 2));
+        const min = parseInt(time.slice(2));
+        let utcTotalMin = hour * 60 + min - offsetMin;
         let dayShift = 0;
 
-        // Handle day wrapping
-        if (utcTotalMin < 0) {
-            utcTotalMin += 1440; // 24 * 60
-            dayShift = -1;
-        } else if (utcTotalMin >= 1440) {
-            utcTotalMin -= 1440;
-            dayShift = 1;
-        }
+        if (utcTotalMin < 0) { utcTotalMin += 1440; dayShift = -1; }
+        else if (utcTotalMin >= 1440) { utcTotalMin -= 1440; dayShift = 1; }
 
         const utcHour = Math.floor(utcTotalMin / 60);
         const utcMin = utcTotalMin % 60;
         const utcTime = String(utcHour).padStart(2, '0') + String(utcMin).padStart(2, '0');
 
-        // Shift day if needed
-        const dayIdx = DAYS.indexOf(localDay);
-        const utcDayIdx = ((dayIdx + dayShift) % 7 + 7) % 7; // Handle negative wrap
+        const dayIdx = DAYS.indexOf(day);
+        const utcDayIdx = ((dayIdx + dayShift) % 7 + 7) % 7;
         const utcDay = DAYS[utcDayIdx];
 
-        return {
-            day: utcDay,
-            time: utcTime,
-            slotId: `${utcDay}_${utcTime}`
-        };
+        return { day: utcDay, time: utcTime, slotId: `${utcDay}_${utcTime}` };
     }
 
     /**
-     * Convert a UTC slot ID to local display time.
-     * Inverse of localToUtcSlot.
-     *
-     * @param {string} utcDay - Day in UTC ('mon', 'tue', ...)
-     * @param {string} utcTime - Time in UTC ('2000', '1730', ...)
-     * @param {Date} [refDate] - Reference date for DST-correct offset calculation
-     * @returns {{ day: string, time: string, displayTime: string }}
+     * Private helper: convert a UTC slot using an explicit minute offset.
+     * Adds offset (UTC → local direction).
+     * @private
      */
-    function utcToLocalSlot(utcDay, utcTime, refDate) {
-        const offsetMin = getOffsetMinutes(refDate || new Date());
-
-        const utcHour = parseInt(utcTime.slice(0, 2));
-        const utcMin = parseInt(utcTime.slice(2));
-        const utcTotalMin = utcHour * 60 + utcMin;
-
-        // Add offset to get local (local = UTC + offset)
-        let localTotalMin = utcTotalMin + offsetMin;
+    function _fromUtcWithOffset(utcDay, utcTime, offsetMin) {
+        const hour = parseInt(utcTime.slice(0, 2));
+        const min = parseInt(utcTime.slice(2));
+        let localTotalMin = hour * 60 + min + offsetMin;
         let dayShift = 0;
 
-        if (localTotalMin < 0) {
-            localTotalMin += 1440;
-            dayShift = -1;
-        } else if (localTotalMin >= 1440) {
-            localTotalMin -= 1440;
-            dayShift = 1;
-        }
+        if (localTotalMin < 0) { localTotalMin += 1440; dayShift = -1; }
+        else if (localTotalMin >= 1440) { localTotalMin -= 1440; dayShift = 1; }
 
         const localHour = Math.floor(localTotalMin / 60);
         const localMin = localTotalMin % 60;
@@ -212,6 +197,34 @@ const TimezoneService = (function() {
             time: localTime,
             displayTime: `${String(localHour).padStart(2, '0')}:${String(localMin).padStart(2, '0')}`
         };
+    }
+
+    /**
+     * Convert a local display slot to a UTC slot ID for Firestore storage.
+     * Handles day wrapping (e.g., EST mon 23:00 local → tue 04:00 UTC).
+     *
+     * @param {string} localDay - Day in user's local time ('mon', 'tue', ...)
+     * @param {string} localTime - Time in user's local time ('2100', '1830', ...)
+     * @param {Date} [refDate] - Reference date for DST-correct offset calculation
+     * @returns {{ day: string, time: string, slotId: string }}
+     */
+    function localToUtcSlot(localDay, localTime, refDate) {
+        const offsetMin = getOffsetMinutes(refDate || new Date());
+        return _toUtcWithOffset(localDay, localTime, offsetMin);
+    }
+
+    /**
+     * Convert a UTC slot ID to local display time.
+     * Inverse of localToUtcSlot.
+     *
+     * @param {string} utcDay - Day in UTC ('mon', 'tue', ...)
+     * @param {string} utcTime - Time in UTC ('2000', '1730', ...)
+     * @param {Date} [refDate] - Reference date for DST-correct offset calculation
+     * @returns {{ day: string, time: string, displayTime: string }}
+     */
+    function utcToLocalSlot(utcDay, utcTime, refDate) {
+        const offsetMin = getOffsetMinutes(refDate || new Date());
+        return _fromUtcWithOffset(utcDay, utcTime, offsetMin);
     }
 
     // ---------------------------------------------------------------
@@ -265,27 +278,57 @@ const TimezoneService = (function() {
     // ---------------------------------------------------------------
 
     /**
-     * Get the display time labels for the grid (local times).
-     * These are what the user sees in the time column.
-     * @returns {string[]} Array of local time strings, e.g., ['1800', '1830', ...]
+     * Get the base CET time slot strings.
+     * @returns {string[]} Array of CET time strings, e.g., ['1800', '1830', ...]
      */
     function getDisplayTimeSlots() {
         return DISPLAY_TIME_SLOTS;
     }
 
     /**
-     * Get the UTC slot IDs that correspond to the display grid for a specific day.
-     * Accounts for timezone offset and day wrapping.
+     * Convert a base CET time to local display time for grid row labels.
+     * E.g., CET '2000' → '22:00' for Moscow, '14:00' for EST.
+     * For CET users, returns the same time (net offset = 0).
      *
-     * @param {string} localDay - The local day ('mon', 'tue', ...)
+     * @param {string} baseTime - CET time string (e.g., '2000')
+     * @param {Date} [refDate] - Reference date for DST-correct offset
+     * @returns {string} Formatted local time (e.g., '22:00')
+     */
+    function baseToLocalDisplay(baseTime, refDate) {
+        const ref = refDate || new Date();
+        const netOffset = getOffsetMinutes(ref) - getBaseOffsetMinutes(ref);
+
+        // If user is in CET, net offset is 0 — return as-is
+        if (netOffset === 0) {
+            return `${baseTime.slice(0, 2)}:${baseTime.slice(2)}`;
+        }
+
+        const hour = parseInt(baseTime.slice(0, 2));
+        const min = parseInt(baseTime.slice(2));
+        let localTotalMin = hour * 60 + min + netOffset;
+
+        if (localTotalMin < 0) localTotalMin += 1440;
+        else if (localTotalMin >= 1440) localTotalMin -= 1440;
+
+        const localHour = Math.floor(localTotalMin / 60);
+        const localMin = localTotalMin % 60;
+        return `${String(localHour).padStart(2, '0')}:${String(localMin).padStart(2, '0')}`;
+    }
+
+    /**
+     * Get the UTC slot IDs that correspond to the display grid for a specific day.
+     * Uses base CET offset so all users see the same UTC slots.
+     *
+     * @param {string} day - The grid day ('mon', 'tue', ...) — represents CET day
      * @param {Date} [refDate] - Reference date for DST offset
      * @returns {Array<{ localTime: string, utcSlotId: string, utcDay: string, utcTime: string }>}
      */
-    function getUtcSlotsForDay(localDay, refDate) {
-        return DISPLAY_TIME_SLOTS.map(localTime => {
-            const utc = localToUtcSlot(localDay, localTime, refDate);
+    function getUtcSlotsForDay(day, refDate) {
+        const baseOffset = getBaseOffsetMinutes(refDate || new Date());
+        return DISPLAY_TIME_SLOTS.map(time => {
+            const utc = _toUtcWithOffset(day, time, baseOffset);
             return {
-                localTime,
+                localTime: time,
                 utcSlotId: utc.slotId,
                 utcDay: utc.day,
                 utcTime: utc.time
@@ -295,18 +338,20 @@ const TimezoneService = (function() {
 
     /**
      * Build a full mapping of grid positions to UTC slot IDs for one week.
-     * Used when rendering the grid: map each (row, col) to a Firestore slot ID.
+     * Grid positions use CET base times; this converts them to UTC for Firestore.
+     * All users get the same mapping (same real-world time slots).
      *
      * @param {Date} [refDate] - Reference date for DST offset
-     * @returns {Map<string, string>} Map from local cellId (e.g., "mon_1800") to UTC slotId (e.g., "mon_1700")
+     * @returns {Map<string, string>} Map from grid cellId (e.g., "mon_2000") to UTC slotId (e.g., "mon_1900")
      */
     function buildGridToUtcMap(refDate) {
         const map = new Map();
+        const baseOffset = getBaseOffsetMinutes(refDate || new Date());
         for (const day of DAYS) {
             for (const time of getVisibleTimeSlots()) {
-                const localCellId = `${day}_${time}`;
-                const utc = localToUtcSlot(day, time, refDate);
-                map.set(localCellId, utc.slotId);
+                const cellId = `${day}_${time}`;
+                const utc = _toUtcWithOffset(day, time, baseOffset);
+                map.set(cellId, utc.slotId);
             }
         }
         return map;
@@ -317,15 +362,16 @@ const TimezoneService = (function() {
      * Used when loading availability data: map Firestore slot IDs to grid cells.
      *
      * @param {Date} [refDate] - Reference date for DST offset
-     * @returns {Map<string, string>} Map from UTC slotId (e.g., "mon_1700") to local cellId (e.g., "mon_1800")
+     * @returns {Map<string, string>} Map from UTC slotId (e.g., "mon_1900") to grid cellId (e.g., "mon_2000")
      */
     function buildUtcToGridMap(refDate) {
         const map = new Map();
+        const baseOffset = getBaseOffsetMinutes(refDate || new Date());
         for (const day of DAYS) {
             for (const time of getVisibleTimeSlots()) {
-                const utc = localToUtcSlot(day, time, refDate);
-                const localCellId = `${day}_${time}`;
-                map.set(utc.slotId, localCellId);
+                const utc = _toUtcWithOffset(day, time, baseOffset);
+                const cellId = `${day}_${time}`;
+                map.set(utc.slotId, cellId);
             }
         }
         return map;
@@ -444,6 +490,7 @@ const TimezoneService = (function() {
         localToUtcSlot,
         utcToLocalSlot,
         getDisplayTimeSlots,
+        baseToLocalDisplay,
         getUtcSlotsForDay,
         buildGridToUtcMap,
         buildUtcToGridMap,
