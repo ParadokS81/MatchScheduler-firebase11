@@ -1,24 +1,31 @@
 // SelectionActionButton.js - Floating action button for grid cell selections
-// Appears near selection with Add/Remove Me, Add/Remove Other, Template functionality
+// Tiered layout: [+ Me] [- Me] [⋯ More] with dropdown menu and inline roster
 // Following CLAUDE.md architecture: Revealing Module Pattern
 
 const SelectionActionButton = (function() {
     'use strict';
 
+    // Primary buttons
     let _container = null;
     let _addMeButton = null;
-    let _addOtherButton = null;
     let _removeMeButton = null;
-    let _removeOtherButton = null;
+    let _moreButton = null;
+
+    // Dropdown elements
+    let _moreDropdown = null;
+    let _moreMenuItems = null;
     let _unavailMeButton = null;
-    let _unavailOtherButton = null;
-    let _findStandinButton = null;
     let _templateButton = null;
-    let _escapeButton = null;
-    let _rosterFlyout = null;
-    let _flyoutVisible = false;
-    let _flyoutHideTimeout = null;
-    let _flyoutMode = null; // 'add', 'remove', 'unavailable', or 'unUnavailable'
+    let _findStandinButton = null;
+    let _othersButton = null;
+
+    // Roster panel
+    let _rosterPanel = null;
+
+    // State
+    let _dropdownOpen = false;
+    let _rosterOpen = false;
+    let _clickOutsideHandler = null;
     let _currentSelection = [];
     let _currentBounds = null;
 
@@ -41,234 +48,184 @@ const SelectionActionButton = (function() {
         toAdd.split(' ').forEach(c => btn.classList.add(c));
     }
 
-    /**
-     * Create the floating button container with stable grid layout
-     * Layout (scheduler):
-     *   [+ Me]      [+ Others →]
-     *   [− Me]      [− Others →]
-     *   [⊘ Away]    [⊘ Others →]
-     *   [Escape]    [Template]
-     *
-     * Layout (non-scheduler):
-     *   [+ Me]      [Template]
-     *   [− Me]      [Escape]
-     *   [⊘ Away]
-     */
+    // ---------------------------------------------------------------
+    // DOM creation
+    // ---------------------------------------------------------------
+
     function _createButton() {
         _container = document.createElement('div');
-        _container.className = 'selection-action-container fixed z-50 hidden flex flex-col gap-1 bg-card border border-border rounded-lg p-1.5 shadow-xl';
+        _container.className = 'selection-action-container fixed z-50 hidden flex flex-col bg-card border border-border rounded-lg p-1.5 shadow-xl';
 
         // -- + Me button --
         _addMeButton = document.createElement('button');
         _addMeButton.className = 'selection-action-btn flex items-center justify-center px-3 py-2 rounded font-medium text-sm transition-all bg-primary text-primary-foreground hover:bg-primary/90';
-        _addMeButton.innerHTML = `<span class="action-text">+ Me</span>`;
+        _addMeButton.innerHTML = '<span class="action-text">+ Me</span>';
         _addMeButton.addEventListener('click', () => _handleMeAction('add'));
-
-        // -- + Others button (leaders/schedulers only) --
-        _addOtherButton = document.createElement('button');
-        _addOtherButton.className = 'selection-action-btn flex items-center justify-center gap-1 px-3 py-2 rounded font-medium text-sm transition-all bg-accent text-accent-foreground hover:bg-accent/80';
-        _addOtherButton.innerHTML = `
-            <span class="action-text">+ Others</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-        `;
-        _addOtherButton.addEventListener('mouseenter', () => _showRosterFlyout('add'));
-        _addOtherButton.addEventListener('mouseleave', () => _scheduleFlyoutHide());
-        _addOtherButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (_flyoutVisible && _flyoutMode === 'add') {
-                _hideRosterFlyout();
-            } else {
-                _showRosterFlyout('add');
-            }
-        });
 
         // -- − Me button --
         _removeMeButton = document.createElement('button');
         _removeMeButton.className = 'selection-action-btn flex items-center justify-center px-3 py-2 rounded font-medium text-sm transition-all bg-destructive text-destructive-foreground hover:bg-destructive/90';
-        _removeMeButton.innerHTML = `<span class="action-text">− Me</span>`;
+        _removeMeButton.innerHTML = '<span class="action-text">− Me</span>';
         _removeMeButton.addEventListener('click', () => _handleMeAction('remove'));
 
-        // -- − Others button (leaders/schedulers only) --
-        _removeOtherButton = document.createElement('button');
-        _removeOtherButton.className = 'selection-action-btn flex items-center justify-center gap-1 px-3 py-2 rounded font-medium text-sm transition-all bg-destructive text-destructive-foreground hover:bg-destructive/90';
-        _removeOtherButton.innerHTML = `
-            <span class="action-text">− Others</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="9 18 15 12 9 6"></polyline>
+        // -- ⋯ More button --
+        _moreButton = document.createElement('button');
+        _moreButton.className = 'selection-action-btn flex items-center justify-center px-2 py-2 rounded font-medium text-sm transition-all bg-muted text-muted-foreground hover:bg-accent hover:text-foreground';
+        _moreButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
             </svg>
         `;
-        _removeOtherButton.addEventListener('mouseenter', () => _showRosterFlyout('remove'));
-        _removeOtherButton.addEventListener('mouseleave', () => _scheduleFlyoutHide());
-        _removeOtherButton.addEventListener('click', (e) => {
+        _moreButton.title = 'More actions';
+        _moreButton.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (_flyoutVisible && _flyoutMode === 'remove') {
-                _hideRosterFlyout();
-            } else {
-                _showRosterFlyout('remove');
-            }
+            _toggleMoreDropdown();
         });
 
-        // -- ⊘ Me button (Slice 15.0) --
+        // -- Dropdown menu items --
         _unavailMeButton = document.createElement('button');
-        _unavailMeButton.className = 'selection-action-btn flex items-center justify-center px-3 py-2 rounded font-medium text-sm transition-all bg-secondary text-secondary-foreground hover:bg-secondary/80';
-        _unavailMeButton.innerHTML = `<span class="action-text">\u2298 Away</span>`;
+        _unavailMeButton.className = 'flex items-center gap-2 w-full px-2 py-1.5 rounded text-sm text-left transition-colors hover:bg-accent';
+        _unavailMeButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+            </svg>
+            <span>Mark me away</span>
+        `;
         _unavailMeButton.addEventListener('click', () => _handleMeAction('unavailable'));
 
-        // -- ⊘ Others button (leaders/schedulers only, Slice 15.0) --
-        _unavailOtherButton = document.createElement('button');
-        _unavailOtherButton.className = 'selection-action-btn flex items-center justify-center gap-1 px-3 py-2 rounded font-medium text-sm transition-all bg-secondary text-secondary-foreground hover:bg-secondary/80';
-        _unavailOtherButton.innerHTML = `
-            <span class="action-text">\u2298 Others</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-        `;
-        _unavailOtherButton.addEventListener('mouseenter', () => _showRosterFlyout('unavailable'));
-        _unavailOtherButton.addEventListener('mouseleave', () => _scheduleFlyoutHide());
-        _unavailOtherButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (_flyoutVisible && _flyoutMode === 'unavailable') {
-                _hideRosterFlyout();
-            } else {
-                _showRosterFlyout('unavailable');
-            }
-        });
-
-        // -- Escape button --
-        _escapeButton = document.createElement('button');
-        const clearLabel = (typeof MobileLayout !== 'undefined' && MobileLayout.isMobile()) ? 'Clear' : 'Escape';
-        _escapeButton.className = 'flex items-center justify-center gap-1 px-3 py-2 rounded text-sm font-medium bg-muted text-muted-foreground hover:bg-accent hover:text-foreground';
-        _escapeButton.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-            <span>${clearLabel}</span>
-        `;
-        _escapeButton.addEventListener('click', _handleClear);
-
-        // -- Find Standin button (Slice 16.0a) --
-        _findStandinButton = document.createElement('button');
-        _findStandinButton.className = 'selection-action-btn flex items-center justify-center gap-1 px-3 py-2 rounded font-medium text-sm transition-all bg-accent text-accent-foreground hover:bg-accent/80 w-full';
-        _findStandinButton.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <span class="action-text">Find Standin</span>
-        `;
-        _findStandinButton.addEventListener('click', _handleFindStandin);
-
-        // -- Template button --
         _templateButton = document.createElement('button');
-        _templateButton.className = 'flex items-center justify-center gap-1 px-3 py-2 rounded font-medium text-sm transition-all bg-muted text-muted-foreground hover:bg-accent hover:text-foreground';
+        _templateButton.className = 'flex items-center gap-2 w-full px-2 py-1.5 rounded text-sm text-left transition-colors hover:bg-accent';
         _templateButton.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
             </svg>
-            <span>Template</span>
+            <span>Save template</span>
         `;
         _templateButton.addEventListener('click', _handleSaveTemplate);
 
-        // Layout is built dynamically in _buildLayout()
-        document.body.appendChild(_container);
+        _findStandinButton = document.createElement('button');
+        _findStandinButton.className = 'flex items-center gap-2 w-full px-2 py-1.5 rounded text-sm text-left transition-colors hover:bg-accent';
+        _findStandinButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <span>Find standin</span>
+        `;
+        _findStandinButton.addEventListener('click', _handleFindStandin);
 
-        // Create roster flyout (separate from container for positioning)
-        _createRosterFlyout();
+        _othersButton = document.createElement('button');
+        _othersButton.className = 'flex items-center gap-2 w-full px-2 py-1.5 rounded text-sm text-left transition-colors hover:bg-accent';
+        _othersButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <span class="flex-1">Others</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        `;
+        _othersButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _showRosterPanel();
+        });
+
+        document.body.appendChild(_container);
     }
 
     /**
-     * Build the button grid layout based on scheduler status.
+     * Build the layout based on scheduler status.
      * Called on each selection change so the layout matches the user's role.
      */
     function _buildLayout(isScheduler) {
-        // Clear existing children
         _container.innerHTML = '';
+        _dropdownOpen = false;
+        _rosterOpen = false;
+
+        // Primary row: [+ Me] [- Me] [⋯]
+        const primaryRow = document.createElement('div');
+        primaryRow.className = 'flex gap-1';
+        primaryRow.appendChild(_addMeButton);
+        primaryRow.appendChild(_removeMeButton);
+        primaryRow.appendChild(_moreButton);
+        _container.appendChild(primaryRow);
+
+        // More dropdown (hidden by default)
+        _moreDropdown = document.createElement('div');
+        _moreDropdown.className = 'hidden mt-1 border-t border-border pt-1';
+
+        // Menu items
+        _moreMenuItems = document.createElement('div');
+        _moreMenuItems.className = 'flex flex-col gap-0.5';
+        _moreMenuItems.appendChild(_unavailMeButton);
+        _moreMenuItems.appendChild(_templateButton);
+        _moreMenuItems.appendChild(_findStandinButton);
 
         if (isScheduler) {
-            // Row 1: [+ Me] [+ Others →]
-            const row1 = document.createElement('div');
-            row1.className = 'flex gap-1';
-            row1.appendChild(_addMeButton);
-            row1.appendChild(_addOtherButton);
+            const sep = document.createElement('hr');
+            sep.className = 'my-1 border-border';
+            _moreMenuItems.appendChild(sep);
+            _moreMenuItems.appendChild(_othersButton);
+        }
 
-            // Row 2: [− Me] [− Others →]
-            const row2 = document.createElement('div');
-            row2.className = 'flex gap-1';
-            row2.appendChild(_removeMeButton);
-            row2.appendChild(_removeOtherButton);
+        _moreDropdown.appendChild(_moreMenuItems);
 
-            // Row 3: [⊘ Away] [⊘ Others →]  (Slice 15.0)
-            const row3 = document.createElement('div');
-            row3.className = 'flex gap-1';
-            row3.appendChild(_unavailMeButton);
-            row3.appendChild(_unavailOtherButton);
+        // Roster panel (always created, hidden by default)
+        _rosterPanel = document.createElement('div');
+        _rosterPanel.className = 'hidden';
+        _moreDropdown.appendChild(_rosterPanel);
 
-            // Row 4: [🔍 Find Standin]  (Slice 16.0a, full-width)
-            const row4 = document.createElement('div');
-            row4.className = 'flex gap-1';
-            row4.appendChild(_findStandinButton);
+        _container.appendChild(_moreDropdown);
+    }
 
-            // Row 5: [Escape] [Template]
-            const row5 = document.createElement('div');
-            row5.className = 'flex gap-1';
-            row5.appendChild(_escapeButton);
-            row5.appendChild(_templateButton);
+    // ---------------------------------------------------------------
+    // Dropdown + roster panel transitions
+    // ---------------------------------------------------------------
 
-            _container.appendChild(row1);
-            _container.appendChild(row2);
-            _container.appendChild(row3);
-            _container.appendChild(row4);
-            _container.appendChild(row5);
+    function _toggleMoreDropdown() {
+        if (_dropdownOpen) {
+            _closeMoreDropdown();
         } else {
-            // Row 1: [+ Me] [Template]
-            const row1 = document.createElement('div');
-            row1.className = 'flex gap-1';
-            row1.appendChild(_addMeButton);
-            row1.appendChild(_templateButton);
-
-            // Row 2: [− Me] [Escape]
-            const row2 = document.createElement('div');
-            row2.className = 'flex gap-1';
-            row2.appendChild(_removeMeButton);
-            row2.appendChild(_escapeButton);
-
-            // Row 3: [⊘ Away]  (Slice 15.0)
-            const row3 = document.createElement('div');
-            row3.className = 'flex gap-1';
-            row3.appendChild(_unavailMeButton);
-
-            // Row 4: [🔍 Find Standin]  (Slice 16.0a, full-width)
-            const row4 = document.createElement('div');
-            row4.className = 'flex gap-1';
-            row4.appendChild(_findStandinButton);
-
-            _container.appendChild(row1);
-            _container.appendChild(row2);
-            _container.appendChild(row3);
-            _container.appendChild(row4);
+            _openMoreDropdown();
         }
     }
 
-    // ---------------------------------------------------------------
-    // Roster flyout for "Add/Remove Others"
-    // ---------------------------------------------------------------
-
-    function _createRosterFlyout() {
-        _rosterFlyout = document.createElement('div');
-        _rosterFlyout.className = 'fixed z-50 hidden bg-card border border-border rounded-lg shadow-xl p-1.5';
-        _rosterFlyout.style.maxHeight = '15rem';
-        _rosterFlyout.style.overflowY = 'auto';
-        _rosterFlyout.addEventListener('mouseenter', () => _cancelFlyoutHide());
-        _rosterFlyout.addEventListener('mouseleave', () => _scheduleFlyoutHide());
-        document.body.appendChild(_rosterFlyout);
+    function _openMoreDropdown() {
+        _moreDropdown.classList.remove('hidden');
+        _moreMenuItems.classList.remove('hidden');
+        _rosterPanel.classList.add('hidden');
+        _rosterOpen = false;
+        _dropdownOpen = true;
+        _positionButton();
     }
 
-    function _populateRosterFlyout(mode) {
-        if (!_rosterFlyout) return;
+    function _closeMoreDropdown() {
+        _moreDropdown.classList.add('hidden');
+        _rosterOpen = false;
+        _dropdownOpen = false;
+        _positionButton();
+    }
 
+    function _showRosterPanel() {
+        _moreMenuItems.classList.add('hidden');
+        _populateRosterPanel();
+        _rosterPanel.classList.remove('hidden');
+        _rosterOpen = true;
+        _positionButton();
+    }
+
+    function _hideRosterPanel() {
+        _rosterPanel.classList.add('hidden');
+        _moreMenuItems.classList.remove('hidden');
+        _rosterOpen = false;
+        _positionButton();
+    }
+
+    // ---------------------------------------------------------------
+    // Roster panel with inline action icons
+    // ---------------------------------------------------------------
+
+    function _populateRosterPanel() {
         const teamId = MatchSchedulerApp.getSelectedTeam()?.id;
         if (!teamId) return;
 
@@ -278,83 +235,94 @@ const SelectionActionButton = (function() {
         const currentUserId = window.firebase?.auth?.currentUser?.uid;
         const otherMembers = team.playerRoster.filter(p => p.userId !== currentUserId);
 
-        if (otherMembers.length === 0) {
-            _rosterFlyout.innerHTML = '<p class="text-xs text-muted-foreground px-2 py-1">No other members</p>';
-            return;
-        }
+        _rosterPanel.innerHTML = '';
 
-        _rosterFlyout.innerHTML = otherMembers.map(player => `
-            <button class="roster-flyout-btn flex items-center gap-2 w-full px-2 py-1.5 rounded hover:bg-accent transition-colors text-left"
-                    data-user-id="${player.userId}">
-                ${player.photoURL
-                    ? `<img src="${player.photoURL}" alt="" class="w-6 h-6 rounded-full object-cover shrink-0">`
-                    : `<div class="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold shrink-0">${_escapeHtml(player.initials || '??')}</div>`
-                }
-                <span class="text-sm text-foreground truncate">${_escapeHtml(player.displayName)}</span>
-            </button>
-        `).join('');
-
-        _rosterFlyout.querySelectorAll('.roster-flyout-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                _handleOtherAction(btn.dataset.userId, btn, mode);
-            });
+        // Back button
+        const backBtn = document.createElement('button');
+        backBtn.className = 'flex items-center gap-1 w-full px-2 py-1.5 rounded text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground';
+        backBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="15 18 9 12 15 6"/>
+            </svg>
+            <span>Back</span>
+        `;
+        backBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _hideRosterPanel();
         });
-    }
+        _rosterPanel.appendChild(backBtn);
 
-    function _showRosterFlyout(mode) {
-        _cancelFlyoutHide();
-        _flyoutMode = mode;
-        _populateRosterFlyout(mode);
-        _positionFlyout(mode);
-        _rosterFlyout.classList.remove('hidden');
-        _flyoutVisible = true;
-    }
+        // Separator
+        const sep = document.createElement('hr');
+        sep.className = 'my-1 border-border';
+        _rosterPanel.appendChild(sep);
 
-    function _hideRosterFlyout() {
-        _rosterFlyout?.classList.add('hidden');
-        _flyoutVisible = false;
-        _flyoutMode = null;
-    }
+        // Player list
+        const list = document.createElement('div');
+        list.className = 'flex flex-col gap-0.5 overflow-y-auto';
+        list.style.maxHeight = '12rem';
 
-    function _scheduleFlyoutHide() {
-        _cancelFlyoutHide();
-        _flyoutHideTimeout = setTimeout(() => _hideRosterFlyout(), 200);
-    }
+        if (otherMembers.length === 0) {
+            list.innerHTML = '<p class="text-xs text-muted-foreground px-2 py-1">No other members</p>';
+        } else {
+            otherMembers.forEach(player => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-2 px-1 py-1 rounded';
 
-    function _cancelFlyoutHide() {
-        if (_flyoutHideTimeout) {
-            clearTimeout(_flyoutHideTimeout);
-            _flyoutHideTimeout = null;
+                // Avatar
+                const avatar = document.createElement('span');
+                avatar.className = 'shrink-0';
+                if (player.photoURL) {
+                    avatar.innerHTML = `<img src="${player.photoURL}" alt="" class="w-5 h-5 rounded-full object-cover">`;
+                } else {
+                    avatar.innerHTML = `<div class="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[0.625rem] font-bold">${_escapeHtml(player.initials || '??')}</div>`;
+                }
+
+                // Name
+                const name = document.createElement('span');
+                name.className = 'text-sm text-foreground truncate flex-1 min-w-0';
+                name.textContent = player.displayName;
+
+                // Action icons: [+] [-] [⊘]
+                const actions = document.createElement('div');
+                actions.className = 'flex items-center gap-0.5 shrink-0';
+                actions.innerHTML = `
+                    <button class="roster-action-btn w-7 h-7 flex items-center justify-center rounded hover:bg-primary/20 text-primary transition-colors"
+                            data-user-id="${player.userId}" data-action="add" title="Add to slots">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                    </button>
+                    <button class="roster-action-btn w-7 h-7 flex items-center justify-center rounded hover:bg-destructive/20 text-destructive transition-colors"
+                            data-user-id="${player.userId}" data-action="remove" title="Remove from slots">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                    </button>
+                    <button class="roster-action-btn w-7 h-7 flex items-center justify-center rounded hover:bg-secondary/80 text-secondary-foreground transition-colors"
+                            data-user-id="${player.userId}" data-action="unavailable" title="Mark away">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                        </svg>
+                    </button>
+                `;
+
+                row.appendChild(avatar);
+                row.appendChild(name);
+                row.appendChild(actions);
+                list.appendChild(row);
+            });
         }
-    }
 
-    function _positionFlyout(mode) {
-        const anchorBtnMap = { add: _addOtherButton, remove: _removeOtherButton, unavailable: _unavailOtherButton };
-        const anchorBtn = anchorBtnMap[mode];
-        if (!anchorBtn || !_rosterFlyout) return;
+        _rosterPanel.appendChild(list);
 
-        const btnRect = anchorBtn.getBoundingClientRect();
-        const gap = 4;
-
-        _rosterFlyout.style.visibility = 'hidden';
-        _rosterFlyout.classList.remove('hidden');
-        const flyoutRect = _rosterFlyout.getBoundingClientRect();
-        _rosterFlyout.classList.add('hidden');
-        _rosterFlyout.style.visibility = '';
-
-        let left = btnRect.right + gap;
-        let top = btnRect.top;
-
-        if (left + flyoutRect.width > window.innerWidth - gap) {
-            left = btnRect.left - flyoutRect.width - gap;
-        }
-        if (top + flyoutRect.height > window.innerHeight - gap) {
-            top = window.innerHeight - flyoutRect.height - gap;
-        }
-
-        _rosterFlyout.style.left = `${left}px`;
-        _rosterFlyout.style.top = `${top}px`;
+        // Event delegation for action buttons
+        list.addEventListener('click', (e) => {
+            const btn = e.target.closest('.roster-action-btn');
+            if (!btn) return;
+            e.stopPropagation();
+            _handleOtherAction(btn.dataset.userId, btn, btn.dataset.action);
+        });
     }
 
     // ---------------------------------------------------------------
@@ -362,13 +330,25 @@ const SelectionActionButton = (function() {
     // ---------------------------------------------------------------
 
     async function _handleMeAction(action) {
-        const btnMap = { add: _addMeButton, remove: _removeMeButton, unavailable: _unavailMeButton };
+        const btnMap = { add: _addMeButton, remove: _removeMeButton };
         const btn = btnMap[action];
+
+        // For unavailable action from dropdown, just proceed directly
+        if (action === 'unavailable') {
+            _closeMoreDropdown();
+            try {
+                await GridActionButtons.markMeUnavailable();
+            } finally {
+                _hide();
+            }
+            return;
+        }
+
         if (!btn || btn.disabled) return;
 
         const textEl = btn.querySelector('.action-text');
         const originalText = textEl.textContent;
-        const loadingMap = { add: 'Adding...', remove: 'Removing...', unavailable: 'Marking...' };
+        const loadingMap = { add: 'Adding...', remove: 'Removing...' };
         textEl.textContent = loadingMap[action];
         btn.disabled = true;
 
@@ -377,8 +357,6 @@ const SelectionActionButton = (function() {
                 await GridActionButtons.addMe();
             } else if (action === 'remove') {
                 await GridActionButtons.removeMe();
-            } else if (action === 'unavailable') {
-                await GridActionButtons.markMeUnavailable();
             }
         } finally {
             btn.disabled = false;
@@ -387,12 +365,9 @@ const SelectionActionButton = (function() {
         }
     }
 
-    async function _handleOtherAction(targetUserId, buttonEl, action) {
-        const originalHtml = buttonEl.innerHTML;
-        const loadingTexts = { add: 'Adding...', remove: 'Removing...', unavailable: 'Marking...' };
-        const loadingText = loadingTexts[action] || 'Processing...';
-        buttonEl.innerHTML = `<span class="text-xs text-muted-foreground">${loadingText}</span>`;
-        buttonEl.disabled = true;
+    async function _handleOtherAction(targetUserId, iconBtn, action) {
+        iconBtn.disabled = true;
+        iconBtn.classList.add('opacity-50');
 
         try {
             if (action === 'add') {
@@ -411,7 +386,7 @@ const SelectionActionButton = (function() {
             const toastMessages = {
                 add: `Added ${name} to selected slots`,
                 remove: `Removed ${name} from selected slots`,
-                unavailable: `Marked ${name} as away in selected slots`
+                unavailable: `Marked ${name} as away`
             };
 
             if (typeof ToastService !== 'undefined') {
@@ -427,10 +402,9 @@ const SelectionActionButton = (function() {
                 ToastService.showError(errorMessages[action] || 'Operation failed');
             }
         } finally {
-            buttonEl.disabled = false;
-            buttonEl.innerHTML = originalHtml;
-            _hideRosterFlyout();
-            _hide();
+            iconBtn.disabled = false;
+            iconBtn.classList.remove('opacity-50');
+            // Keep roster open for multiple player actions
         }
     }
 
@@ -440,14 +414,11 @@ const SelectionActionButton = (function() {
 
         const team = TeamService.getTeamFromCache(teamId);
         const divisions = team?.divisions || [];
-        // Default to team's first division, or 'D1' fallback
         const defaultDiv = divisions[0] || 'D1';
 
-        // Filter out any null slotIds (defensive)
         const validCells = _currentSelection.filter(cell => cell.slotId != null);
         if (validCells.length === 0) return;
 
-        // Group cells by week → { weekId: [slotIds] }
         const cellsByWeek = {};
         validCells.forEach(cell => {
             if (!cellsByWeek[cell.weekId]) cellsByWeek[cell.weekId] = [];
@@ -455,28 +426,22 @@ const SelectionActionButton = (function() {
         });
 
         const weekEntries = Object.entries(cellsByWeek);
-
-        // For MVP, use the first week's slots (most common: single-week selection)
         const [weekId, slotIds] = weekEntries[0];
 
-        // Edge case: multi-week selection (unlikely — standin search is same-day)
         if (weekEntries.length > 1) {
             console.warn('Find Standin: selection spans multiple weeks, using first week only');
         }
 
-        // Activate standin finder
         StandinFinderService.activate(weekId, slotIds, defaultDiv);
-
-        // Switch bottom panel to Players tab
         BottomPanelController.switchTab('players', { force: true });
 
-        // Clear grid selection and dismiss floating buttons
         document.dispatchEvent(new CustomEvent('clear-all-selections'));
         _hide();
     }
 
     async function _handleSaveTemplate() {
         if (typeof GridActionButtons !== 'undefined' && GridActionButtons.saveTemplate) {
+            _closeMoreDropdown();
             await GridActionButtons.saveTemplate();
             _hide();
         }
@@ -488,6 +453,31 @@ const SelectionActionButton = (function() {
         }
         document.dispatchEvent(new CustomEvent('clear-all-selections'));
         _hide();
+    }
+
+    // ---------------------------------------------------------------
+    // Click-outside dismissal
+    // ---------------------------------------------------------------
+
+    function _addClickOutsideListener() {
+        _removeClickOutsideListener();
+        setTimeout(() => {
+            _clickOutsideHandler = (e) => {
+                if (!_container || _container.classList.contains('hidden')) return;
+                if (_container.contains(e.target)) return;
+                // Let grid cell clicks flow through to grid-selection-change handler
+                if (e.target.closest('.grid-cell, .grid-header-cell')) return;
+                _handleClear();
+            };
+            document.addEventListener('click', _clickOutsideHandler, true);
+        }, 0);
+    }
+
+    function _removeClickOutsideListener() {
+        if (_clickOutsideHandler) {
+            document.removeEventListener('click', _clickOutsideHandler, true);
+            _clickOutsideHandler = null;
+        }
     }
 
     // ---------------------------------------------------------------
@@ -510,8 +500,7 @@ const SelectionActionButton = (function() {
     }
 
     /**
-     * Update button states — disable instead of hide for stable layout.
-     * Also rebuilds layout based on scheduler role.
+     * Update button states and rebuild layout based on scheduler role.
      */
     function _updateButtonState() {
         const userId = window.firebase?.auth?.currentUser?.uid;
@@ -523,11 +512,10 @@ const SelectionActionButton = (function() {
             return;
         }
 
-        // Check scheduler status and build layout
         const isScheduler = typeof TeamService !== 'undefined' && TeamService.isScheduler(teamId, userId);
         _buildLayout(isScheduler);
 
-        // Count how many selected cells have the current user (available vs unavailable)
+        // Count how many selected cells have the current user
         let userInCount = 0;
         let userUnavailCount = 0;
         _currentSelection.forEach(({ weekId, slotId }) => {
@@ -539,25 +527,24 @@ const SelectionActionButton = (function() {
 
         const userInAll = userInCount === _currentSelection.length;
         const userInNone = userInCount === 0;
-        const userUnavailAll = userUnavailCount === _currentSelection.length;
 
-        // Disable with solid muted style (no opacity — grid content would bleed through)
         _setButtonDisabled(_addMeButton, userInAll, 'bg-primary text-primary-foreground hover:bg-primary/90');
         _setButtonDisabled(_removeMeButton, userInNone, 'bg-destructive text-destructive-foreground hover:bg-destructive/90');
-        _setButtonDisabled(_unavailMeButton, userUnavailAll, 'bg-secondary text-secondary-foreground hover:bg-secondary/80');
     }
 
     function _positionButton() {
         if (!_currentBounds || !_container) return;
 
         const padding = 8;
+        const bottomPadding = (typeof MobileLayout !== 'undefined' && MobileLayout.isMobile()) ? 56 : padding;
 
+        const wasHidden = _container.classList.contains('hidden');
         _container.style.visibility = 'hidden';
         _container.classList.remove('hidden');
         const containerRect = _container.getBoundingClientRect();
         const containerWidth = containerRect.width || 160;
         const containerHeight = containerRect.height || 40;
-        _container.classList.add('hidden');
+        if (wasHidden) _container.classList.add('hidden');
         _container.style.visibility = '';
 
         let left = _currentBounds.right + padding;
@@ -572,8 +559,8 @@ const SelectionActionButton = (function() {
         if (left < padding) {
             left = viewportWidth - containerWidth - padding;
         }
-        if (top + containerHeight > viewportHeight - padding) {
-            top = viewportHeight - containerHeight - padding;
+        if (top + containerHeight > viewportHeight - bottomPadding) {
+            top = viewportHeight - containerHeight - bottomPadding;
         }
         if (top < padding) {
             top = _currentBounds.bottom + padding;
@@ -595,17 +582,26 @@ const SelectionActionButton = (function() {
             }
         } else if (e.key === 'Escape') {
             e.preventDefault();
-            _handleClear();
+            if (_rosterOpen) {
+                _hideRosterPanel();
+            } else if (_dropdownOpen) {
+                _closeMoreDropdown();
+            } else {
+                _handleClear();
+            }
         }
     }
 
     function _show() {
         _container?.classList.remove('hidden');
+        _addClickOutsideListener();
     }
 
     function _hide() {
         _container?.classList.add('hidden');
-        _hideRosterFlyout();
+        _dropdownOpen = false;
+        _rosterOpen = false;
+        _removeClickOutsideListener();
     }
 
     function init() {
@@ -620,22 +616,21 @@ const SelectionActionButton = (function() {
     function cleanup() {
         document.removeEventListener('grid-selection-change', _handleSelectionChange);
         document.removeEventListener('keydown', _handleKeydown);
-        _cancelFlyoutHide();
+        _removeClickOutsideListener();
         _container?.remove();
-        _rosterFlyout?.remove();
         _container = null;
         _addMeButton = null;
-        _addOtherButton = null;
         _removeMeButton = null;
-        _removeOtherButton = null;
+        _moreButton = null;
+        _moreDropdown = null;
+        _moreMenuItems = null;
         _unavailMeButton = null;
-        _unavailOtherButton = null;
-        _findStandinButton = null;
         _templateButton = null;
-        _escapeButton = null;
-        _rosterFlyout = null;
-        _flyoutVisible = false;
-        _flyoutMode = null;
+        _findStandinButton = null;
+        _othersButton = null;
+        _rosterPanel = null;
+        _dropdownOpen = false;
+        _rosterOpen = false;
         _currentSelection = [];
         _currentBounds = null;
     }
