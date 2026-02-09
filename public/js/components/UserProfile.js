@@ -541,6 +541,7 @@ const UserProfile = (function() {
                                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                             </svg>
                             <span class="text-xs">Give Feedback</span>
+                            <span id="feedback-badge" class="hidden min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[0.625rem] font-bold flex items-center justify-center leading-none"></span>
                         </button>
                         ${window.matchMedia('(display-mode: standalone)').matches ? `
                             <button id="pwa-refresh-btn" class="ml-auto p-1 cursor-pointer hover:opacity-80 transition-opacity text-muted-foreground hover:text-foreground" title="Refresh">
@@ -588,6 +589,9 @@ const UserProfile = (function() {
                     }
                 });
             }
+
+            // Check for new feedback (admin only, fails silently for non-admins)
+            _checkFeedbackCount();
         } else if (_currentUser) {
             // Authenticated but no profile yet
             _compactContainer.innerHTML = `
@@ -641,6 +645,28 @@ const UserProfile = (function() {
             if (googleBtn) {
                 googleBtn.addEventListener('click', _handleGoogleSignIn);
             }
+        }
+    }
+
+    /**
+     * Check for new feedback items (admin only).
+     * Calls getFeedbackCount Cloud Function - fails silently for non-admins.
+     */
+    async function _checkFeedbackCount() {
+        try {
+            const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+            const functions = window.firebase.functions;
+            const getFeedbackCount = httpsCallable(functions, 'getFeedbackCount');
+            const result = await getFeedbackCount({});
+
+            const count = result.data.count;
+            const badge = document.getElementById('feedback-badge');
+            if (badge && count > 0) {
+                badge.textContent = count > 99 ? '99+' : count;
+                badge.classList.remove('hidden');
+            }
+        } catch (e) {
+            // Expected for non-admin users - fail silently
         }
     }
 

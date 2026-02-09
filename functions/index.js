@@ -15,7 +15,7 @@ const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 const { updateFavorites } = require('./favorites');
 const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler, updateProposalSettings } = require('./match-proposals');
 const { getScheduledGames } = require('./scheduled-games-api');
-const { submitFeedback } = require('./feedback');
+const { submitFeedback, getFeedbackCount } = require('./feedback');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
@@ -61,6 +61,7 @@ exports.getScheduledGames = getScheduledGames;
 
 // Feedback functions
 exports.submitFeedback = submitFeedback;
+exports.getFeedbackCount = getFeedbackCount;
 
 // Simple test function
 exports.helloWorld = functions.region('europe-west3').https.onRequest((request, response) => {

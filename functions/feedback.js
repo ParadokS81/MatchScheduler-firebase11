@@ -3,6 +3,13 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const db = getFirestore();
 
+// Admin UIDs allowed to view feedback counts
+// Add production UIDs here alongside dev UIDs
+const ADMIN_UIDS = [
+    'dev-user-001',                    // Dev: ParadokS
+    'Mu8Wvso3wmQAy6LSKS2UoR65Etn1',   // Prod: ParadokS
+];
+
 /**
  * Submit user feedback (bug report, feature request, or other)
  * Creates a document in the /feedback collection
@@ -69,5 +76,35 @@ exports.submitFeedback = functions
         } catch (error) {
             console.error('Error submitting feedback:', error);
             throw new functions.https.HttpsError('internal', 'Failed to submit feedback');
+        }
+    });
+
+/**
+ * Get count of new (unreviewed) feedback items
+ * Restricted to admin users only
+ */
+exports.getFeedbackCount = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+        }
+
+        const isAdmin = ADMIN_UIDS.includes(context.auth.uid) ||
+                         context.auth.token.admin === true;
+
+        if (!isAdmin) {
+            throw new functions.https.HttpsError('permission-denied', 'Not authorized');
+        }
+
+        try {
+            const snapshot = await db.collection('feedback')
+                .where('status', '==', 'new')
+                .get();
+
+            return { count: snapshot.size };
+        } catch (error) {
+            console.error('Error getting feedback count:', error);
+            throw new functions.https.HttpsError('internal', 'Failed to get feedback count');
         }
     });

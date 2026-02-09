@@ -81,7 +81,7 @@ const FeedbackModal = (function() {
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                                   d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
                                         </svg>
-                                        <span class="text-muted-foreground text-xs">Drop image or click to browse</span>
+                                        <span class="text-muted-foreground text-xs">Drop, paste, or click to browse</span>
                                     </div>
                                 </div>
                                 <!-- Preview -->
@@ -177,12 +177,29 @@ const FeedbackModal = (function() {
             document.getElementById('feedback-char-count').textContent = textarea.value.length;
         });
 
+        // Clipboard paste for screenshots
+        document.addEventListener('paste', _handlePaste);
+
         // Submit
         document.getElementById('feedback-submit-btn').addEventListener('click', _handleSubmit);
     }
 
     function _handleEscape(e) {
         if (e.key === 'Escape') close();
+    }
+
+    function _handlePaste(e) {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (file) _handleFileSelect(file);
+                return;
+            }
+        }
     }
 
     function _handleFileSelect(file) {
@@ -280,6 +297,7 @@ const FeedbackModal = (function() {
 
     function close() {
         document.removeEventListener('keydown', _handleEscape);
+        document.removeEventListener('paste', _handlePaste);
         if (_objectUrl) {
             URL.revokeObjectURL(_objectUrl);
             _objectUrl = null;
