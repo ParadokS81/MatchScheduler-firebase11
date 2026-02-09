@@ -1,11 +1,12 @@
 /**
  * FeedbackModal.js
  * Modal for submitting bug reports, feature requests, and general feedback
- * Supports optional screenshot upload with client-side compression
+ * Supports up to 3 screenshot uploads with drag-drop, paste, and file browse
  */
 const FeedbackModal = (function() {
-    let _screenshotFile = null;
-    let _objectUrl = null;
+    const MAX_SCREENSHOTS = 3;
+    let _screenshotFiles = [];
+    let _objectUrls = [];
 
     function show() {
         _renderModal();
@@ -72,7 +73,7 @@ const FeedbackModal = (function() {
 
                             <!-- Screenshot drop zone -->
                             <div class="mb-2">
-                                <label class="text-sm font-medium text-foreground mb-2 block">Screenshot (optional)</label>
+                                <label class="text-sm font-medium text-foreground mb-2 block">Screenshots <span class="text-muted-foreground font-normal">(optional, up to 3)</span></label>
                                 <input type="file" id="feedback-file-input" accept="image/*" class="hidden">
                                 <div id="feedback-drop-zone" class="w-full py-4 border-2 border-dashed border-border rounded-lg
                                      hover:border-primary transition-colors cursor-pointer">
@@ -84,13 +85,8 @@ const FeedbackModal = (function() {
                                         <span class="text-muted-foreground text-xs">Drop, paste, or click to browse</span>
                                     </div>
                                 </div>
-                                <!-- Preview -->
-                                <div id="feedback-screenshot-preview" class="hidden mt-2 relative inline-block">
-                                    <img id="feedback-preview-img" class="max-h-32 rounded border border-border">
-                                    <button id="feedback-remove-screenshot"
-                                            class="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5
-                                                   flex items-center justify-center text-xs hover:bg-black/80">&times;</button>
-                                </div>
+                                <!-- Previews row -->
+                                <div id="feedback-screenshot-previews" class="flex gap-2 mt-2 flex-wrap"></div>
                             </div>
                         </div>
 
@@ -151,6 +147,7 @@ const FeedbackModal = (function() {
         dropZone.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => {
             if (e.target.files && e.target.files[0]) _handleFileSelect(e.target.files[0]);
+            fileInput.value = '';
         });
 
         dropZone.addEventListener('dragover', (e) => {
@@ -167,9 +164,6 @@ const FeedbackModal = (function() {
                 _handleFileSelect(e.dataTransfer.files[0]);
             }
         });
-
-        // Remove screenshot
-        document.getElementById('feedback-remove-screenshot').addEventListener('click', _removeScreenshot);
 
         // Character count
         const textarea = document.getElementById('feedback-message');
@@ -203,6 +197,10 @@ const FeedbackModal = (function() {
     }
 
     function _handleFileSelect(file) {
+        if (_screenshotFiles.length >= MAX_SCREENSHOTS) {
+            ToastService.showError(`Maximum ${MAX_SCREENSHOTS} screenshots`);
+            return;
+        }
         if (file.size > 5 * 1024 * 1024) {
             ToastService.showError('File too large - max 5MB');
             return;
@@ -212,24 +210,46 @@ const FeedbackModal = (function() {
             return;
         }
 
-        _screenshotFile = file;
-        if (_objectUrl) URL.revokeObjectURL(_objectUrl);
-        _objectUrl = URL.createObjectURL(file);
-
-        document.getElementById('feedback-preview-img').src = _objectUrl;
-        document.getElementById('feedback-screenshot-preview').classList.remove('hidden');
-        document.getElementById('feedback-drop-zone').classList.add('hidden');
+        const url = URL.createObjectURL(file);
+        _screenshotFiles.push(file);
+        _objectUrls.push(url);
+        _renderPreviews();
     }
 
-    function _removeScreenshot() {
-        _screenshotFile = null;
-        if (_objectUrl) {
-            URL.revokeObjectURL(_objectUrl);
-            _objectUrl = null;
+    function _removeScreenshot(index) {
+        URL.revokeObjectURL(_objectUrls[index]);
+        _screenshotFiles.splice(index, 1);
+        _objectUrls.splice(index, 1);
+        _renderPreviews();
+    }
+
+    function _renderPreviews() {
+        const container = document.getElementById('feedback-screenshot-previews');
+        const dropZone = document.getElementById('feedback-drop-zone');
+
+        // Show/hide drop zone based on count
+        if (_screenshotFiles.length >= MAX_SCREENSHOTS) {
+            dropZone.classList.add('hidden');
+        } else {
+            dropZone.classList.remove('hidden');
         }
-        document.getElementById('feedback-screenshot-preview').classList.add('hidden');
-        document.getElementById('feedback-drop-zone').classList.remove('hidden');
-        document.getElementById('feedback-file-input').value = '';
+
+        // Render thumbnail grid
+        container.innerHTML = _objectUrls.map((url, i) => `
+            <div class="relative inline-block">
+                <img src="${url}" class="h-20 rounded border border-border object-cover">
+                <button data-remove-idx="${i}"
+                        class="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5
+                               flex items-center justify-center text-xs hover:bg-black/80 cursor-pointer">&times;</button>
+            </div>
+        `).join('');
+
+        // Attach remove handlers
+        container.querySelectorAll('[data-remove-idx]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                _removeScreenshot(parseInt(btn.dataset.removeIdx));
+            });
+        });
     }
 
     async function _handleSubmit() {
@@ -247,22 +267,30 @@ const FeedbackModal = (function() {
         document.getElementById('feedback-progress-state').classList.remove('hidden');
 
         try {
-            let screenshotUrl = null;
+            const screenshotUrls = [];
 
-            // Upload screenshot if present
-            if (_screenshotFile) {
-                document.getElementById('feedback-progress-text').textContent = 'Compressing screenshot...';
-                const compressedBlob = await FeedbackUploadService.compressImage(_screenshotFile);
-
-                document.getElementById('feedback-progress-text').textContent = 'Uploading screenshot...';
+            // Upload screenshots sequentially
+            if (_screenshotFiles.length > 0) {
                 const userId = window.firebase.auth.currentUser.uid;
-                screenshotUrl = await FeedbackUploadService.uploadScreenshot(
-                    userId,
-                    compressedBlob,
-                    (progress) => {
-                        document.getElementById('feedback-progress-bar').style.width = `${progress}%`;
-                    }
-                );
+                const total = _screenshotFiles.length;
+
+                for (let i = 0; i < total; i++) {
+                    document.getElementById('feedback-progress-text').textContent =
+                        `Compressing screenshot ${i + 1}/${total}...`;
+                    const compressedBlob = await FeedbackUploadService.compressImage(_screenshotFiles[i]);
+
+                    document.getElementById('feedback-progress-text').textContent =
+                        `Uploading screenshot ${i + 1}/${total}...`;
+                    const url = await FeedbackUploadService.uploadScreenshot(
+                        userId,
+                        compressedBlob,
+                        (progress) => {
+                            const overall = ((i + progress / 100) / total) * 100;
+                            document.getElementById('feedback-progress-bar').style.width = `${overall}%`;
+                        }
+                    );
+                    screenshotUrls.push(url);
+                }
             }
 
             // Submit feedback
@@ -272,7 +300,7 @@ const FeedbackModal = (function() {
             const result = await FeedbackUploadService.submitFeedback({
                 category: category || 'other',
                 message,
-                screenshotUrl,
+                screenshotUrls,
                 currentUrl: window.location.href,
                 browserInfo: navigator.userAgent
             });
@@ -298,11 +326,9 @@ const FeedbackModal = (function() {
     function close() {
         document.removeEventListener('keydown', _handleEscape);
         document.removeEventListener('paste', _handlePaste);
-        if (_objectUrl) {
-            URL.revokeObjectURL(_objectUrl);
-            _objectUrl = null;
-        }
-        _screenshotFile = null;
+        _objectUrls.forEach(url => URL.revokeObjectURL(url));
+        _objectUrls = [];
+        _screenshotFiles = [];
         const container = document.getElementById('feedback-modal-container');
         if (container) {
             container.innerHTML = '';

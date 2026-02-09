@@ -101,15 +101,20 @@ async function readFeedback(filter) {
         items.push({ id: doc.id, ...data });
     });
 
-    // Download screenshots
+    // Download screenshots (supports both legacy single URL and new array)
     for (const item of items) {
-        if (item.screenshotUrl) {
-            const ext = 'jpg';
-            const localName = `${item.id}.${ext}`;
+        const urls = item.screenshotUrls && item.screenshotUrls.length > 0
+            ? item.screenshotUrls
+            : (item.screenshotUrl ? [item.screenshotUrl] : []);
+
+        item.localScreenshots = [];
+        for (let i = 0; i < urls.length; i++) {
+            const suffix = urls.length > 1 ? `_${i + 1}` : '';
+            const localName = `${item.id}${suffix}.jpg`;
             const localPath = path.join(REVIEWS_DIR, localName);
             try {
-                await downloadFile(item.screenshotUrl, localPath);
-                item.localScreenshot = localPath;
+                await downloadFile(urls[i], localPath);
+                item.localScreenshots.push(localPath);
             } catch (err) {
                 console.warn(`  Failed to download screenshot for ${item.id}: ${err.message}`);
             }
@@ -138,9 +143,15 @@ async function readFeedback(filter) {
         console.log(`  ID:   ${item.id}`);
         console.log('-'.repeat(70));
         console.log(`  ${item.message}`);
-        if (item.localScreenshot) {
-            console.log(`\n  Screenshot (local): ${item.localScreenshot}`);
-            console.log(`  Screenshot (url):   ${item.screenshotUrl}`);
+        if (item.localScreenshots && item.localScreenshots.length > 0) {
+            const urls = item.screenshotUrls && item.screenshotUrls.length > 0
+                ? item.screenshotUrls
+                : (item.screenshotUrl ? [item.screenshotUrl] : []);
+            item.localScreenshots.forEach((lp, si) => {
+                const label = item.localScreenshots.length > 1 ? ` ${si + 1}` : '';
+                console.log(`\n  Screenshot${label} (local): ${lp}`);
+                if (urls[si]) console.log(`  Screenshot${label} (url):   ${urls[si]}`);
+            });
         }
         if (item.browserInfo) {
             const ua = item.browserInfo;

@@ -23,7 +23,7 @@ exports.submitFeedback = functions
         }
 
         const { uid } = context.auth;
-        const { category, message, screenshotUrl, currentUrl, browserInfo } = data;
+        const { category, message, screenshotUrl, screenshotUrls, currentUrl, browserInfo } = data;
 
         // Validate category
         const validCategories = ['bug', 'feature', 'other'];
@@ -39,9 +39,12 @@ exports.submitFeedback = functions
             throw new functions.https.HttpsError('invalid-argument', 'Message too long (max 2000 characters)');
         }
 
-        // Validate screenshotUrl if provided
-        if (screenshotUrl != null && (typeof screenshotUrl !== 'string' || screenshotUrl.length === 0)) {
-            throw new functions.https.HttpsError('invalid-argument', 'Invalid screenshot URL');
+        // Normalize screenshots: accept both legacy single URL and new array
+        let urls = [];
+        if (Array.isArray(screenshotUrls)) {
+            urls = screenshotUrls.filter(u => typeof u === 'string' && u.length > 0).slice(0, 3);
+        } else if (typeof screenshotUrl === 'string' && screenshotUrl.length > 0) {
+            urls = [screenshotUrl];
         }
 
         // Fetch displayName server-side
@@ -62,7 +65,8 @@ exports.submitFeedback = functions
                 displayName,
                 category,
                 message: message.trim(),
-                screenshotUrl: screenshotUrl || null,
+                screenshotUrl: urls[0] || null,    // Backward compat for read-feedback.js
+                screenshotUrls: urls,               // Full array
                 status: 'new',
                 browserInfo: browserInfo || null,
                 currentUrl: currentUrl || null,

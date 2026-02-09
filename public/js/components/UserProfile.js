@@ -661,9 +661,13 @@ const UserProfile = (function() {
 
             const count = result.data.count;
             const badge = document.getElementById('feedback-badge');
-            if (badge && count > 0) {
+            if (badge) {
                 badge.textContent = count > 99 ? '99+' : count;
                 badge.classList.remove('hidden');
+                if (count === 0) {
+                    badge.classList.remove('bg-red-500');
+                    badge.classList.add('bg-muted-foreground/40');
+                }
             }
         } catch (e) {
             // Expected for non-admin users - fail silently
