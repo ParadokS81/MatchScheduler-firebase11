@@ -3,6 +3,7 @@
 
 const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getMondayOfWeek, isValidWeekRange, computeExpiresAt, computeScheduledDate } = require('./week-utils');
 
 const db = getFirestore();
 
@@ -44,78 +45,8 @@ function isAuthorized(teamData, userId) {
         (teamData.schedulers || []).includes(userId);
 }
 
-/**
- * Compute Monday of a given ISO week (UTC).
- * Canonical frontend version: public/js/utils/DateUtils.js
- * Keep logic in sync if modifying.
- */
-function getMondayOfWeek(year, weekNumber) {
-    const jan1 = new Date(Date.UTC(year, 0, 1));
-    const dayOfWeek = jan1.getUTCDay();
-    const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
-    const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
-    const monday = new Date(firstMonday);
-    monday.setUTCDate(firstMonday.getUTCDate() + (weekNumber - 1) * 7);
-    return monday;
-}
-
-/**
- * Compute expiresAt: Sunday 23:59:59 UTC of the given week.
- */
-function computeExpiresAt(weekId) {
-    const [yearStr, weekStr] = weekId.split('-');
-    const year = parseInt(yearStr);
-    const weekNumber = parseInt(weekStr);
-    const monday = getMondayOfWeek(year, weekNumber);
-    const sunday = new Date(monday);
-    sunday.setUTCDate(monday.getUTCDate() + 6);
-    sunday.setUTCHours(23, 59, 59, 999);
-    return sunday;
-}
-
-/**
- * Compute ISO date string from weekId + slotId.
- * E.g., weekId "2026-05", slotId "wed_2000" → "2026-02-04"
- */
-function computeScheduledDate(weekId, slotId) {
-    const dayMap = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
-    const [yearStr, weekStr] = weekId.split('-');
-    const year = parseInt(yearStr);
-    const weekNumber = parseInt(weekStr);
-    const monday = getMondayOfWeek(year, weekNumber);
-    const dayOffset = dayMap[slotId.split('_')[0]];
-    const date = new Date(monday);
-    date.setUTCDate(monday.getUTCDate() + dayOffset);
-    return date.toISOString().slice(0, 10);
-}
-
-/**
- * Check if a weekId is current or future (max 4 weeks ahead).
- */
-function isValidWeekRange(weekId) {
-    const now = new Date();
-    const currentYear = now.getUTCFullYear();
-
-    // Compute current ISO week number
-    const jan1 = new Date(Date.UTC(currentYear, 0, 1));
-    const jan1Day = jan1.getUTCDay();
-    const daysToThursday = jan1Day <= 4 ? (4 - jan1Day) : (11 - jan1Day);
-    const firstThursday = new Date(Date.UTC(currentYear, 0, 1 + daysToThursday));
-    const firstMonday = new Date(firstThursday);
-    firstMonday.setUTCDate(firstThursday.getUTCDate() - 3);
-    const daysSinceFirstMonday = Math.floor((now - firstMonday) / (24 * 60 * 60 * 1000));
-    const currentWeek = Math.max(1, Math.floor(daysSinceFirstMonday / 7) + 1);
-
-    const [yearStr, weekStr] = weekId.split('-');
-    const targetYear = parseInt(yearStr);
-    const targetWeek = parseInt(weekStr);
-
-    // Convert to absolute week numbers for comparison
-    const currentAbsolute = currentYear * 52 + currentWeek;
-    const targetAbsolute = targetYear * 52 + targetWeek;
-
-    return targetAbsolute >= currentAbsolute && targetAbsolute <= currentAbsolute + 4;
-}
+// Week utilities (getMondayOfWeek, isValidWeekRange, computeExpiresAt, computeScheduledDate)
+// imported from ./week-utils.js — single source of truth for backend week math.
 
 // ─── createProposal ─────────────────────────────────────────────────────────
 
