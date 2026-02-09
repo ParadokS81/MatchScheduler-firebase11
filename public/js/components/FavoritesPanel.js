@@ -7,7 +7,6 @@ const FavoritesPanel = (function() {
 
     let _container = null;
     let _unsubscribeTeams = null;
-    let _isComparing = false;
 
     function _escapeHtml(text) {
         const div = document.createElement('div');
@@ -162,28 +161,6 @@ const FavoritesPanel = (function() {
         const favorites = FavoritesService.getFavorites();
         const selectedTeams = TeamBrowserState.getSelectedTeams();
 
-        // Check comparison state (auto-mode toggle)
-        const comparison = typeof ComparisonEngine !== 'undefined'
-            ? ComparisonEngine.getComparisonState()
-            : { active: false, autoMode: false };
-        _isComparing = comparison.autoMode;
-
-        // Build toggle button for comparison mode
-        const toggleOn = _isComparing;
-        const opponentCount = selectedTeams.size;
-        const statusText = toggleOn
-            ? (opponentCount > 0 ? `ON (${opponentCount})` : 'ON')
-            : 'OFF';
-        const actionButton = `
-            <button id="compare-toggle-btn"
-                    class="w-full py-2 px-4 rounded-lg font-medium transition-colors
-                           ${toggleOn
-                               ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                               : 'bg-muted text-foreground hover:bg-muted/80 border border-border'}"
-                    title="${toggleOn ? 'Click to disable live comparison' : 'Click to enable live comparison'}">
-                Compare: ${statusText}
-            </button>`;
-
         _container.innerHTML = `
             <div class="p-4 h-full flex flex-col">
                 <div class="flex items-center justify-end gap-2 mb-2">
@@ -203,10 +180,6 @@ const FavoritesPanel = (function() {
 
                 <div id="favorites-list" class="flex-1 overflow-y-auto space-y-2">
                     ${_renderFavoritesList(favorites, selectedTeams)}
-                </div>
-
-                <div class="mt-3 pt-2">
-                    ${actionButton}
                 </div>
             </div>
         `;
@@ -283,32 +256,6 @@ const FavoritesPanel = (function() {
             favorites.forEach(teamId => TeamBrowserState.deselectTeam(teamId));
         });
 
-        // Compare Toggle - Slice 8.1b: reactive comparison mode
-        document.getElementById('compare-toggle-btn')?.addEventListener('click', () => {
-            if (typeof ComparisonEngine === 'undefined') return;
-
-            const isAutoMode = ComparisonEngine.isAutoMode();
-
-            if (isAutoMode) {
-                // Toggle OFF
-                ComparisonEngine.endComparison();
-            } else {
-                // Toggle ON — need user team from grid
-                const userTeamId = typeof MatchSchedulerApp !== 'undefined'
-                    ? MatchSchedulerApp.getSelectedTeam()?.id
-                    : null;
-
-                if (!userTeamId) {
-                    if (typeof ToastService !== 'undefined') {
-                        ToastService.showError('No team selected in grid');
-                    }
-                    return;
-                }
-
-                ComparisonEngine.enableAutoMode(userTeamId);
-            }
-        });
-
         // Team card clicks (selection toggle) and hover (tooltip)
         document.querySelectorAll('.favorite-team-card').forEach(card => {
             card.addEventListener('click', (e) => {
@@ -355,11 +302,6 @@ const FavoritesPanel = (function() {
 
         // Listen for selection changes (from TeamBrowserState)
         window.addEventListener('team-selection-changed', _render);
-
-        // Listen for comparison events
-        window.addEventListener('comparison-started', _render);
-        window.addEventListener('comparison-ended', _render);
-        window.addEventListener('comparison-mode-changed', _render);
     }
 
     async function _setupTeamListener() {
@@ -393,9 +335,6 @@ const FavoritesPanel = (function() {
     function cleanup() {
         window.removeEventListener('favorites-updated', _render);
         window.removeEventListener('team-selection-changed', _render);
-        window.removeEventListener('comparison-started', _render);
-        window.removeEventListener('comparison-ended', _render);
-        window.removeEventListener('comparison-mode-changed', _render);
         if (_unsubscribeTeams) {
             _unsubscribeTeams();
             _unsubscribeTeams = null;

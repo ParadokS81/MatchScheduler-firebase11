@@ -199,17 +199,13 @@
             <!-- Right Sidebar (spans all rows) - Slice 13.0e -->
             <div id="panel-right" class="panel sidebar-panel">
                 <div class="sidebar-content">
-                    <!-- Compare Row: [Compare] [X] vs [X] -->
+                    <!-- Search + Min Filters + Browser Controls -->
                     <div class="sidebar-section sidebar-header">
-                        <div id="compare-controls" class="flex items-center justify-between">
-                            <!-- FilterPanel renders compare + min filters here -->
+                        <div id="compare-controls" class="flex items-center flex-shrink-0">
+                            <!-- FilterPanel renders [X] vs [X] here (inits before TeamBrowser) -->
                         </div>
-                    </div>
-
-                    <!-- Search & Filters -->
-                    <div class="sidebar-section">
                         <div id="team-browser-header">
-                            <!-- TeamBrowser renders search + filter buttons here -->
+                            <!-- TeamBrowser renders search + filter buttons here, moves compare-controls into search row -->
                         </div>
                     </div>
 

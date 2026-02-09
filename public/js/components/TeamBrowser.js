@@ -131,28 +131,30 @@ const TeamBrowser = (function() {
      * Slice 13.0e: Render to split containers (header + list)
      */
     function _renderSplitMode() {
-        // Header: Search + Filter buttons (two rows)
+        // Header: Search + Min Filters (one row) + Filter buttons (two rows)
         _headerContainer.innerHTML = `
             <div class="browser-header">
-                <!-- Search Input -->
-                <div class="relative mb-2">
-                    <input type="search"
-                           id="team-search-input"
-                           placeholder="Search teams or players..."
-                           inputmode="search"
-                           autocomplete="off"
-                           autocorrect="off"
-                           autocapitalize="off"
-                           spellcheck="false"
-                           class="w-full px-3 py-1.5 text-sm bg-muted border border-border rounded-md
-                                  focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary
-                                  placeholder:text-muted-foreground"
-                    />
-                    <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
-                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                    </svg>
+                <!-- Search + Min Filters row -->
+                <div class="flex gap-2 items-center mb-2" id="search-filter-row">
+                    <div class="relative flex-1 min-w-0">
+                        <input type="search"
+                               id="team-search-input"
+                               placeholder="Search teams..."
+                               inputmode="search"
+                               autocomplete="off"
+                               autocorrect="off"
+                               autocapitalize="off"
+                               spellcheck="false"
+                               class="w-full px-3 py-1.5 text-sm bg-muted border border-border rounded-md
+                                      focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary
+                                      placeholder:text-muted-foreground"
+                        />
+                        <svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
+                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                    </div>
                 </div>
 
                 <!-- Row 1: Division toggles -->
@@ -162,15 +164,25 @@ const TeamBrowser = (function() {
                     <button class="division-filter-btn flex-1 ${TeamBrowserState.isDivisionActive('D3') ? 'active' : ''}" data-division="D3">Div 3</button>
                 </div>
 
-                <!-- Row 2: Fav filter + Select All toggle -->
+                <!-- Row 2: Fav filter + All + Clear -->
                 <div class="flex gap-1">
                     <button class="division-filter-btn fav-filter-btn flex-1 ${TeamBrowserState.isFavoritesFilterActive() ? 'active' : ''}"
-                            data-filter="fav">★ Favourites</button>
-                    <button id="select-all-toggle" class="division-filter-btn flex-1"
-                            title="Select/Deselect all visible teams">Select All</button>
+                            data-filter="fav">★ Fav</button>
+                    <button id="select-all-btn" class="division-filter-btn flex-1"
+                            title="Select all visible teams">All</button>
+                    <button id="clear-selection-btn" class="division-filter-btn flex-1"
+                            title="Clear all selections">Clear</button>
                 </div>
             </div>
         `;
+
+        // Move compare-controls (min filters) into the search row
+        // FilterPanel already rendered into compare-controls before TeamBrowser init
+        const compareControls = document.getElementById('compare-controls');
+        const searchRow = document.getElementById('search-filter-row');
+        if (compareControls && searchRow) {
+            searchRow.appendChild(compareControls);
+        }
 
         // List container structure (content rendered by _renderTeamList)
         _listContainer.innerHTML = `
@@ -218,12 +230,14 @@ const TeamBrowser = (function() {
                         <button class="division-filter-btn flex-1 ${TeamBrowserState.isDivisionActive('D3') ? 'active' : ''}" data-division="D3">Div 3</button>
                     </div>
 
-                    <!-- Row 2: Fav filter + Select All toggle -->
+                    <!-- Row 2: Fav filter + All + Clear -->
                     <div class="flex gap-1">
                         <button class="division-filter-btn fav-filter-btn flex-1 ${TeamBrowserState.isFavoritesFilterActive() ? 'active' : ''}"
-                                data-filter="fav">★ Favourites</button>
-                        <button id="select-all-toggle" class="division-filter-btn flex-1"
-                                title="Select/Deselect all visible teams">Select All</button>
+                                data-filter="fav">★ Fav</button>
+                        <button id="select-all-btn" class="division-filter-btn flex-1"
+                                title="Select all visible teams">All</button>
+                        <button id="clear-selection-btn" class="division-filter-btn flex-1"
+                                title="Clear all selections">Clear</button>
                     </div>
                 </div>
 
@@ -253,8 +267,8 @@ const TeamBrowser = (function() {
             favBtn.classList.toggle('active');
         });
 
-        // Division filter buttons (toggles) - exclude select-all-toggle
-        filterContainer.querySelectorAll('.division-filter-btn:not(.fav-filter-btn):not(#select-all-toggle)').forEach(btn => {
+        // Division filter buttons (toggles) - exclude action buttons
+        filterContainer.querySelectorAll('.division-filter-btn:not(.fav-filter-btn):not(#select-all-btn):not(#clear-selection-btn)').forEach(btn => {
             btn.addEventListener('click', () => {
                 const division = btn.dataset.division;
                 if (division) {
@@ -264,23 +278,19 @@ const TeamBrowser = (function() {
             });
         });
 
-        // Select All toggle
-        const selectAllBtn = document.getElementById('select-all-toggle');
+        // Select All — selects all visible/filtered teams
+        const selectAllBtn = document.getElementById('select-all-btn');
         selectAllBtn?.addEventListener('click', () => {
             const { teams } = _getSearchResults();
             const visibleTeamIds = teams.map(t => t.id);
-
             if (visibleTeamIds.length === 0) return;
+            TeamBrowserState.selectTeams(visibleTeamIds);
+        });
 
-            const allSelected = TeamBrowserState.areAllSelected(visibleTeamIds);
-
-            if (allSelected) {
-                // Deselect all visible
-                TeamBrowserState.deselectTeams(visibleTeamIds);
-            } else {
-                // Select all visible
-                TeamBrowserState.selectTeams(visibleTeamIds);
-            }
+        // Clear — deselects everything (turns off comparison)
+        const clearBtn = document.getElementById('clear-selection-btn');
+        clearBtn?.addEventListener('click', () => {
+            TeamBrowserState.clearSelection();
         });
     }
 
@@ -496,17 +506,22 @@ const TeamBrowser = (function() {
     }
 
     /**
-     * Update Select All button text based on current selection state
+     * Update All/Clear button states based on current selection
      */
     function _updateSelectAllButton(teams) {
-        const selectAllBtn = document.getElementById('select-all-toggle');
-        if (!selectAllBtn) return;
+        const selectAllBtn = document.getElementById('select-all-btn');
+        const clearBtn = document.getElementById('clear-selection-btn');
 
         const visibleTeamIds = teams.map(t => t.id);
         const allSelected = visibleTeamIds.length > 0 && TeamBrowserState.areAllSelected(visibleTeamIds);
+        const hasSelection = TeamBrowserState.getSelectionCount() > 0;
 
-        selectAllBtn.textContent = allSelected ? 'Deselect All' : 'Select All';
-        selectAllBtn.classList.toggle('active', allSelected);
+        if (selectAllBtn) {
+            selectAllBtn.classList.toggle('active', allSelected);
+        }
+        if (clearBtn) {
+            clearBtn.classList.toggle('active', hasSelection);
+        }
     }
 
     /**

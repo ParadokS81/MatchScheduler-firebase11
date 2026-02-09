@@ -3,7 +3,6 @@ const MobileBottomBar = (function() {
 
     let _container = null;
     let _weekLabel = null;
-    let _compareBtn = null;
     let _yourNumBtn = null;
     let _oppNumBtn = null;
     let _templateBtn = null;
@@ -104,19 +103,11 @@ const MobileBottomBar = (function() {
             tabGroup.appendChild(btn);
         });
 
-        // Compare + Filter group (right side)
+        // Filter group (right side): [X] v [X]
         const compareGroup = document.createElement('div');
         compareGroup.className = 'mobile-bb-compare-group';
 
         const hasTeam = _getUserTeamId() !== null;
-        const isComparing = typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isAutoMode();
-
-        // Compare toggle button — more descriptive label
-        const compareLabel = isComparing ? 'Compare ON' : 'Compare';
-        _compareBtn = _createButton('mobile-bb-compare', compareLabel, 'Toggle comparison mode', _handleCompareToggle);
-        _compareBtn.classList.add('mobile-bb-compare-btn');
-        if (isComparing) _compareBtn.classList.add('active');
-        if (!hasTeam) _compareBtn.disabled = true;
 
         // Your team min number
         const yourMin = typeof FilterService !== 'undefined' ? FilterService.getYourTeamMinimum() : 1;
@@ -125,7 +116,6 @@ const MobileBottomBar = (function() {
         });
         _yourNumBtn.classList.add('mobile-bb-filter-num');
         if (!hasTeam) _yourNumBtn.disabled = true;
-        if (!isComparing) _yourNumBtn.classList.add('dimmed');
 
         const vsLabel = document.createElement('span');
         vsLabel.className = 'mobile-bb-vs-label';
@@ -138,9 +128,7 @@ const MobileBottomBar = (function() {
         });
         _oppNumBtn.classList.add('mobile-bb-filter-num');
         if (!hasTeam) _oppNumBtn.disabled = true;
-        if (!isComparing) _oppNumBtn.classList.add('dimmed');
 
-        compareGroup.appendChild(_compareBtn);
         compareGroup.appendChild(_yourNumBtn);
         compareGroup.appendChild(vsLabel);
         compareGroup.appendChild(_oppNumBtn);
@@ -189,17 +177,6 @@ const MobileBottomBar = (function() {
             ? MatchSchedulerApp.getSelectedTeam()
             : null;
         return selectedTeam?.id || null;
-    }
-
-    function _handleCompareToggle() {
-        const userTeamId = _getUserTeamId();
-        if (!userTeamId || typeof ComparisonEngine === 'undefined') return;
-
-        if (ComparisonEngine.isAutoMode()) {
-            ComparisonEngine.endComparison();
-        } else {
-            ComparisonEngine.enableAutoMode(userTeamId);
-        }
     }
 
     /**
@@ -255,16 +232,6 @@ const MobileBottomBar = (function() {
         if (existing) existing.remove();
     }
 
-    function _syncCompareState() {
-        if (!_compareBtn) return;
-        const isAuto = typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isAutoMode();
-        _compareBtn.classList.toggle('active', isAuto);
-        _compareBtn.textContent = isAuto ? 'Compare ON' : 'Compare';
-        // Dim/undim filter numbers based on compare state
-        if (_yourNumBtn) _yourNumBtn.classList.toggle('dimmed', !isAuto);
-        if (_oppNumBtn) _oppNumBtn.classList.toggle('dimmed', !isAuto);
-    }
-
     function _syncFilterState() {
         if (typeof FilterService === 'undefined') return;
         if (_yourNumBtn) _yourNumBtn.textContent = String(FilterService.getYourTeamMinimum());
@@ -277,7 +244,6 @@ const MobileBottomBar = (function() {
      */
     function _syncDisabledState() {
         const hasTeam = _getUserTeamId() !== null;
-        if (_compareBtn) _compareBtn.disabled = !hasTeam;
         if (_yourNumBtn) _yourNumBtn.disabled = !hasTeam;
         if (_oppNumBtn) _oppNumBtn.disabled = !hasTeam;
     }
@@ -294,11 +260,6 @@ const MobileBottomBar = (function() {
                 _togglePanels(e.detail.tab);
             }
         });
-
-        // Sync compare button state
-        window.addEventListener('comparison-mode-changed', _syncCompareState);
-        window.addEventListener('comparison-started', _syncCompareState);
-        window.addEventListener('comparison-ended', _syncCompareState);
 
         // Sync filter number display
         window.addEventListener('filter-changed', _syncFilterState);
@@ -476,14 +437,10 @@ const MobileBottomBar = (function() {
         _dismissFilterPicker();
         _dismissTemplatePopup();
         if (_unsubWeekChange) _unsubWeekChange();
-        window.removeEventListener('comparison-mode-changed', _syncCompareState);
-        window.removeEventListener('comparison-started', _syncCompareState);
-        window.removeEventListener('comparison-ended', _syncCompareState);
         window.removeEventListener('filter-changed', _syncFilterState);
         window.removeEventListener('user-team-changed', _syncDisabledState);
         if (_container) _container.innerHTML = '';
         _weekLabel = null;
-        _compareBtn = null;
         _yourNumBtn = null;
         _oppNumBtn = null;
         _templateBtn = null;

@@ -22,6 +22,7 @@
 
 const { QW_TEAMS, CAPTAIN_DISCORD } = require('./seed-data/teams');
 const CONFIG = require('./seed-data/config');
+const { getCurrentWeekNumber } = require('../functions/week-utils');
 
 // ============================================
 // Parse flags
@@ -156,16 +157,8 @@ async function cleanAll() {
 // Helpers
 // ============================================
 
-function getCurrentWeekNumber() {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), 0, 1);
-    const diff = now - start;
-    const oneWeek = 604800000;
-    return Math.ceil((diff + start.getDay() * 86400000) / oneWeek);
-}
-
 function getWeekId(weekNumber) {
-    const year = new Date().getFullYear();
+    const year = new Date().getUTCFullYear();
     return `${year}-${String(weekNumber).padStart(2, '0')}`;
 }
 
@@ -196,32 +189,39 @@ function getAvatarUrl(seed) {
 }
 
 function generateRandomAvailability(playerIndex, teamIndex) {
+    // Patterns are wide and overlapping so teams regularly hit 3v3/4v4 thresholds
     const patterns = [
-        // Weekday evenings - most common for EU players
+        // Weekday evenings broad — 7 slots × 5 days = 35 base slots
         () => CONFIG.DAYS.slice(0, 5).flatMap(day =>
-            ['1900', '1930', '2000', '2030', '2100'].map(t => `${day}_${t}`)
+            ['1900', '1930', '2000', '2030', '2100', '2130', '2200'].map(t => `${day}_${t}`)
         ),
-        // Weekend warrior
-        () => CONFIG.DAYS.slice(5).flatMap(day =>
-            CONFIG.TIME_SLOTS.map(t => `${day}_${t}`)
-        ),
-        // Late night
+        // Full week prime time — 5 slots × 7 days = 35 base slots
         () => CONFIG.DAYS.flatMap(day =>
-            ['2100', '2130', '2200', '2230', '2300'].map(t => `${day}_${t}`)
+            ['2000', '2030', '2100', '2130', '2200'].map(t => `${day}_${t}`)
         ),
-        // Mixed flexible
+        // Late + weekends — evenings + full weekends
+        () => [
+            ...CONFIG.DAYS.flatMap(day =>
+                ['2100', '2130', '2200', '2230', '2300'].map(t => `${day}_${t}`)
+            ),
+            ...CONFIG.DAYS.slice(5).flatMap(day =>
+                ['1900', '1930', '2000', '2030'].map(t => `${day}_${t}`)
+            ),
+        ],
+        // Early-to-mid evening wide — 6 slots × 7 days
         () => CONFIG.DAYS.flatMap(day =>
-            CONFIG.TIME_SLOTS.filter(() => Math.random() > 0.5).map(t => `${day}_${t}`)
+            ['1900', '1930', '2000', '2030', '2100', '2130'].map(t => `${day}_${t}`)
         ),
-        // Early evening
+        // Flexible heavy — all slots, high keep rate
         () => CONFIG.DAYS.flatMap(day =>
-            ['1800', '1830', '1900', '1930', '2000'].map(t => `${day}_${t}`)
+            CONFIG.TIME_SLOTS.filter(() => Math.random() > 0.25).map(t => `${day}_${t}`)
         ),
     ];
 
     const patternIndex = (playerIndex + teamIndex) % patterns.length;
     const pattern = patterns[patternIndex]();
-    return pattern.filter(() => Math.random() > 0.35);
+    // Light filter — keep ~85% of slots (was 65%)
+    return pattern.filter(() => Math.random() > 0.15);
 }
 
 // ============================================
@@ -345,9 +345,10 @@ async function seed() {
     console.log('='.repeat(55) + '\n');
 
     if (IS_PRODUCTION) {
-        console.log('⚠️  This will CLEAR and reseed PRODUCTION data!');
-        console.log('    Starting in 3 seconds... (Ctrl+C to cancel)\n');
-        await new Promise(r => setTimeout(r, 3000));
+        console.error('🚫 Production seeding is DISABLED.');
+        console.error('   The site is live — seeding would destroy all real data.');
+        console.error('   If you TRULY need this, temporarily remove this guard in seed.js.');
+        process.exit(1);
     }
 
     // 1. Clean everything

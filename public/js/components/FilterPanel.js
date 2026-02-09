@@ -36,22 +36,16 @@ const FilterPanel = (function() {
     }
 
     /**
-     * Render the compare row: [Compare] [X] vs [X]
-     * Slice 13.0e: Visual state for compare, framed buttons for min filters
+     * Render the min-filter controls: [X] vs [X]
+     * Slice 17.0b: Compare toggle removed — comparison activates implicitly from team selection
      */
     function _render() {
         if (!_container) return;
 
         const yourTeamMin = FilterService.getYourTeamMinimum();
         const opponentMin = FilterService.getOpponentMinimum();
-        const isComparing = typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isAutoMode();
 
         _container.innerHTML = `
-            <button id="compare-toggle-btn"
-                    class="compare-toggle ${isComparing ? 'on' : 'off'}"
-                    title="${isComparing ? 'Disable comparison mode' : 'Enable comparison mode'}">
-                Compare
-            </button>
             <div class="min-filter-group">
                 <div class="min-filter-wrapper relative">
                     <button id="your-team-min-btn"
@@ -96,10 +90,6 @@ const FilterPanel = (function() {
      * Attach event handlers
      */
     function _attachHandlers() {
-        // Compare toggle
-        const compareBtn = document.getElementById('compare-toggle-btn');
-        compareBtn?.addEventListener('click', _handleCompareToggle);
-
         // Min filter buttons
         const yourBtn = document.getElementById('your-team-min-btn');
         const oppBtn = document.getElementById('opponent-min-btn');
@@ -161,39 +151,10 @@ const FilterPanel = (function() {
     }
 
     /**
-     * Handle compare toggle click
-     */
-    function _handleCompareToggle() {
-        if (typeof ComparisonEngine === 'undefined') return;
-
-        const isAutoMode = ComparisonEngine.isAutoMode();
-
-        if (isAutoMode) {
-            ComparisonEngine.endComparison();
-        } else {
-            const userTeamId = typeof MatchSchedulerApp !== 'undefined'
-                ? MatchSchedulerApp.getSelectedTeam()?.id
-                : null;
-
-            if (!userTeamId) {
-                if (typeof ToastService !== 'undefined') {
-                    ToastService.showError('No team selected');
-                }
-                return;
-            }
-
-            ComparisonEngine.enableAutoMode(userTeamId);
-        }
-    }
-
-    /**
      * Set up global event listeners
      */
     function _setupEventListeners() {
         window.addEventListener('filter-changed', _handleFilterChanged);
-        window.addEventListener('comparison-mode-changed', _handleComparisonChanged);
-        window.addEventListener('comparison-started', _handleComparisonChanged);
-        window.addEventListener('comparison-ended', _handleComparisonChanged);
     }
 
     /**
@@ -208,26 +169,10 @@ const FilterPanel = (function() {
     }
 
     /**
-     * Handle comparison state changes
-     */
-    function _handleComparisonChanged() {
-        const btn = document.getElementById('compare-toggle-btn');
-        if (!btn) return;
-
-        const isComparing = typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isAutoMode();
-        btn.classList.toggle('on', isComparing);
-        btn.classList.toggle('off', !isComparing);
-        btn.title = isComparing ? 'Disable comparison mode' : 'Enable comparison mode';
-    }
-
-    /**
      * Cleanup event listeners
      */
     function cleanup() {
         window.removeEventListener('filter-changed', _handleFilterChanged);
-        window.removeEventListener('comparison-mode-changed', _handleComparisonChanged);
-        window.removeEventListener('comparison-started', _handleComparisonChanged);
-        window.removeEventListener('comparison-ended', _handleComparisonChanged);
         document.removeEventListener('click', _closeDropdowns);
         _container = null;
         _initialized = false;

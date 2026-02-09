@@ -10,7 +10,6 @@ const ComparisonEngine = (function() {
 
     // State
     let _active = false;
-    let _autoMode = false; // Slice 8.1b: persistent toggle for reactive comparison
     let _userTeamId = null;
     let _opponentTeamIds = [];
     let _filters = { yourTeam: 1, opponent: 1 };
@@ -168,64 +167,16 @@ const ComparisonEngine = (function() {
     }
 
     /**
-     * End comparison mode and disable auto-mode
+     * End comparison mode
      */
     function endComparison() {
         _active = false;
-        _autoMode = false;
         _userTeamId = null;
         _opponentTeamIds = [];
         _matches = {};
         _userTeamCounts = {};
 
         window.dispatchEvent(new CustomEvent('comparison-ended'));
-    }
-
-    /**
-     * Enable auto-mode: comparison recalculates reactively on team selection changes
-     * @param {string} userTeamId - The user's team ID (from grid)
-     */
-    function enableAutoMode(userTeamId) {
-        _autoMode = true;
-        _userTeamId = userTeamId;
-
-        // Get current filters
-        const filters = typeof FilterService !== 'undefined'
-            ? FilterService.getFilters()
-            : { yourTeam: 1, opponent: 1 };
-        _filters = filters;
-
-        // Get currently selected opponents
-        const selected = typeof TeamBrowserState !== 'undefined'
-            ? TeamBrowserState.getSelectedTeams()
-            : new Set();
-        _opponentTeamIds = Array.from(selected).filter(id => id !== userTeamId);
-
-        if (_opponentTeamIds.length > 0) {
-            _active = true;
-            _calculateMatches();
-            window.dispatchEvent(new CustomEvent('comparison-started', {
-                detail: { userTeamId, opponentTeamIds: _opponentTeamIds }
-            }));
-        } else {
-            // Auto-mode on but no opponents yet — pause (no highlights)
-            _active = false;
-            _matches = {};
-            _userTeamCounts = {};
-            window.dispatchEvent(new CustomEvent('comparison-ended'));
-        }
-
-        window.dispatchEvent(new CustomEvent('comparison-mode-changed', {
-            detail: { autoMode: true }
-        }));
-    }
-
-    /**
-     * Check if auto-mode is enabled
-     * @returns {boolean}
-     */
-    function isAutoMode() {
-        return _autoMode;
     }
 
     /**
@@ -283,7 +234,6 @@ const ComparisonEngine = (function() {
     function getComparisonState() {
         return {
             active: _active,
-            autoMode: _autoMode,
             userTeamId: _userTeamId,
             opponentTeamIds: [..._opponentTeamIds],
             matches: { ..._matches },
@@ -355,23 +305,33 @@ const ComparisonEngine = (function() {
 
     // Listen for filter changes
     window.addEventListener('filter-changed', (e) => {
-        if (_active || _autoMode) {
-            _filters = {
-                yourTeam: e.detail.yourTeam,
-                opponent: e.detail.opponent
-            };
-            if (_active) {
-                _calculateMatches();
-            }
+        _filters = {
+            yourTeam: e.detail.yourTeam,
+            opponent: e.detail.opponent
+        };
+        if (_active) {
+            _calculateMatches();
         }
     });
 
-    // Slice 8.1b: Listen for team selection changes in auto-mode
+    // Slice 17.0a: Always react to team selection — no autoMode gate
     window.addEventListener('team-selection-changed', (e) => {
-        if (!_autoMode || !_userTeamId) return;
+        // Derive user team fresh each time
+        const userTeamId = typeof MatchSchedulerApp !== 'undefined'
+            ? MatchSchedulerApp.getSelectedTeam()?.id
+            : null;
+
+        if (!userTeamId) return; // No team selected in grid — can't compare
+
+        _userTeamId = userTeamId;
+
+        // Get current filters
+        if (typeof FilterService !== 'undefined') {
+            _filters = FilterService.getFilters();
+        }
 
         const selected = e.detail.selectedTeams || [];
-        _opponentTeamIds = selected.filter(id => id !== _userTeamId);
+        _opponentTeamIds = selected.filter(id => id !== userTeamId);
 
         if (_opponentTeamIds.length > 0) {
             const wasActive = _active;
@@ -383,13 +343,12 @@ const ComparisonEngine = (function() {
                 }));
             }
         } else {
-            // No opponents selected — pause comparison but stay in auto-mode
-            _active = false;
-            _matches = {};
-            _userTeamCounts = {};
-            window.dispatchEvent(new CustomEvent('comparison-updated', {
-                detail: { matches: {} }
-            }));
+            if (_active) {
+                _active = false;
+                _matches = {};
+                _userTeamCounts = {};
+                window.dispatchEvent(new CustomEvent('comparison-ended'));
+            }
         }
     });
 
@@ -397,8 +356,6 @@ const ComparisonEngine = (function() {
     return {
         startComparison,
         endComparison,
-        enableAutoMode,
-        isAutoMode,
         isSlotMatch,
         getSlotMatches,
         getSlotMatchInfo,

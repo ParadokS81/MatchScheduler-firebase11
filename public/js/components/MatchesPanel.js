@@ -1075,19 +1075,12 @@ const MatchesPanel = (function() {
             }
 
             // 4. Set min-vs-min filters
+            // Comparison activates implicitly from team selection in step 3 (Slice 17.0)
             const filters = {
                 yourTeam: parseInt(minYour) || 1,
                 opponent: parseInt(minOpp) || 1
             };
             window.dispatchEvent(new CustomEvent('filter-changed', { detail: filters }));
-
-            // 5. Enable reactive comparison mode (auto-mode from 8.1b)
-            // Team selection (step 3) and filter dispatch (step 4) will trigger recalculation
-            if (_userTeamIds.length > 0) {
-                ComparisonEngine.enableAutoMode(_userTeamIds[0]);
-            } else {
-                console.warn('Load Grid View: no user teams available for comparison');
-            }
         } catch (error) {
             console.error('❌ Load Grid View failed:', error);
         }
