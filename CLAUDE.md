@@ -314,6 +314,21 @@ function componentName() {
 5. Use QTEST for manual testing guide
 6. Only write automated tests if specifically requested
 
+### Bug Triage Protocol
+**When hitting a bug or unexpected behavior, follow this sequence strictly. Do NOT skip to "fix".**
+
+1. **Reproduce** - Confirm the exact steps that trigger it. If you can't reproduce it, you don't understand it yet.
+2. **Localize** - Narrow down WHERE. Which file, function, listener, or data flow? Use console logs, check Firestore state, read the relevant code.
+3. **Reduce** - Strip it to the smallest case. Is it a data issue? A timing issue? A missing listener? A wrong parameter?
+4. **Fix** - Apply the smallest change that resolves the root cause. Not a workaround, not a band-aid.
+5. **Guard** - Ask: can this class of bug happen elsewhere? Check similar patterns in the codebase.
+6. **Verify** - Confirm the fix works AND didn't break the surrounding flow.
+
+**Common traps:**
+- Jumping to step 4 without localizing (most frequent AI mistake)
+- Fixing symptoms instead of root cause (e.g., adding a null check instead of asking why it's null)
+- Over-fixing by refactoring surrounding code that wasn't broken
+
 ### Deployment (Production)
 
 **Region:** Functions use `europe-west3` (Frankfurt) except storage triggers:

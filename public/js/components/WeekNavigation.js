@@ -16,17 +16,12 @@ const WeekNavigation = (function() {
         const now = new Date();
         const year = now.getUTCFullYear();
 
-        // Find first Thursday of the year (ISO week 1 contains first Thursday)
+        // Must match DateUtils.getMondayOfWeek definition:
+        // Week 1 = first full week starting Monday after Jan 1
         const jan1 = new Date(Date.UTC(year, 0, 1));
-        const jan1Day = jan1.getUTCDay();
-
-        // Days to Thursday (4)
-        const daysToThursday = jan1Day <= 4 ? (4 - jan1Day) : (11 - jan1Day);
-        const firstThursday = new Date(Date.UTC(year, 0, 1 + daysToThursday));
-
-        // First Monday is 3 days before first Thursday
-        const firstMonday = new Date(firstThursday);
-        firstMonday.setUTCDate(firstThursday.getUTCDate() - 3);
+        const dayOfWeek = jan1.getUTCDay();
+        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
+        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
 
         // Calculate days since first Monday
         const daysSinceFirstMonday = Math.floor((now - firstMonday) / (24 * 60 * 60 * 1000));

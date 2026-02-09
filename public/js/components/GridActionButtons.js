@@ -183,6 +183,142 @@ const GridActionButtons = (function() {
     }
 
     // ---------------------------------------------------------------
+    // Unavailability operations (Slice 15.0)
+    // ---------------------------------------------------------------
+
+    async function _handleMarkMeUnavailable() {
+        const teamId = MatchSchedulerApp.getSelectedTeam()?.id;
+        if (!teamId) {
+            ToastService.showError('Please select a team first');
+            return;
+        }
+
+        const selectedCells = _getSelectedCells ? _getSelectedCells() : [];
+        if (selectedCells.length === 0) return;
+
+        if (_onSyncStart) _onSyncStart(selectedCells);
+
+        try {
+            const cellsByWeek = _groupCellsByWeek(selectedCells);
+
+            for (const [weekId, slotIds] of Object.entries(cellsByWeek)) {
+                const result = await AvailabilityService.markUnavailable(teamId, weekId, slotIds);
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
+            }
+
+            if (_clearSelections) _clearSelections();
+
+        } catch (error) {
+            console.error('Mark unavailable failed:', error);
+            ToastService.showError(error.message || 'Failed to mark unavailable');
+        } finally {
+            if (_onSyncEnd) _onSyncEnd();
+        }
+    }
+
+    async function _handleUnmarkMeUnavailable() {
+        const teamId = MatchSchedulerApp.getSelectedTeam()?.id;
+        if (!teamId) {
+            ToastService.showError('Please select a team first');
+            return;
+        }
+
+        const selectedCells = _getSelectedCells ? _getSelectedCells() : [];
+        if (selectedCells.length === 0) return;
+
+        if (_onSyncStart) _onSyncStart(selectedCells);
+
+        try {
+            const cellsByWeek = _groupCellsByWeek(selectedCells);
+
+            for (const [weekId, slotIds] of Object.entries(cellsByWeek)) {
+                const result = await AvailabilityService.removeUnavailable(teamId, weekId, slotIds);
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
+            }
+
+            if (_clearSelections) _clearSelections();
+
+        } catch (error) {
+            console.error('Unmark unavailable failed:', error);
+            ToastService.showError(error.message || 'Failed to remove unavailable');
+        } finally {
+            if (_onSyncEnd) _onSyncEnd();
+        }
+    }
+
+    async function _handleMarkOtherUnavailable(targetUserId) {
+        const teamId = MatchSchedulerApp.getSelectedTeam()?.id;
+        if (!teamId) {
+            ToastService.showError('Please select a team first');
+            return;
+        }
+
+        const selectedCells = _getSelectedCells ? _getSelectedCells() : [];
+        if (selectedCells.length === 0) return;
+
+        if (_onSyncStart) _onSyncStart(selectedCells);
+
+        try {
+            const cellsByWeek = _groupCellsByWeek(selectedCells);
+
+            for (const [weekId, slotIds] of Object.entries(cellsByWeek)) {
+                const result = await AvailabilityService.markPlayerUnavailable(
+                    teamId, weekId, slotIds, targetUserId
+                );
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
+            }
+
+            if (_clearSelections) _clearSelections();
+
+        } catch (error) {
+            console.error('Mark other unavailable failed:', error);
+            ToastService.showError(error.message || 'Failed to mark player unavailable');
+        } finally {
+            if (_onSyncEnd) _onSyncEnd();
+        }
+    }
+
+    async function _handleUnmarkOtherUnavailable(targetUserId) {
+        const teamId = MatchSchedulerApp.getSelectedTeam()?.id;
+        if (!teamId) {
+            ToastService.showError('Please select a team first');
+            return;
+        }
+
+        const selectedCells = _getSelectedCells ? _getSelectedCells() : [];
+        if (selectedCells.length === 0) return;
+
+        if (_onSyncStart) _onSyncStart(selectedCells);
+
+        try {
+            const cellsByWeek = _groupCellsByWeek(selectedCells);
+
+            for (const [weekId, slotIds] of Object.entries(cellsByWeek)) {
+                const result = await AvailabilityService.removePlayerUnavailable(
+                    teamId, weekId, slotIds, targetUserId
+                );
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
+            }
+
+            if (_clearSelections) _clearSelections();
+
+        } catch (error) {
+            console.error('Unmark other unavailable failed:', error);
+            ToastService.showError(error.message || 'Failed to remove player unavailable');
+        } finally {
+            if (_onSyncEnd) _onSyncEnd();
+        }
+    }
+
+    // ---------------------------------------------------------------
     // Template operations
     // ---------------------------------------------------------------
 
@@ -449,7 +585,7 @@ const GridActionButtons = (function() {
         const visibleCount = allSlots.length - hiddenSlots.size + currentExtras.length;
 
         modal.innerHTML = `
-            <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm max-h-[90vh] flex flex-col">
+            <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
                 <div class="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
                     <h3 class="text-lg font-semibold">Edit Timeslots</h3>
                     <span class="text-sm text-muted-foreground"><span id="timeslots-visible-count">${visibleCount}</span> visible</span>
@@ -695,6 +831,11 @@ const GridActionButtons = (function() {
         addOther: _handleAddOther,
         removeMe: _handleRemoveMe,
         removeOther: _handleRemoveOther,
+        // Unavailability operations (Slice 15.0)
+        markMeUnavailable: _handleMarkMeUnavailable,
+        unmarkMeUnavailable: _handleUnmarkMeUnavailable,
+        markOtherUnavailable: _handleMarkOtherUnavailable,
+        unmarkOtherUnavailable: _handleUnmarkOtherUnavailable,
         clearAll: _handleClearAll,
         saveTemplate: _handleSaveTemplate
     };

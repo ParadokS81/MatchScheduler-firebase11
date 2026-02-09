@@ -662,12 +662,14 @@ This works but makes extra requests per embed. For MatchScheduler, prefer the lo
 
 ## 8. Hub API v2 (Live Server Data)
 
-A separate Go-based API at `hubapi.quakeworld.nu` provides live server info:
+A separate Go-based API at `hubapi.quakeworld.nu` provides live server info. No authentication required.
+
+### Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
 | `/v2/servers` | All servers |
-| `/v2/servers/mvdsv` | MVDSV game servers |
+| `/v2/servers/mvdsv` | MVDSV game servers (use this for active player detection) |
 | `/v2/servers/qtv` | QTV relay servers |
 | `/v2/servers/<address>` | Server details |
 | `/v2/servers/<address>/lastscores` | Recent scores on server |
@@ -676,7 +678,104 @@ A separate Go-based API at `hubapi.quakeworld.nu` provides live server info:
 | `/v2/streams` | Twitch streams casting QW |
 | `/v2/events` | Upcoming events |
 
-No authentication required. Not currently used in MatchScheduler but available for future features (live server status, stream integration).
+### `/v2/servers/mvdsv` Response Structure
+
+Returns a JSON array of active MVDSV server objects:
+
+```json
+{
+    "address": "dm6.uk:28501",
+    "mode": "4on4",
+    "submode": "",
+    "title": "4on4 [dm6.uk]",
+    "status": { "name": "Started", "description": "4on4: [12:34]" },
+    "time": { "elapsed": 754, "total": 1200, "remaining": 446 },
+    "player_slots": { "used": 8, "total": 16, "free": 8 },
+    "players": [
+        {
+            "id": 36,
+            "name": "ParadokS",
+            "name_color": "wwwwwwwwww",
+            "team": "]sr[",
+            "team_color": "bwwb",
+            "skin": "base",
+            "colors": [3, 11],
+            "frags": 46,
+            "ping": 25,
+            "time": 12,
+            "cc": "se",
+            "is_bot": false
+        }
+    ],
+    "teams": [
+        {
+            "name": "]sr[",
+            "name_color": "bwwb",
+            "frags": 270,
+            "ping": 31,
+            "colors": [3, 11],
+            "players": [ /* same structure as players array above */ ]
+        }
+    ],
+    "spectator_slots": { "used": 2, "total": 8, "free": 6 },
+    "spectator_names": ["razor", "unnamed"],
+    "settings": { /* server cvars */ },
+    "qtv_stream": {
+        "title": "dm6.uk Qtv (7)",
+        "url": "7@dm6.uk:28000",
+        "id": 7,
+        "address": "dm6.uk:28000",
+        "spectator_names": ["coolguy", "unnamed"],
+        "spectator_count": 2
+    },
+    "geo": { "cc": "DE", "country": "Germany", "region": "Europe", "city": "Frankfurt", "coordinates": [50.1, 8.7] },
+    "score": 0
+}
+```
+
+### Finding Players on Active Servers
+
+A player can be in one of three places on a server. Check all three:
+
+1. **Playing:** `server.players[]` - active players in the game
+2. **Spectating:** `server.spectator_names[]` - spectators on the server
+3. **Watching QTV:** `server.qtv_stream.spectator_names[]` - viewers via QTV relay
+
+**Name matching:** Server names use QW character encoding. Use `qwToAscii()` to normalize before matching against MatchScheduler player names. Recommended: [fuse.js](https://www.fusejs.io/) for lightweight fuzzy matching (zero dependencies).
+
+```javascript
+// Collect all names from all active servers
+function getActivePlayerNames(servers) {
+    const names = [];
+    for (const server of servers) {
+        // Players (have full objects with name, team, etc.)
+        for (const player of server.players) {
+            if (!player.is_bot) {
+                names.push({
+                    name: qwToAscii(player.name).trim(),
+                    status: 'playing',
+                    server: server.title,
+                    mode: server.mode,
+                    team: player.team ? qwToAscii(player.team).trim() : null
+                });
+            }
+        }
+        // Spectators (just name strings)
+        for (const specName of (server.spectator_names || [])) {
+            if (specName !== 'unnamed') {
+                names.push({ name: qwToAscii(specName).trim(), status: 'spectating', server: server.title });
+            }
+        }
+        // QTV viewers (just name strings)
+        for (const qtvName of (server.qtv_stream?.spectator_names || [])) {
+            if (qtvName !== 'unnamed') {
+                names.push({ name: qwToAscii(qtvName).trim(), status: 'watching_qtv', server: server.title });
+            }
+        }
+    }
+    return names;
+}
+```
 
 ---
 

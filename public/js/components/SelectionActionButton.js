@@ -10,12 +10,15 @@ const SelectionActionButton = (function() {
     let _addOtherButton = null;
     let _removeMeButton = null;
     let _removeOtherButton = null;
+    let _unavailMeButton = null;
+    let _unavailOtherButton = null;
+    let _findStandinButton = null;
     let _templateButton = null;
     let _escapeButton = null;
     let _rosterFlyout = null;
     let _flyoutVisible = false;
     let _flyoutHideTimeout = null;
-    let _flyoutMode = null; // 'add' or 'remove'
+    let _flyoutMode = null; // 'add', 'remove', 'unavailable', or 'unUnavailable'
     let _currentSelection = [];
     let _currentBounds = null;
 
@@ -43,11 +46,13 @@ const SelectionActionButton = (function() {
      * Layout (scheduler):
      *   [+ Me]      [+ Others →]
      *   [− Me]      [− Others →]
+     *   [⊘ Away]    [⊘ Others →]
      *   [Escape]    [Template]
      *
      * Layout (non-scheduler):
      *   [+ Me]      [Template]
      *   [− Me]      [Escape]
+     *   [⊘ Away]
      */
     function _createButton() {
         _container = document.createElement('div');
@@ -105,6 +110,32 @@ const SelectionActionButton = (function() {
             }
         });
 
+        // -- ⊘ Me button (Slice 15.0) --
+        _unavailMeButton = document.createElement('button');
+        _unavailMeButton.className = 'selection-action-btn flex items-center justify-center px-3 py-2 rounded font-medium text-sm transition-all bg-secondary text-secondary-foreground hover:bg-secondary/80';
+        _unavailMeButton.innerHTML = `<span class="action-text">\u2298 Away</span>`;
+        _unavailMeButton.addEventListener('click', () => _handleMeAction('unavailable'));
+
+        // -- ⊘ Others button (leaders/schedulers only, Slice 15.0) --
+        _unavailOtherButton = document.createElement('button');
+        _unavailOtherButton.className = 'selection-action-btn flex items-center justify-center gap-1 px-3 py-2 rounded font-medium text-sm transition-all bg-secondary text-secondary-foreground hover:bg-secondary/80';
+        _unavailOtherButton.innerHTML = `
+            <span class="action-text">\u2298 Others</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+        `;
+        _unavailOtherButton.addEventListener('mouseenter', () => _showRosterFlyout('unavailable'));
+        _unavailOtherButton.addEventListener('mouseleave', () => _scheduleFlyoutHide());
+        _unavailOtherButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (_flyoutVisible && _flyoutMode === 'unavailable') {
+                _hideRosterFlyout();
+            } else {
+                _showRosterFlyout('unavailable');
+            }
+        });
+
         // -- Escape button --
         _escapeButton = document.createElement('button');
         const clearLabel = (typeof MobileLayout !== 'undefined' && MobileLayout.isMobile()) ? 'Clear' : 'Escape';
@@ -117,6 +148,18 @@ const SelectionActionButton = (function() {
             <span>${clearLabel}</span>
         `;
         _escapeButton.addEventListener('click', _handleClear);
+
+        // -- Find Standin button (Slice 16.0a) --
+        _findStandinButton = document.createElement('button');
+        _findStandinButton.className = 'selection-action-btn flex items-center justify-center gap-1 px-3 py-2 rounded font-medium text-sm transition-all bg-accent text-accent-foreground hover:bg-accent/80 w-full';
+        _findStandinButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span class="action-text">Find Standin</span>
+        `;
+        _findStandinButton.addEventListener('click', _handleFindStandin);
 
         // -- Template button --
         _templateButton = document.createElement('button');
@@ -157,15 +200,28 @@ const SelectionActionButton = (function() {
             row2.appendChild(_removeMeButton);
             row2.appendChild(_removeOtherButton);
 
-            // Row 3: [Escape] [Template]
+            // Row 3: [⊘ Away] [⊘ Others →]  (Slice 15.0)
             const row3 = document.createElement('div');
             row3.className = 'flex gap-1';
-            row3.appendChild(_escapeButton);
-            row3.appendChild(_templateButton);
+            row3.appendChild(_unavailMeButton);
+            row3.appendChild(_unavailOtherButton);
+
+            // Row 4: [🔍 Find Standin]  (Slice 16.0a, full-width)
+            const row4 = document.createElement('div');
+            row4.className = 'flex gap-1';
+            row4.appendChild(_findStandinButton);
+
+            // Row 5: [Escape] [Template]
+            const row5 = document.createElement('div');
+            row5.className = 'flex gap-1';
+            row5.appendChild(_escapeButton);
+            row5.appendChild(_templateButton);
 
             _container.appendChild(row1);
             _container.appendChild(row2);
             _container.appendChild(row3);
+            _container.appendChild(row4);
+            _container.appendChild(row5);
         } else {
             // Row 1: [+ Me] [Template]
             const row1 = document.createElement('div');
@@ -179,8 +235,20 @@ const SelectionActionButton = (function() {
             row2.appendChild(_removeMeButton);
             row2.appendChild(_escapeButton);
 
+            // Row 3: [⊘ Away]  (Slice 15.0)
+            const row3 = document.createElement('div');
+            row3.className = 'flex gap-1';
+            row3.appendChild(_unavailMeButton);
+
+            // Row 4: [🔍 Find Standin]  (Slice 16.0a, full-width)
+            const row4 = document.createElement('div');
+            row4.className = 'flex gap-1';
+            row4.appendChild(_findStandinButton);
+
             _container.appendChild(row1);
             _container.appendChild(row2);
+            _container.appendChild(row3);
+            _container.appendChild(row4);
         }
     }
 
@@ -229,11 +297,7 @@ const SelectionActionButton = (function() {
         _rosterFlyout.querySelectorAll('.roster-flyout-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (mode === 'add') {
-                    _handleOtherAction(btn.dataset.userId, btn, 'add');
-                } else {
-                    _handleOtherAction(btn.dataset.userId, btn, 'remove');
-                }
+                _handleOtherAction(btn.dataset.userId, btn, mode);
             });
         });
     }
@@ -266,7 +330,8 @@ const SelectionActionButton = (function() {
     }
 
     function _positionFlyout(mode) {
-        const anchorBtn = mode === 'add' ? _addOtherButton : _removeOtherButton;
+        const anchorBtnMap = { add: _addOtherButton, remove: _removeOtherButton, unavailable: _unavailOtherButton };
+        const anchorBtn = anchorBtnMap[mode];
         if (!anchorBtn || !_rosterFlyout) return;
 
         const btnRect = anchorBtn.getBoundingClientRect();
@@ -297,19 +362,23 @@ const SelectionActionButton = (function() {
     // ---------------------------------------------------------------
 
     async function _handleMeAction(action) {
-        const btn = action === 'add' ? _addMeButton : _removeMeButton;
-        if (btn.disabled) return;
+        const btnMap = { add: _addMeButton, remove: _removeMeButton, unavailable: _unavailMeButton };
+        const btn = btnMap[action];
+        if (!btn || btn.disabled) return;
 
         const textEl = btn.querySelector('.action-text');
         const originalText = textEl.textContent;
-        textEl.textContent = action === 'add' ? 'Adding...' : 'Removing...';
+        const loadingMap = { add: 'Adding...', remove: 'Removing...', unavailable: 'Marking...' };
+        textEl.textContent = loadingMap[action];
         btn.disabled = true;
 
         try {
             if (action === 'add') {
                 await GridActionButtons.addMe();
-            } else {
+            } else if (action === 'remove') {
                 await GridActionButtons.removeMe();
+            } else if (action === 'unavailable') {
+                await GridActionButtons.markMeUnavailable();
             }
         } finally {
             btn.disabled = false;
@@ -320,30 +389,42 @@ const SelectionActionButton = (function() {
 
     async function _handleOtherAction(targetUserId, buttonEl, action) {
         const originalHtml = buttonEl.innerHTML;
-        const loadingText = action === 'add' ? 'Adding...' : 'Removing...';
+        const loadingTexts = { add: 'Adding...', remove: 'Removing...', unavailable: 'Marking...' };
+        const loadingText = loadingTexts[action] || 'Processing...';
         buttonEl.innerHTML = `<span class="text-xs text-muted-foreground">${loadingText}</span>`;
         buttonEl.disabled = true;
 
         try {
             if (action === 'add') {
                 await GridActionButtons.addOther(targetUserId);
-            } else {
+            } else if (action === 'remove') {
                 await GridActionButtons.removeOther(targetUserId);
+            } else if (action === 'unavailable') {
+                await GridActionButtons.markOtherUnavailable(targetUserId);
             }
 
             const teamId = MatchSchedulerApp.getSelectedTeam()?.id;
             const team = TeamService.getTeamFromCache(teamId);
             const player = team?.playerRoster?.find(p => p.userId === targetUserId);
             const name = player?.displayName || 'Player';
-            const verb = action === 'add' ? 'Added' : 'Removed';
-            const prep = action === 'add' ? 'to' : 'from';
+
+            const toastMessages = {
+                add: `Added ${name} to selected slots`,
+                remove: `Removed ${name} from selected slots`,
+                unavailable: `Marked ${name} as away in selected slots`
+            };
 
             if (typeof ToastService !== 'undefined') {
-                ToastService.showSuccess(`${verb} ${name} ${prep} selected slots`);
+                ToastService.showSuccess(toastMessages[action]);
             }
         } catch (error) {
+            const errorMessages = {
+                add: 'Failed to add availability',
+                remove: 'Failed to remove availability',
+                unavailable: 'Failed to mark as away'
+            };
             if (typeof ToastService !== 'undefined') {
-                ToastService.showError(`Failed to ${action} availability`);
+                ToastService.showError(errorMessages[action] || 'Operation failed');
             }
         } finally {
             buttonEl.disabled = false;
@@ -351,6 +432,47 @@ const SelectionActionButton = (function() {
             _hideRosterFlyout();
             _hide();
         }
+    }
+
+    function _handleFindStandin() {
+        const teamId = MatchSchedulerApp.getSelectedTeam()?.id;
+        if (!teamId) return;
+
+        const team = TeamService.getTeamFromCache(teamId);
+        const divisions = team?.divisions || [];
+        // Default to team's first division, or 'D1' fallback
+        const defaultDiv = divisions[0] || 'D1';
+
+        // Filter out any null slotIds (defensive)
+        const validCells = _currentSelection.filter(cell => cell.slotId != null);
+        if (validCells.length === 0) return;
+
+        // Group cells by week → { weekId: [slotIds] }
+        const cellsByWeek = {};
+        validCells.forEach(cell => {
+            if (!cellsByWeek[cell.weekId]) cellsByWeek[cell.weekId] = [];
+            cellsByWeek[cell.weekId].push(cell.slotId);
+        });
+
+        const weekEntries = Object.entries(cellsByWeek);
+
+        // For MVP, use the first week's slots (most common: single-week selection)
+        const [weekId, slotIds] = weekEntries[0];
+
+        // Edge case: multi-week selection (unlikely — standin search is same-day)
+        if (weekEntries.length > 1) {
+            console.warn('Find Standin: selection spans multiple weeks, using first week only');
+        }
+
+        // Activate standin finder
+        StandinFinderService.activate(weekId, slotIds, defaultDiv);
+
+        // Switch bottom panel to Players tab
+        BottomPanelController.switchTab('players', { force: true });
+
+        // Clear grid selection and dismiss floating buttons
+        document.dispatchEvent(new CustomEvent('clear-all-selections'));
+        _hide();
     }
 
     async function _handleSaveTemplate() {
@@ -405,19 +527,24 @@ const SelectionActionButton = (function() {
         const isScheduler = typeof TeamService !== 'undefined' && TeamService.isScheduler(teamId, userId);
         _buildLayout(isScheduler);
 
-        // Count how many selected cells have the current user
+        // Count how many selected cells have the current user (available vs unavailable)
         let userInCount = 0;
+        let userUnavailCount = 0;
         _currentSelection.forEach(({ weekId, slotId }) => {
             const players = AvailabilityService.getSlotPlayers(teamId, weekId, slotId);
             if (players?.includes(userId)) userInCount++;
+            const unavailPlayers = AvailabilityService.getSlotUnavailablePlayers(teamId, weekId, slotId);
+            if (unavailPlayers?.includes(userId)) userUnavailCount++;
         });
 
         const userInAll = userInCount === _currentSelection.length;
         const userInNone = userInCount === 0;
+        const userUnavailAll = userUnavailCount === _currentSelection.length;
 
         // Disable with solid muted style (no opacity — grid content would bleed through)
         _setButtonDisabled(_addMeButton, userInAll, 'bg-primary text-primary-foreground hover:bg-primary/90');
         _setButtonDisabled(_removeMeButton, userInNone, 'bg-destructive text-destructive-foreground hover:bg-destructive/90');
+        _setButtonDisabled(_unavailMeButton, userUnavailAll, 'bg-secondary text-secondary-foreground hover:bg-secondary/80');
     }
 
     function _positionButton() {
@@ -501,6 +628,9 @@ const SelectionActionButton = (function() {
         _addOtherButton = null;
         _removeMeButton = null;
         _removeOtherButton = null;
+        _unavailMeButton = null;
+        _unavailOtherButton = null;
+        _findStandinButton = null;
         _templateButton = null;
         _escapeButton = null;
         _rosterFlyout = null;

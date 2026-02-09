@@ -39,10 +39,11 @@ const PlayerTooltip = (function() {
     /**
      * Show tooltip near the hovered cell
      * @param {HTMLElement} cell - The grid cell being hovered
-     * @param {Array} players - Array of player display objects
+     * @param {Array} players - Array of available player display objects
      * @param {string} currentUserId - Current user's ID
+     * @param {Array} [unavailablePlayers] - Array of unavailable player display objects (Slice 15.0)
      */
-    function show(cell, players, currentUserId) {
+    function show(cell, players, currentUserId, unavailablePlayers) {
         _createTooltip();
 
         if (_hideTimeout) {
@@ -59,7 +60,7 @@ const PlayerTooltip = (function() {
             return a.displayName.localeCompare(b.displayName);
         });
 
-        // Build tooltip content
+        // Build available players HTML
         const playersHtml = sortedPlayers.map(player => {
             const youBadge = player.isCurrentUser ? ' <span class="tooltip-you">(You)</span>' : '';
             const currentClass = player.isCurrentUser ? 'tooltip-current' : '';
@@ -71,11 +72,35 @@ const PlayerTooltip = (function() {
             `;
         }).join('');
 
+        // Build unavailable (away) section (Slice 15.0)
+        const sortedUnavailable = unavailablePlayers ? [...unavailablePlayers].sort((a, b) => {
+            if (a.isCurrentUser) return -1;
+            if (b.isCurrentUser) return 1;
+            return a.displayName.localeCompare(b.displayName);
+        }) : [];
+
+        const awayHtml = sortedUnavailable.length > 0 ? `
+            <div class="tooltip-divider"></div>
+            <div class="tooltip-header tooltip-away-header">Away</div>
+            <div class="tooltip-list">
+                ${sortedUnavailable.map(player => {
+                    const youBadge = player.isCurrentUser ? ' <span class="tooltip-you">(You)</span>' : '';
+                    return `
+                        <div class="tooltip-player tooltip-away">
+                            <span class="tooltip-initials">${_escapeHtml(player.initials)}</span>
+                            <span class="tooltip-name">${_escapeHtml(player.displayName)}${youBadge}</span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        ` : '';
+
         _tooltip.innerHTML = `
-            <div class="tooltip-header">${players.length} players available</div>
+            <div class="tooltip-header">${players.length} available</div>
             <div class="tooltip-list">
                 ${playersHtml}
             </div>
+            ${awayHtml}
         `;
 
         // Position tooltip near cell

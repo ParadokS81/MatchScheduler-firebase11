@@ -9,6 +9,7 @@ const AvailabilityService = (function() {
     let _functions = null;
     let _cache = new Map(); // Key: "{teamId}_{weekId}", Value: availability doc
     let _listeners = new Map(); // Key: "{teamId}_{weekId}", Value: unsubscribe fn
+    let _allTeamsLoadedWeeks = new Set(); // Track which weeks have all teams loaded (Find Standin)
 
     /**
      * Check if running in local dev mode
@@ -139,6 +140,9 @@ const AvailabilityService = (function() {
         if (!currentData.slots) {
             currentData.slots = {};
         }
+        if (!currentData.unavailable) {
+            currentData.unavailable = {};
+        }
         slotIds.forEach(slotId => {
             if (!currentData.slots[slotId]) {
                 currentData.slots[slotId] = [];
@@ -146,19 +150,25 @@ const AvailabilityService = (function() {
             if (!currentData.slots[slotId].includes(userId)) {
                 currentData.slots[slotId].push(userId);
             }
+            // Mutual exclusion: remove from unavailable when adding availability
+            if (currentData.unavailable[slotId]) {
+                currentData.unavailable[slotId] = currentData.unavailable[slotId].filter(id => id !== userId);
+            }
         });
         _cache.set(cacheKey, currentData);
 
         try {
             // DEV MODE: Direct Firestore write (no Cloud Function)
             if (_isDevMode()) {
-                const { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+                const { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
 
                 const docRef = doc(_db, 'availability', cacheKey);
                 const updateData = {};
 
                 slotIds.forEach(slotId => {
                     updateData[`slots.${slotId}`] = arrayUnion(userId);
+                    // Mutual exclusion: remove from unavailable
+                    updateData[`unavailable.${slotId}`] = arrayRemove(userId);
                 });
                 updateData.lastUpdated = serverTimestamp();
 
@@ -241,6 +251,9 @@ const AvailabilityService = (function() {
         if (!currentData.slots) {
             currentData.slots = {};
         }
+        if (!currentData.unavailable) {
+            currentData.unavailable = {};
+        }
         slotIds.forEach(slotId => {
             if (!currentData.slots[slotId]) {
                 currentData.slots[slotId] = [];
@@ -248,17 +261,23 @@ const AvailabilityService = (function() {
             if (!currentData.slots[slotId].includes(targetUserId)) {
                 currentData.slots[slotId].push(targetUserId);
             }
+            // Mutual exclusion: remove from unavailable
+            if (currentData.unavailable[slotId]) {
+                currentData.unavailable[slotId] = currentData.unavailable[slotId].filter(id => id !== targetUserId);
+            }
         });
         _cache.set(cacheKey, currentData);
 
         try {
             if (_isDevMode()) {
-                const { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+                const { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
 
                 const docRef = doc(_db, 'availability', cacheKey);
                 const updateData = {};
                 slotIds.forEach(slotId => {
                     updateData[`slots.${slotId}`] = arrayUnion(targetUserId);
+                    // Mutual exclusion: remove from unavailable
+                    updateData[`unavailable.${slotId}`] = arrayRemove(targetUserId);
                 });
                 updateData.lastUpdated = serverTimestamp();
 
@@ -506,6 +525,347 @@ const AvailabilityService = (function() {
         _cache.set(`${teamId}_${weekId}`, data);
     }
 
+    // ---------------------------------------------------------------
+    // Unavailability methods (Slice 15.0)
+    // ---------------------------------------------------------------
+
+    /**
+     * Get unavailable players in a specific slot from cache
+     * @param {string} teamId - Team ID
+     * @param {string} weekId - Week ID
+     * @param {string} slotId - Slot ID (e.g., 'mon_1800')
+     * @returns {Array<string>} Array of user IDs
+     */
+    function getSlotUnavailablePlayers(teamId, weekId, slotId) {
+        const cacheKey = `${teamId}_${weekId}`;
+        const data = _cache.get(cacheKey);
+        return data?.unavailable?.[slotId] || [];
+    }
+
+    /**
+     * Check if user is unavailable in a slot
+     */
+    function isUserUnavailableInSlot(teamId, weekId, slotId, userId) {
+        const players = getSlotUnavailablePlayers(teamId, weekId, slotId);
+        return players.includes(userId);
+    }
+
+    /**
+     * Mark current user as unavailable in slots (optimistic update)
+     * @param {string} teamId - Team ID
+     * @param {string} weekId - Week ID
+     * @param {Array<string>} slotIds - Array of slot IDs
+     * @returns {Object} { success: boolean, error?: string }
+     */
+    async function markUnavailable(teamId, weekId, slotIds) {
+        const userId = window.firebase.auth.currentUser?.uid;
+        if (!userId) return { success: false, error: 'Not authenticated' };
+
+        const cacheKey = `${teamId}_${weekId}`;
+        const rollbackData = _cache.has(cacheKey)
+            ? JSON.parse(JSON.stringify(_cache.get(cacheKey)))
+            : null;
+
+        // Optimistic update: add to unavailable, remove from slots (mutual exclusion)
+        const currentData = _cache.get(cacheKey) || { teamId, weekId, slots: {}, unavailable: {} };
+        if (!currentData.unavailable) currentData.unavailable = {};
+        if (!currentData.slots) currentData.slots = {};
+
+        slotIds.forEach(slotId => {
+            if (!currentData.unavailable[slotId]) currentData.unavailable[slotId] = [];
+            if (!currentData.unavailable[slotId].includes(userId)) {
+                currentData.unavailable[slotId].push(userId);
+            }
+            // Mutual exclusion: remove from available
+            if (currentData.slots[slotId]) {
+                currentData.slots[slotId] = currentData.slots[slotId].filter(id => id !== userId);
+            }
+        });
+        _cache.set(cacheKey, currentData);
+
+        try {
+            if (_isDevMode()) {
+                const { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, serverTimestamp }
+                    = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+
+                const docRef = doc(_db, 'availability', cacheKey);
+                const updateData = { lastUpdated: serverTimestamp() };
+
+                slotIds.forEach(slotId => {
+                    updateData[`unavailable.${slotId}`] = arrayUnion(userId);
+                    updateData[`slots.${slotId}`] = arrayRemove(userId);
+                });
+
+                const docSnap = await getDoc(docRef);
+                if (!docSnap.exists()) {
+                    await setDoc(docRef, { teamId, weekId, slots: {}, unavailable: {}, lastUpdated: serverTimestamp() });
+                }
+                await updateDoc(docRef, updateData);
+
+                console.log(`🔧 DEV: Marked unavailable in ${slotIds.length} slots`);
+                return { success: true };
+            }
+
+            // Production: Cloud Function
+            const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+            const updateFn = httpsCallable(_functions, 'updateAvailability');
+            const result = await updateFn({ teamId, weekId, action: 'markUnavailable', slotIds });
+
+            if (!result.data.success) throw new Error(result.data.error || 'Failed to mark unavailable');
+            return { success: true };
+
+        } catch (error) {
+            if (rollbackData) _cache.set(cacheKey, rollbackData);
+            else _cache.delete(cacheKey);
+            console.error('Failed to mark unavailable:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Remove unavailable marking for current user
+     */
+    async function removeUnavailable(teamId, weekId, slotIds) {
+        const userId = window.firebase.auth.currentUser?.uid;
+        if (!userId) return { success: false, error: 'Not authenticated' };
+
+        const cacheKey = `${teamId}_${weekId}`;
+        const rollbackData = _cache.has(cacheKey)
+            ? JSON.parse(JSON.stringify(_cache.get(cacheKey)))
+            : null;
+
+        // Optimistic update
+        const currentData = _cache.get(cacheKey);
+        if (currentData && currentData.unavailable) {
+            slotIds.forEach(slotId => {
+                if (currentData.unavailable[slotId]) {
+                    currentData.unavailable[slotId] = currentData.unavailable[slotId].filter(id => id !== userId);
+                }
+            });
+            _cache.set(cacheKey, currentData);
+        }
+
+        try {
+            if (_isDevMode()) {
+                const { doc, updateDoc, arrayRemove, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+
+                const docRef = doc(_db, 'availability', cacheKey);
+                const updateData = { lastUpdated: serverTimestamp() };
+                slotIds.forEach(slotId => {
+                    updateData[`unavailable.${slotId}`] = arrayRemove(userId);
+                });
+                await updateDoc(docRef, updateData);
+
+                console.log(`🔧 DEV: Removed unavailable from ${slotIds.length} slots`);
+                return { success: true };
+            }
+
+            const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+            const updateFn = httpsCallable(_functions, 'updateAvailability');
+            const result = await updateFn({ teamId, weekId, action: 'removeUnavailable', slotIds });
+
+            if (!result.data.success) throw new Error(result.data.error || 'Failed to remove unavailable');
+            return { success: true };
+
+        } catch (error) {
+            if (rollbackData) _cache.set(cacheKey, rollbackData);
+            console.error('Failed to remove unavailable:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Mark another player as unavailable (leader/scheduler only)
+     */
+    async function markPlayerUnavailable(teamId, weekId, slotIds, targetUserId) {
+        const currentUserId = window.firebase.auth.currentUser?.uid;
+        if (!currentUserId) return { success: false, error: 'Not authenticated' };
+        if (!targetUserId) return { success: false, error: 'Target user ID required' };
+
+        const cacheKey = `${teamId}_${weekId}`;
+        const rollbackData = _cache.has(cacheKey)
+            ? JSON.parse(JSON.stringify(_cache.get(cacheKey)))
+            : null;
+
+        // Optimistic update
+        const currentData = _cache.get(cacheKey) || { teamId, weekId, slots: {}, unavailable: {} };
+        if (!currentData.unavailable) currentData.unavailable = {};
+        if (!currentData.slots) currentData.slots = {};
+
+        slotIds.forEach(slotId => {
+            if (!currentData.unavailable[slotId]) currentData.unavailable[slotId] = [];
+            if (!currentData.unavailable[slotId].includes(targetUserId)) {
+                currentData.unavailable[slotId].push(targetUserId);
+            }
+            if (currentData.slots[slotId]) {
+                currentData.slots[slotId] = currentData.slots[slotId].filter(id => id !== targetUserId);
+            }
+        });
+        _cache.set(cacheKey, currentData);
+
+        try {
+            if (_isDevMode()) {
+                const { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, serverTimestamp }
+                    = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+
+                const docRef = doc(_db, 'availability', cacheKey);
+                const updateData = { lastUpdated: serverTimestamp() };
+                slotIds.forEach(slotId => {
+                    updateData[`unavailable.${slotId}`] = arrayUnion(targetUserId);
+                    updateData[`slots.${slotId}`] = arrayRemove(targetUserId);
+                });
+
+                const docSnap = await getDoc(docRef);
+                if (!docSnap.exists()) {
+                    await setDoc(docRef, { teamId, weekId, slots: {}, unavailable: {}, lastUpdated: serverTimestamp() });
+                }
+                await updateDoc(docRef, updateData);
+
+                console.log(`🔧 DEV: Marked ${targetUserId} unavailable in ${slotIds.length} slots (by ${currentUserId})`);
+                return { success: true };
+            }
+
+            const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+            const updateFn = httpsCallable(_functions, 'updateAvailability');
+            const result = await updateFn({ teamId, weekId, action: 'markUnavailable', slotIds, targetUserId });
+
+            if (!result.data.success) throw new Error(result.data.error || 'Failed to mark unavailable');
+            return { success: true };
+
+        } catch (error) {
+            if (rollbackData) _cache.set(cacheKey, rollbackData);
+            else _cache.delete(cacheKey);
+            console.error('Failed to mark player unavailable:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Remove unavailable marking for another player (leader/scheduler only)
+     */
+    async function removePlayerUnavailable(teamId, weekId, slotIds, targetUserId) {
+        const currentUserId = window.firebase.auth.currentUser?.uid;
+        if (!currentUserId) return { success: false, error: 'Not authenticated' };
+        if (!targetUserId) return { success: false, error: 'Target user ID required' };
+
+        const cacheKey = `${teamId}_${weekId}`;
+        const rollbackData = _cache.has(cacheKey)
+            ? JSON.parse(JSON.stringify(_cache.get(cacheKey)))
+            : null;
+
+        // Optimistic update
+        const currentData = _cache.get(cacheKey);
+        if (currentData && currentData.unavailable) {
+            slotIds.forEach(slotId => {
+                if (currentData.unavailable[slotId]) {
+                    currentData.unavailable[slotId] = currentData.unavailable[slotId].filter(id => id !== targetUserId);
+                }
+            });
+            _cache.set(cacheKey, currentData);
+        }
+
+        try {
+            if (_isDevMode()) {
+                const { doc, updateDoc, arrayRemove, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+
+                const docRef = doc(_db, 'availability', cacheKey);
+                const updateData = { lastUpdated: serverTimestamp() };
+                slotIds.forEach(slotId => {
+                    updateData[`unavailable.${slotId}`] = arrayRemove(targetUserId);
+                });
+                await updateDoc(docRef, updateData);
+
+                console.log(`🔧 DEV: Removed ${targetUserId} unavailable from ${slotIds.length} slots (by ${currentUserId})`);
+                return { success: true };
+            }
+
+            const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+            const updateFn = httpsCallable(_functions, 'updateAvailability');
+            const result = await updateFn({ teamId, weekId, action: 'removeUnavailable', slotIds, targetUserId });
+
+            if (!result.data.success) throw new Error(result.data.error || 'Failed to remove unavailable');
+            return { success: true };
+
+        } catch (error) {
+            if (rollbackData) _cache.set(cacheKey, rollbackData);
+            console.error('Failed to remove player unavailable:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Community-wide loading (Slice 16.0a — Find Standin)
+    // ---------------------------------------------------------------
+
+    /**
+     * Load availability for ALL teams for a given week (batch).
+     * Skips teams already cached. Tracks loaded weeks to avoid redundant fetches.
+     * @param {string} weekId - Week ID in ISO format (YYYY-WW)
+     */
+    async function loadAllTeamAvailability(weekId) {
+        if (_allTeamsLoadedWeeks.has(weekId)) return; // already loaded
+
+        const allTeams = typeof TeamService !== 'undefined' ? TeamService.getAllTeams() : [];
+        const promises = allTeams.map(team => {
+            const cacheKey = `${team.id}_${weekId}`;
+            if (_cache.has(cacheKey)) return Promise.resolve(); // already cached
+            return loadWeekAvailability(team.id, weekId);
+        });
+
+        await Promise.all(promises);
+        _allTeamsLoadedWeeks.add(weekId);
+    }
+
+    /**
+     * Get all players across all teams who are available in ANY of the given slots (OR logic).
+     * Reads from cache only — call loadAllTeamAvailability() first.
+     * @param {string} weekId - Week ID
+     * @param {Array<string>} slotIds - UTC slot IDs (e.g., ['thu_1900', 'thu_1930'])
+     * @returns {Map<string, Object>} Map<userId, { displayName, teamId, teamTag, teamName, divisions, availableSlots[], photoURL, initials }>
+     */
+    function getCommunityAvailability(weekId, slotIds) {
+        const result = new Map();
+        const allTeams = typeof TeamService !== 'undefined' ? TeamService.getAllTeams() : [];
+
+        for (const team of allTeams) {
+            // Respect privacy
+            if (team.hideFromComparison) continue;
+
+            const cacheKey = `${team.id}_${weekId}`;
+            const data = _cache.get(cacheKey);
+            if (!data?.slots) continue;
+
+            const roster = team.playerRoster || [];
+
+            // Check each requested slot (OR logic)
+            for (const slotId of slotIds) {
+                const playersInSlot = data.slots[slotId] || [];
+                for (const userId of playersInSlot) {
+                    if (!result.has(userId)) {
+                        const playerInfo = roster.find(p => p.userId === userId) || {};
+                        result.set(userId, {
+                            displayName: playerInfo.displayName || userId,
+                            teamId: team.id,
+                            teamTag: team.teamTag || '??',
+                            teamName: team.teamName || '',
+                            divisions: team.divisions || [],
+                            availableSlots: [],
+                            photoURL: playerInfo.photoURL || null,
+                            initials: playerInfo.initials || (playerInfo.displayName || '??').substring(0, 2).toUpperCase(),
+                            role: playerInfo.role || 'member',
+                            hideRosterNames: team.hideRosterNames || false
+                        });
+                    }
+                    const entry = result.get(userId);
+                    if (!entry.availableSlots.includes(slotId)) {
+                        entry.availableSlots.push(slotId);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
     /**
      * Cleanup - clear all listeners and cache
      */
@@ -513,6 +873,7 @@ const AvailabilityService = (function() {
         _listeners.forEach(unsub => unsub());
         _listeners.clear();
         _cache.clear();
+        _allTeamsLoadedWeeks.clear();
         console.log('🧹 AvailabilityService cleaned up');
     }
 
@@ -528,8 +889,18 @@ const AvailabilityService = (function() {
         removePlayerFromSlots,
         getSlotPlayers,
         isUserInSlot,
+        // Unavailability (Slice 15.0)
+        getSlotUnavailablePlayers,
+        isUserUnavailableInSlot,
+        markUnavailable,
+        removeUnavailable,
+        markPlayerUnavailable,
+        removePlayerUnavailable,
         getCachedData,
         updateCache,
+        // Community-wide loading (Slice 16.0a — Find Standin)
+        loadAllTeamAvailability,
+        getCommunityAvailability,
         cleanup
     };
 })();

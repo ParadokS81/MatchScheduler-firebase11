@@ -1319,7 +1319,7 @@ const MatchesPanel = (function() {
                 const isYou = isUserTeam && p.userId === currentUserId;
                 return `<div class="player-row player-available">
                     <span class="player-status-dot available"></span>
-                    <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}${isYou ? ' (You)' : ''}</span>
+                    <span class="player-name">${_escapeHtml(p.displayName || p.initials || '?')}</span>
                 </div>`;
             }).join('');
             const unavailHtml = unavailable.map(p =>

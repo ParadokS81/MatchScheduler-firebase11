@@ -157,20 +157,77 @@ Sizes: `sm` (~11-25KB thumbnails), `lg` (~40-100KB detail/backgrounds). No auth.
 
 **Note:** The iframe scoreboard endpoint exists but makes extra requests per embed. For MatchScheduler, render scoreboards locally using the data + CSS approach described in section 9.
 
-## 5. Existing Implementation
+## 5. Hub API v2 (Live Server Data)
+
+**Base URL:** `https://hubapi.quakeworld.nu`
+**No auth required.**
+
+Key endpoint for player detection: **`/v2/servers/mvdsv`** — returns array of active MVDSV servers.
+
+### Server Object Structure
+
+```json
+{
+    "address": "dm6.uk:28501",
+    "mode": "4on4",
+    "title": "4on4 [dm6.uk]",
+    "status": { "name": "Started", "description": "4on4: [12:34]" },
+    "time": { "elapsed": 754, "total": 1200, "remaining": 446 },
+    "player_slots": { "used": 8, "total": 16, "free": 8 },
+    "players": [
+        { "id": 36, "name": "ParadokS", "name_color": "wwwwwwwwww", "team": "]sr[", "team_color": "bwwb", "skin": "base", "colors": [3,11], "frags": 46, "ping": 25, "time": 12, "cc": "se", "is_bot": false }
+    ],
+    "teams": [
+        { "name": "]sr[", "name_color": "bwwb", "frags": 270, "ping": 31, "colors": [3,11], "players": [/* same as above */] }
+    ],
+    "spectator_slots": { "used": 2, "total": 8, "free": 6 },
+    "spectator_names": ["razor", "unnamed"],
+    "qtv_stream": {
+        "title": "dm6.uk Qtv (7)", "url": "7@dm6.uk:28000", "id": 7, "address": "dm6.uk:28000",
+        "spectator_names": ["coolguy", "unnamed"],
+        "spectator_count": 2
+    },
+    "geo": { "cc": "DE", "country": "Germany", "region": "Europe", "city": "Frankfurt" }
+}
+```
+
+### Finding Players on Active Servers
+
+A player can be in **three places** on a server — check all:
+
+1. **Playing:** `server.players[]` — active in game (has full player object with team, frags, etc.)
+2. **Spectating:** `server.spectator_names[]` — spectating on the server (just name strings)
+3. **Watching QTV:** `server.qtv_stream.spectator_names[]` — viewing via QTV relay (just name strings)
+
+**Name matching:** Names use QW character encoding. Normalize with `qwToAscii()` before matching. Recommended: [fuse.js](https://www.fusejs.io/) for fuzzy matching (vikpe's recommendation, zero dependencies).
+
+### Other v2 Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/v2/servers` | All servers |
+| `/v2/servers/qtv` | QTV relay servers |
+| `/v2/servers/<address>` | Single server details |
+| `/v2/servers/<address>/lastscores` | Recent scores |
+| `/v2/servers/<address>/laststats` | Recent stats |
+| `/v2/demos` | Recent demos |
+| `/v2/streams` | Twitch streams casting QW |
+| `/v2/events` | Upcoming events |
+
+## 6. Existing Implementation
 
 - **Service:** `public/js/services/QWHubService.js` - match listings with 5-min cache
 - **Reference:** `context/QWHUB-API-REFERENCE.md` - full schema details, all fields documented
 - **Slices:** 5.1b (match history), 5.1c (H2H compare) use this API
 
-## 6. Caching Rules
+## 7. Caching Rules
 
 - Match listings: 5-min TTL per team tag (in-memory Map)
 - ktxstats: Cache indefinitely (game stats never change)
 - H2H: 5-min TTL keyed by sorted team pair
 - Mapshots: Browser/CDN cache
 
-## 7. Other Available Tables
+## 8. Other Available Tables
 
 | Table | Key Fields |
 |-------|-----------|
@@ -179,11 +236,11 @@ Sizes: `sm` (~11-25KB thumbnails), `lg` (~40-100KB detail/backgrounds). No auth.
 | `maps` | name, message, author_names, modes |
 | `event_series` | id, name, abbreviation, slug |
 
-## 8. QW Character Encoding
+## 9. QW Character Encoding
 
 Two encoding systems exist depending on data source:
 
-### 8a. Supabase data: `name_color` string encoding
+### 9a. Supabase data: `name_color` string encoding
 Used in `teams[].name_color`, `players[].name_color`, `players[].team_color`. Each character maps to a color class:
 - `w` = white/normal text (CSS class `qw-color-w` or no class)
 - `b` = brown/gold text (CSS class `qw-color-b`)
@@ -210,7 +267,7 @@ function quakeTextToHtml(text, color) {
 }
 ```
 
-### 8b. ktxstats data: byte-level QW encoding
+### 9b. ktxstats data: byte-level QW encoding
 Used in raw ktxstats JSON `player.name` and `player.team` fields. Characters are byte values:
 - Chars >= 128: "brown/colored" variants - subtract 128 for base char, render with `qw-color-b` class
 - Chars 0-15 (and 29-31): special symbols (see lookup below)
@@ -254,7 +311,7 @@ function quakeNameToColoredHtml(bytes) {
 }
 ```
 
-### 8c. ASCII conversion (for matching/comparing, not display)
+### 9c. ASCII conversion (for matching/comparing, not display)
 ```javascript
 const QW_CHAR_LOOKUP = {
     0:'=', 2:'=', 5:'\u2022', 10:' ', 14:'\u2022', 15:'\u2022',
@@ -272,13 +329,13 @@ function qwToAscii(name) {
 }
 ```
 
-## 9. Scoreboard Rendering
+## 10. Scoreboard Rendering
 
 The hub renders scoreboards as pure HTML/CSS, not screenshots. We replicate this approach locally for full control and no extra network requests.
 
 **Source reference:** `hub.quakeworld.nu/src/servers/Scoreboard.jsx`, `_scoreboard.scss`, `_quake_colors.scss`
 
-### 9a. QW Color Palette (17 colors, indices 0-16)
+### 10a. QW Color Palette (17 colors, indices 0-16)
 
 These are the Quake player/team jersey colors. Used in `teams[].color` and `players[].color` arrays as `[top-color, bottom-color]`.
 
@@ -304,7 +361,7 @@ const QW_COLORS = {
 };
 ```
 
-### 9b. Player Frag Colors (two-tone gradient)
+### 10b. Player Frag Colors (two-tone gradient)
 
 Each player/team has `color: [topColor, bottomColor]`. The hub renders frags with a vertical split gradient: top half in top-color, bottom half in bottom-color, each lightened by 5%.
 
@@ -331,7 +388,7 @@ function getFragColorStyle(topIdx, bottomIdx) {
 }
 ```
 
-### 9c. QW Text Color Classes (for name rendering)
+### 10c. QW Text Color Classes (for name rendering)
 
 ```css
 /* Gold/green text (for brackets [], digits in team names) */
@@ -341,7 +398,7 @@ function getFragColorStyle(topIdx, bottomIdx) {
 .qw-color-b { color: #7a5b33; }  /* brown - palette[1] lightened 25% */
 ```
 
-### 9d. Scoreboard Layout (CSS Grid)
+### 10d. Scoreboard Layout (CSS Grid)
 
 The hub scoreboard uses a CSS grid with 4 columns:
 ```scss
@@ -369,7 +426,7 @@ $team-width: 40px;   // e.g. "Book" (max 4 chars)
 When no teams (1on1/FFA): hide team column, grid becomes `42px 36px auto`.
 When hiding frags (live scoreboard): text made transparent.
 
-### 9e. Scoreboard Component Structure
+### 10e. Scoreboard Component Structure
 
 From hub `Scoreboard.jsx` - the rendering order:
 1. **Team summary rows** (sorted by frags desc): `[ping] [colored frags] [team name] [empty]`
@@ -381,7 +438,7 @@ Player names truncated to 160px with CSS `truncate`.
 Bot players shown in amber text (`text-amber-300/80`), ping shows "(bot)".
 Country flags: `https://www.quakeworld.nu/images/flags/{cc}.gif` (16x11px).
 
-### 9f. Mapshot Background
+### 10f. Mapshot Background
 
 Scoreboards are overlaid on map background images:
 ```html
@@ -398,7 +455,7 @@ Scoreboards are overlaid on map background images:
 </div>
 ```
 
-### 9g. Text Outline (readability on map backgrounds)
+### 10g. Text Outline (readability on map backgrounds)
 
 The hub uses `app-text-outline` class for text-shadow to ensure readability over map images. Implement as:
 ```css
@@ -407,11 +464,11 @@ The hub uses `app-text-outline` class for text-shadow to ensure readability over
 }
 ```
 
-## 10. Stats Table Rendering (ktxstats)
+## 11. Stats Table Rendering (ktxstats)
 
 The hub's detailed stats table (`DemoKtxStats.tsx`) shows per-player match statistics with conditional columns based on game mode.
 
-### 10a. Column Layout by Mode
+### 11a. Column Layout by Mode
 
 **Always shown:** Frags, Name, Eff%, Kills, Deaths, Given, Taken, GA, YA, RA, MH
 
@@ -421,7 +478,7 @@ The hub's detailed stats table (`DemoKtxStats.tsx`) shows per-player match stati
 
 **CTF adds:** Team, Picks, Caps, Defends, Returns, Q, P, Rune icons (Resistance/Strength/Haste/Regen as %)
 
-### 10b. Stat Calculations
+### 11b. Stat Calculations
 
 ```javascript
 // Efficiency
@@ -441,7 +498,7 @@ rlControl = [weapons.rl.pickups.taken, weapons.rl.kills.enemy, weapons.rl.pickup
 runeTimePct = Math.round(100 * (rune_value / stats.duration))
 ```
 
-### 10c. Styling Details
+### 11c. Styling Details
 
 - Zero values shown dimmed: `<span class="text-slate-500">0</span>`
 - Armor colors: GA = `text-green-200`, YA = `text-yellow-200`, RA = `text-red-200`, MH = `text-sky-200`

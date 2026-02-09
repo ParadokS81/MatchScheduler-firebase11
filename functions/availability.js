@@ -36,8 +36,8 @@ const updateAvailability = functions
         throw new functions.https.HttpsError('invalid-argument', 'Invalid week ID');
     }
 
-    if (!['add', 'remove'].includes(action)) {
-        throw new functions.https.HttpsError('invalid-argument', 'Action must be "add" or "remove"');
+    if (!['add', 'remove', 'markUnavailable', 'removeUnavailable'].includes(action)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Action must be "add", "remove", "markUnavailable", or "removeUnavailable"');
     }
 
     if (!Array.isArray(slotIds) || slotIds.length === 0) {
@@ -111,6 +111,7 @@ const updateAvailability = functions
             teamId,
             weekId,
             slots: {},
+            unavailable: {},
             lastUpdated: FieldValue.serverTimestamp()
         });
     }
@@ -125,8 +126,16 @@ const updateAvailability = functions
     slotIds.forEach(slotId => {
         if (action === 'add') {
             updateData[`slots.${slotId}`] = FieldValue.arrayUnion(effectiveUserId);
-        } else {
+            // Mutual exclusion: adding availability removes unavailability
+            updateData[`unavailable.${slotId}`] = FieldValue.arrayRemove(effectiveUserId);
+        } else if (action === 'remove') {
             updateData[`slots.${slotId}`] = FieldValue.arrayRemove(effectiveUserId);
+        } else if (action === 'markUnavailable') {
+            updateData[`unavailable.${slotId}`] = FieldValue.arrayUnion(effectiveUserId);
+            // Mutual exclusion: marking unavailable removes availability
+            updateData[`slots.${slotId}`] = FieldValue.arrayRemove(effectiveUserId);
+        } else if (action === 'removeUnavailable') {
+            updateData[`unavailable.${slotId}`] = FieldValue.arrayRemove(effectiveUserId);
         }
     });
 
@@ -134,7 +143,8 @@ const updateAvailability = functions
     await availRef.update(updateData);
 
     const proxyInfo = targetUserId && targetUserId !== userId ? ` (by ${userId})` : '';
-    console.log(`Availability ${action}: ${effectiveUserId} ${action === 'add' ? 'added to' : 'removed from'} ${slotIds.length} slots in ${docId}${proxyInfo}`);
+    const actionLabels = { add: 'added to', remove: 'removed from', markUnavailable: 'marked unavailable in', removeUnavailable: 'unmarked unavailable in' };
+    console.log(`Availability ${action}: ${effectiveUserId} ${actionLabels[action]} ${slotIds.length} slots in ${docId}${proxyInfo}`);
 
     return { success: true };
 });

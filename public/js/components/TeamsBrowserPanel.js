@@ -14,6 +14,14 @@ const TeamsBrowserPanel = (function() {
     let _activeTab = 'details'; // 'details' | 'history' | 'h2h'
     let _searchQuery = '';
     let _divisionFilters = new Set();
+    // Standin filter state (Slice 16.0a)
+    let _standinFilter = null; // { weekId, slotIds, division } or null
+    let _standinResults = null; // Map<userId, playerData> from getCommunityAvailability
+    let _standinLoading = false;
+    let _standinError = false;
+    let _standinDivisionFilter = null; // null = All, 'D1', 'D2', 'D3'
+    let _standinGeneration = 0; // Re-entrant protection for concurrent activations
+    let _discordCache = new Map(); // userId → { discordUsername, discordUserId } or null
     let _allTeams = [];
     let _allPlayers = [];
     let _tooltip = null;
@@ -141,6 +149,18 @@ const TeamsBrowserPanel = (function() {
 
         // Listen for team selection from Browse Teams (Slice 5.1b)
         window.addEventListener('team-browser-detail-select', _handleBrowseTeamSelect);
+
+        // Listen for standin search events (Slice 16.0a)
+        window.addEventListener('standin-search-started', _handleStandinSearch);
+        window.addEventListener('standin-search-cleared', _handleStandinCleared);
+
+        // If standin finder is already active (re-init scenario), apply filter
+        if (typeof StandinFinderService !== 'undefined' && StandinFinderService.isActive()) {
+            const weekId = StandinFinderService.getWeekId();
+            const slotIds = StandinFinderService.getCapturedSlots();
+            const division = StandinFinderService.getDefaultDivision();
+            _handleStandinSearch({ detail: { weekId, slotIds, division } });
+        }
 
         console.log('TeamsBrowserPanel initialized with', _allTeams.length, 'teams,', _allPlayers.length, 'players');
     }
@@ -320,14 +340,35 @@ const TeamsBrowserPanel = (function() {
         // Teams mode: no toolbar needed (Browse Teams panel handles search/filters)
         if (_currentView === 'teams') return '';
 
-        // Players mode: sort toggle (A-Z vs By Team)
+        // Standin filter chip (inline, between Sort and Div)
+        let standinChipHtml = '';
+        if (_standinFilter) {
+            const displaySlots = _standinFilter.slotIds.map(s => _formatSlotForDisplay(s));
+            standinChipHtml = `
+                <span class="standin-filter-chip">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <span>${_escapeHtml(displaySlots.join(', '))}</span>
+                    <button class="standin-filter-clear" title="Clear standin filter">&times;</button>
+                </span>
+            `;
+        }
+
+        // Players mode: sort toggle (A-Z vs By Team) + standin chip + division filter chips
         return `
             <div class="teams-browser-toolbar flex-shrink-0 px-4 py-2 border-b border-border">
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-3 flex-wrap">
                     <span class="text-xs text-muted-foreground">Sort:</span>
                     <div class="flex gap-1">
                         <button class="division-filter-btn ${_playersSortMode === 'alpha' ? 'active' : ''}" data-sort-mode="alpha">A-Z</button>
                         <button class="division-filter-btn ${_playersSortMode === 'teams' ? 'active' : ''}" data-sort-mode="teams">By Team</button>
+                    </div>
+                    ${standinChipHtml}
+                    <span class="text-xs text-muted-foreground ml-2">Div:</span>
+                    <div class="flex gap-1">
+                        ${_renderDivisionChips()}
                     </div>
                 </div>
             </div>
@@ -3809,22 +3850,251 @@ const TeamsBrowserPanel = (function() {
     // ========================================
 
     function _renderPlayersView() {
+        // Standin: loading/error/empty overlays (shown inside the layout area)
+        if (_standinFilter) {
+            if (_standinLoading) {
+                return `
+                    <div class="flex items-center justify-center h-full">
+                        <div class="text-center">
+                            <div class="standin-spinner mb-2"></div>
+                            <p class="text-sm text-muted-foreground">Loading availability...</p>
+                        </div>
+                    </div>
+                `;
+            }
+            if (_standinError) {
+                return `
+                    <div class="flex items-center justify-center h-full">
+                        <div class="text-center text-muted-foreground">
+                            <p class="text-sm">Failed to load availability data.</p>
+                            <p class="text-xs mt-1">Please try again.</p>
+                        </div>
+                    </div>
+                `;
+            }
+            if (!_standinResults || _standinResults.size === 0) {
+                return `
+                    <div class="flex items-center justify-center h-full">
+                        <div class="text-center text-muted-foreground">
+                            <p class="text-sm">No standins found for the selected slots.</p>
+                            <p class="text-xs mt-1">Try selecting different time slots or changing the division filter.</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Standin mode: compact flow layout (not the normal 3-column division grid)
+        if (_standinFilter && _standinResults && _standinResults.size > 0) {
+            return _renderStandinFlowLayout();
+        }
+
+        // Normal rendering
         if (_playersSortMode === 'teams') {
             return _renderPlayersGroupedByTeam();
         }
         return _renderPlayersAlphabetical();
     }
 
+    /**
+     * Compact flowing layout for standin results.
+     * Uses CSS columns for vertical-first flow that fills available height.
+     * Respects _playersSortMode: 'teams' = grouped by team, 'alpha' = flat list with tag prefix.
+     */
+    function _renderStandinFlowLayout() {
+        const totalSlots = _standinFilter.slotIds.length;
+        const visibleDivs = _standinDivisionFilter
+            ? [_standinDivisionFilter]
+            : ['D1', 'D2', 'D3'];
+
+        // Collect available players grouped by team
+        const teamGroups = new Map(); // teamId → { team, players[] }
+
+        _standinResults.forEach((playerData, userId) => {
+            // Division filter
+            if (_standinDivisionFilter) {
+                const teamDivisions = _normalizeDivisions(playerData.divisions);
+                if (!teamDivisions.includes(_standinDivisionFilter)) return;
+            }
+
+            const key = playerData.teamId;
+            if (!teamGroups.has(key)) {
+                const team = _allTeams.find(t => t.id === key);
+                teamGroups.set(key, {
+                    teamId: key,
+                    teamTag: playerData.teamTag,
+                    teamName: playerData.teamName,
+                    hideRosterNames: playerData.hideRosterNames,
+                    logoUrl: team?.activeLogo?.urls?.small || null,
+                    players: []
+                });
+            }
+            teamGroups.get(key).players.push({ userId, ...playerData });
+        });
+
+        if (teamGroups.size === 0) {
+            return `
+                <div class="flex items-center justify-center h-full">
+                    <div class="text-center text-muted-foreground">
+                        <p class="text-sm">No standins found in this division.</p>
+                        <p class="text-xs mt-1">Try "All" or another division.</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Sort teams alphabetically
+        const sortedTeams = [...teamGroups.values()].sort((a, b) =>
+            (a.teamName || '').localeCompare(b.teamName || '')
+        );
+
+        // Sort players within each team: more slots first, then alpha
+        sortedTeams.forEach(group => {
+            group.players.sort((a, b) => {
+                if (b.availableSlots.length !== a.availableSlots.length) {
+                    return b.availableSlots.length - a.availableSlots.length;
+                }
+                return (a.displayName || '').localeCompare(b.displayName || '');
+            });
+        });
+
+        if (_playersSortMode === 'teams') {
+            return _renderStandinByTeam(sortedTeams, totalSlots);
+        }
+        return _renderStandinAlpha(sortedTeams, totalSlots);
+    }
+
+    /**
+     * Standin By Team: compact team groups flowing into CSS columns.
+     * Team header + indented players, break-inside:avoid keeps groups together.
+     */
+    function _renderStandinByTeam(sortedTeams, totalSlots) {
+        const sections = sortedTeams.map(group => {
+            const tag = group.teamTag || '??';
+            const badgeContent = group.logoUrl
+                ? `<img src="${group.logoUrl}" alt="${tag}" class="w-full h-full object-contain">`
+                : `<span>${tag}</span>`;
+
+            let playerRows;
+            if (group.hideRosterNames) {
+                playerRows = `
+                    <div class="standin-flow-player standin-player-row text-xs text-muted-foreground italic pl-6">
+                        ${group.players.length} player${group.players.length !== 1 ? 's' : ''} available
+                    </div>
+                `;
+            } else {
+                playerRows = group.players.map(player => {
+                    const initials = player.initials || (player.displayName || '??').substring(0, 2).toUpperCase();
+                    const avatarContent = player.photoURL
+                        ? `<span class="avatar-initials-fallback">${initials}</span><img src="${player.photoURL}" alt="" class="avatar-img-layer" onerror="this.style.display='none'">`
+                        : `<span class="avatar-initials-fallback">${initials}</span>`;
+                    const leaderIcon = player.role === 'leader' ? '<span class="text-primary text-xs ml-0.5">★</span>' : '';
+                    const slotCount = player.availableSlots.length;
+                    const slotBadge = totalSlots > 1
+                        ? `<span class="standin-slot-count text-xs text-muted-foreground ml-auto">${slotCount}/${totalSlots}</span>`
+                        : '';
+
+                    return `
+                        <div class="standin-flow-player standin-player-row" data-standin-user-id="${_escapeHtml(player.userId)}" data-standin-slots="${_escapeHtml(JSON.stringify(player.availableSlots))}">
+                            <div class="player-avatar-badge standin-flow-avatar">${avatarContent}</div>
+                            <span class="standin-flow-name">${_escapeHtml(player.displayName || 'Unknown')}${leaderIcon}</span>
+                            ${slotBadge}
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            return `
+                <div class="standin-flow-group">
+                    <div class="standin-flow-team-header" data-team-id="${_escapeHtml(group.teamId)}">
+                        <div class="team-tag-badge" style="width:1.5rem;height:1.25rem;font-size:0.5rem">${badgeContent}</div>
+                        <span class="standin-flow-team-name">${_escapeHtml(group.teamName)}</span>
+                        <span class="text-muted-foreground text-xs ml-auto">${group.players.length}</span>
+                    </div>
+                    ${playerRows}
+                </div>
+            `;
+        }).join('');
+
+        return `<div class="standin-flow-layout">${sections}</div>`;
+    }
+
+    /**
+     * Standin A-Z: flat list of all available players with team tag prefix.
+     * Sorted alphabetically, flowing into CSS columns.
+     */
+    function _renderStandinAlpha(sortedTeams, totalSlots) {
+        // Flatten all players, attach team info
+        const allPlayers = [];
+        sortedTeams.forEach(group => {
+            if (group.hideRosterNames) return; // Can't show individual names
+            group.players.forEach(player => {
+                allPlayers.push({ ...player, teamLogoUrl: group.logoUrl });
+            });
+        });
+
+        // Sort alphabetically
+        allPlayers.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+
+        if (allPlayers.length === 0) {
+            return `
+                <div class="flex items-center justify-center h-full">
+                    <div class="text-center text-muted-foreground">
+                        <p class="text-sm">No standins found in this division.</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        const rows = allPlayers.map(player => {
+            const tag = player.teamTag || '??';
+            const badgeContent = player.teamLogoUrl
+                ? `<img src="${player.teamLogoUrl}" alt="${tag}" class="w-full h-full object-contain">`
+                : `<span>${tag}</span>`;
+            const initials = player.initials || (player.displayName || '??').substring(0, 2).toUpperCase();
+            const avatarContent = player.photoURL
+                ? `<span class="avatar-initials-fallback">${initials}</span><img src="${player.photoURL}" alt="" class="avatar-img-layer" onerror="this.style.display='none'">`
+                : `<span class="avatar-initials-fallback">${initials}</span>`;
+            const leaderIcon = player.role === 'leader' ? '<span class="text-primary text-xs ml-0.5">★</span>' : '';
+            const slotCount = player.availableSlots.length;
+            const slotBadge = totalSlots > 1
+                ? `<span class="standin-slot-count text-xs text-muted-foreground ml-auto">${slotCount}/${totalSlots}</span>`
+                : '';
+
+            return `
+                <div class="standin-flow-player standin-player-row" data-standin-user-id="${_escapeHtml(player.userId)}" data-standin-slots="${_escapeHtml(JSON.stringify(player.availableSlots))}">
+                    <div class="team-tag-badge standin-flow-tag">${badgeContent}</div>
+                    <div class="player-avatar-badge standin-flow-avatar">${avatarContent}</div>
+                    <span class="standin-flow-name">${_escapeHtml(player.displayName || 'Unknown')}${leaderIcon}</span>
+                    ${slotBadge}
+                </div>
+            `;
+        }).join('');
+
+        return `<div class="standin-flow-layout">${rows}</div>`;
+    }
+
     function _renderPlayersAlphabetical() {
         // Group players by division (player's primary team division)
         const divisions = { 'D1': [], 'D2': [], 'D3': [] };
+        const isStandin = _standinFilter && _standinResults;
+
+        // If division filter active, only show that division
+        const visibleDivs = _standinDivisionFilter
+            ? [_standinDivisionFilter]
+            : ['D1', 'D2', 'D3'];
 
         _allPlayers.forEach(player => {
+            // Standin mode: only show players who are available
+            if (isStandin && !_standinResults.has(player.key)) return;
+
             // Add player to each division they belong to
             const addedDivs = new Set();
             player.teams.forEach(team => {
+                // Standin mode: skip teams hidden from comparison
+                if (isStandin && team.hideFromComparison) return;
                 (team.divisions || []).forEach(div => {
-                    if (divisions[div] && !addedDivs.has(div)) {
+                    if (divisions[div] && !addedDivs.has(div) && visibleDivs.includes(div)) {
                         divisions[div].push(player);
                         addedDivs.add(div);
                     }
@@ -3832,21 +4102,42 @@ const TeamsBrowserPanel = (function() {
             });
         });
 
-        // Sort each division alphabetically
-        Object.values(divisions).forEach(list =>
-            list.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''))
-        );
+        // Sort: in standin mode, sort by available slots desc then alpha; otherwise just alpha
+        if (isStandin) {
+            Object.values(divisions).forEach(list =>
+                list.sort((a, b) => {
+                    const aSlots = _standinResults.get(a.key)?.availableSlots?.length || 0;
+                    const bSlots = _standinResults.get(b.key)?.availableSlots?.length || 0;
+                    if (bSlots !== aSlots) return bSlots - aSlots;
+                    return (a.displayName || '').localeCompare(b.displayName || '');
+                })
+            );
+        } else {
+            Object.values(divisions).forEach(list =>
+                list.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''))
+            );
+        }
 
         return _renderPlayersDivisionColumns(divisions);
     }
 
     function _renderPlayersGroupedByTeam() {
         const divisions = { 'D1': [], 'D2': [], 'D3': [] };
+        const isStandin = _standinFilter && _standinResults;
+        const totalSlots = isStandin ? _standinFilter.slotIds.length : 0;
+
+        // If division filter active, only include matching teams
+        const visibleDivs = _standinDivisionFilter
+            ? [_standinDivisionFilter]
+            : ['D1', 'D2', 'D3'];
 
         _allTeams.forEach(team => {
+            // In standin mode, skip teams hidden from comparison
+            if (isStandin && team.hideFromComparison) return;
+
             const norms = _normalizeDivisions(team.divisions);
             norms.forEach(div => {
-                if (divisions[div]) {
+                if (divisions[div] && visibleDivs.includes(div)) {
                     divisions[div].push(team);
                 }
             });
@@ -3859,12 +4150,54 @@ const TeamsBrowserPanel = (function() {
 
         function renderColumn(divLabel, teams) {
             const sections = teams.map(team => {
-                const roster = team.playerRoster || [];
-                const sorted = [...roster].sort((a, b) => {
-                    if (a.role === 'leader') return -1;
-                    if (b.role === 'leader') return 1;
-                    return (a.displayName || '').localeCompare(b.displayName || '');
-                });
+                let roster = team.playerRoster || [];
+
+                // Standin mode: filter roster to only available players
+                if (isStandin) {
+                    // Privacy: hideRosterNames → show count only
+                    if (team.hideRosterNames) {
+                        const availableCount = roster.filter(p => _standinResults.has(p.userId)).length;
+                        if (availableCount === 0) return '';
+                        const logoUrl = team.activeLogo?.urls?.small;
+                        const tag = team.teamTag || '??';
+                        const badgeContent = logoUrl
+                            ? `<img src="${logoUrl}" alt="${tag}" class="w-full h-full object-contain">`
+                            : `<span>${tag}</span>`;
+                        return `
+                            <div class="players-team-group">
+                                <div class="players-team-group-header" data-team-id="${_escapeHtml(team.id)}" style="cursor:pointer" title="View ${_escapeHtml(team.teamName)} details">
+                                    <div class="team-tag-badge" style="width:1.5rem;height:1.25rem;font-size:0.5rem">${badgeContent}</div>
+                                    <span>${_escapeHtml(team.teamName)}</span>
+                                    <span class="text-muted-foreground ml-auto">${availableCount}</span>
+                                </div>
+                                <table class="division-overview-table"><tbody>
+                                    <tr class="player-overview-row">
+                                        <td colspan="2" class="px-2 py-1 text-xs text-muted-foreground italic">
+                                            ${availableCount} player${availableCount !== 1 ? 's' : ''} available
+                                        </td>
+                                    </tr>
+                                </tbody></table>
+                            </div>
+                        `;
+                    }
+
+                    roster = roster.filter(p => _standinResults.has(p.userId));
+                    if (roster.length === 0) return '';
+
+                    // Sort: more available slots first, then alphabetically
+                    roster = [...roster].sort((a, b) => {
+                        const aSlots = _standinResults.get(a.userId)?.availableSlots?.length || 0;
+                        const bSlots = _standinResults.get(b.userId)?.availableSlots?.length || 0;
+                        if (bSlots !== aSlots) return bSlots - aSlots;
+                        return (a.displayName || '').localeCompare(b.displayName || '');
+                    });
+                } else {
+                    roster = [...roster].sort((a, b) => {
+                        if (a.role === 'leader') return -1;
+                        if (b.role === 'leader') return 1;
+                        return (a.displayName || '').localeCompare(b.displayName || '');
+                    });
+                }
 
                 const logoUrl = team.activeLogo?.urls?.small;
                 const tag = team.teamTag || '??';
@@ -3872,7 +4205,7 @@ const TeamsBrowserPanel = (function() {
                     ? `<img src="${logoUrl}" alt="${tag}" class="w-full h-full object-contain">`
                     : `<span>${tag}</span>`;
 
-                const rows = sorted.map(player => {
+                const rows = roster.map(player => {
                     const avatarUrl = player.photoURL;
                     const initials = (player.displayName || '??').substring(0, 2).toUpperCase();
                     const avatarContent = avatarUrl
@@ -3880,22 +4213,41 @@ const TeamsBrowserPanel = (function() {
                         : `<span class="avatar-initials-fallback">${initials}</span>`;
                     const leaderIcon = player.role === 'leader' ? '<span class="text-primary text-xs ml-0.5">★</span>' : '';
 
+                    // Standin mode: slot count badge + standin data attributes
+                    let slotBadge = '';
+                    let standinAttrs = '';
+                    if (isStandin) {
+                        const standinData = _standinResults.get(player.userId);
+                        const slotCount = standinData?.availableSlots?.length || 0;
+                        slotBadge = totalSlots > 1
+                            ? `<span class="standin-slot-count text-xs text-muted-foreground ml-auto">${slotCount}/${totalSlots}</span>`
+                            : '';
+                        standinAttrs = ` data-standin-user-id="${_escapeHtml(player.userId)}" data-standin-slots="${_escapeHtml(JSON.stringify(standinData?.availableSlots || []))}"`;
+                    }
+
+                    const rowClass = isStandin ? 'player-overview-row standin-player-row' : 'player-overview-row';
+
                     return `
-                        <tr class="player-overview-row" data-player-key="${_escapeHtml(player.userId || player.displayName || '')}">
+                        <tr class="${rowClass}"${standinAttrs} data-player-key="${_escapeHtml(player.userId || player.displayName || '')}">
                             <td class="player-overview-avatar">
                                 <div class="player-avatar-badge">${avatarContent}</div>
                             </td>
-                            <td class="player-overview-name">${_escapeHtml(player.displayName || 'Unknown')}${leaderIcon}</td>
+                            <td class="player-overview-name">
+                                ${isStandin ? '<span>' : ''}${_escapeHtml(player.displayName || 'Unknown')}${leaderIcon}${isStandin ? '</span>' : ''}
+                                ${slotBadge}
+                            </td>
                         </tr>
                     `;
                 }).join('');
+
+                const displayCount = isStandin ? roster.length : (team.playerRoster || []).length;
 
                 return `
                     <div class="players-team-group">
                         <div class="players-team-group-header" data-team-id="${_escapeHtml(team.id)}" style="cursor:pointer" title="View ${_escapeHtml(team.teamName)} details">
                             <div class="team-tag-badge" style="width:1.5rem;height:1.25rem;font-size:0.5rem">${badgeContent}</div>
                             <span>${_escapeHtml(team.teamName)}</span>
-                            <span class="text-muted-foreground ml-auto">${roster.length}</span>
+                            <span class="text-muted-foreground ml-auto">${displayCount}</span>
                         </div>
                         <table class="division-overview-table"><tbody>${rows}</tbody></table>
                     </div>
@@ -3925,6 +4277,9 @@ const TeamsBrowserPanel = (function() {
     }
 
     function _renderPlayersDivisionColumns(divisions) {
+        const isStandin = _standinFilter && _standinResults;
+        const totalSlots = isStandin ? _standinFilter.slotIds.length : 0;
+
         function renderColumn(divLabel, players) {
             const rows = players.map(player => {
                 const avatarUrl = player.photoURL;
@@ -3932,15 +4287,33 @@ const TeamsBrowserPanel = (function() {
                 const avatarContent = avatarUrl
                     ? `<span class="avatar-initials-fallback">${initials}</span><img src="${avatarUrl}" alt="" class="avatar-img-layer" onerror="this.style.display='none'">`
                     : `<span class="avatar-initials-fallback">${initials}</span>`;
-                const multiTeam = player.teams.length > 1
-                    ? `<span class="player-multi-badge">+${player.teams.length - 1}</span>` : '';
+
+                // Standin mode: slot count badge + data attributes
+                let suffix = '';
+                let standinAttrs = '';
+                if (isStandin) {
+                    const standinData = _standinResults.get(player.key);
+                    const slotCount = standinData?.availableSlots?.length || 0;
+                    suffix = totalSlots > 1
+                        ? `<span class="standin-slot-count text-xs text-muted-foreground ml-auto">${slotCount}/${totalSlots}</span>`
+                        : '';
+                    standinAttrs = ` data-standin-user-id="${_escapeHtml(player.key)}" data-standin-slots="${_escapeHtml(JSON.stringify(standinData?.availableSlots || []))}"`;
+                } else {
+                    suffix = player.teams.length > 1
+                        ? `<span class="player-multi-badge">+${player.teams.length - 1}</span>` : '';
+                }
+
+                const rowClass = isStandin ? 'player-overview-row standin-player-row' : 'player-overview-row';
 
                 return `
-                    <tr class="player-overview-row" data-player-key="${_escapeHtml(player.key)}">
+                    <tr class="${rowClass}"${standinAttrs} data-player-key="${_escapeHtml(player.key)}">
                         <td class="player-overview-avatar">
                             <div class="player-avatar-badge">${avatarContent}</div>
                         </td>
-                        <td class="player-overview-name">${_escapeHtml(player.displayName || 'Unknown')}${multiTeam}</td>
+                        <td class="player-overview-name">
+                            ${isStandin ? '<span>' : ''}${_escapeHtml(player.displayName || 'Unknown')}${isStandin ? '</span>' : ''}
+                            ${suffix}
+                        </td>
                     </tr>
                 `;
             }).join('');
@@ -3987,6 +4360,22 @@ const TeamsBrowserPanel = (function() {
                     }
                 }
             });
+        });
+
+        // Division filter chips (Slice 16.0a)
+        _container.querySelectorAll('[data-div-filter]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const value = btn.dataset.divFilter;
+                _standinDivisionFilter = value === 'all' ? null : value;
+                _render();
+            });
+        });
+
+        // Standin filter clear button
+        _container.querySelector('.standin-filter-clear')?.addEventListener('click', () => {
+            if (typeof StandinFinderService !== 'undefined') {
+                StandinFinderService.deactivate();
+            }
         });
 
         _attachViewListeners();
@@ -4036,38 +4425,135 @@ const TeamsBrowserPanel = (function() {
     }
 
     function _attachPlayersViewListeners() {
-        // Team group headers are clickable in by-team mode → navigate to team details
-        if (_playersSortMode === 'teams') {
-            _container.querySelectorAll('.players-team-group-header[data-team-id]').forEach(header => {
-                header.addEventListener('click', () => {
-                    const teamId = header.dataset.teamId;
-                    if (teamId) {
-                        window.dispatchEvent(new CustomEvent('team-browser-detail-select', {
-                            detail: { teamId }
-                        }));
+        // Team group headers are clickable (both normal and standin modes)
+        _container.querySelectorAll('.players-team-group-header[data-team-id], .standin-flow-team-header[data-team-id]').forEach(header => {
+            header.addEventListener('click', () => {
+                const teamId = header.dataset.teamId;
+                if (teamId) {
+                    window.dispatchEvent(new CustomEvent('team-browser-detail-select', {
+                        detail: { teamId }
+                    }));
+                }
+            });
+        });
+
+        // Standin mode: hover to show standin tooltip (works in both sort modes)
+        if (_standinFilter && _standinResults) {
+            _container.querySelectorAll('.standin-player-row').forEach(row => {
+                row.addEventListener('mouseenter', () => {
+                    const userId = row.dataset.standinUserId;
+                    if (userId && _standinResults) {
+                        const playerData = _standinResults.get(userId);
+                        if (playerData) {
+                            _showStandinTooltip(row, playerData);
+                        }
                     }
+                });
+                row.addEventListener('mouseleave', () => {
+                    _hideTooltip();
                 });
             });
             return;
         }
 
-        _container.querySelectorAll('.player-overview-row').forEach(row => {
-            row.addEventListener('mouseenter', () => {
-                const playerKey = row.dataset.playerKey;
-                const player = _allPlayers.find(p => p.key === playerKey);
-                if (player && player.teams.length > 0) {
-                    _showPlayerTooltip(row, player);
-                }
-            });
+        // Normal mode: player hover tooltips (alpha view only)
+        if (_playersSortMode !== 'teams') {
+            _container.querySelectorAll('.player-overview-row').forEach(row => {
+                row.addEventListener('mouseenter', () => {
+                    const playerKey = row.dataset.playerKey;
+                    const player = _allPlayers.find(p => p.key === playerKey);
+                    if (player && player.teams.length > 0) {
+                        _showPlayerTooltip(row, player);
+                    }
+                });
 
-            row.addEventListener('mouseleave', () => {
-                _hideTooltip();
+                row.addEventListener('mouseleave', () => {
+                    _hideTooltip();
+                });
             });
-        });
+        }
     }
 
     function _handleFavoritesUpdate() {
         _renderCurrentView();
+    }
+
+    // ========================================
+    // Find Standin (Slice 16.0a)
+    // ========================================
+
+    async function _handleStandinSearch(event) {
+        const { weekId, slotIds, division } = event.detail;
+
+        // Re-entrant protection: if a previous search is still loading, this new one wins
+        _standinGeneration++;
+        const thisGeneration = _standinGeneration;
+
+        _standinFilter = { weekId, slotIds, division };
+        _standinDivisionFilter = division || null;
+        _standinLoading = true;
+        _standinError = false;
+        _standinResults = null;
+
+        // Force players view with "teams" sort mode (grouped by team makes most sense for standin)
+        _currentView = 'players';
+        _playersSortMode = 'teams';
+        _render();
+
+        try {
+            // Batch-load all team availability for this week
+            await AvailabilityService.loadAllTeamAvailability(weekId);
+
+            // Check if a newer search was triggered while we were loading
+            if (thisGeneration !== _standinGeneration) return;
+
+            // Get filtered players
+            _standinResults = AvailabilityService.getCommunityAvailability(weekId, slotIds);
+            _standinLoading = false;
+            _render();
+        } catch (error) {
+            // Check if a newer search was triggered while we were loading
+            if (thisGeneration !== _standinGeneration) return;
+
+            console.error('Find Standin: Failed to load availability', error);
+            _standinLoading = false;
+            _standinError = true;
+            _render();
+        }
+    }
+
+    function _handleStandinCleared() {
+        _standinFilter = null;
+        _standinResults = null;
+        _standinError = false;
+        _standinLoading = false;
+        _standinDivisionFilter = null;
+        _render();
+    }
+
+    function _formatSlotForDisplay(utcSlotId) {
+        if (typeof TimezoneService !== 'undefined' && TimezoneService.formatSlotForDisplay) {
+            const info = TimezoneService.formatSlotForDisplay(utcSlotId);
+            // Short format: "Thu 20:00"
+            return info.dayLabel.substring(0, 3) + ' ' + info.timeLabel;
+        }
+        // Fallback: raw slot ID
+        const [day, time] = utcSlotId.split('_');
+        return day.charAt(0).toUpperCase() + day.slice(1) + ' ' + time.slice(0, 2) + ':' + time.slice(2);
+    }
+
+    function _renderDivisionChips() {
+        const chips = [
+            { label: 'All', value: null },
+            { label: 'Div 1', value: 'D1' },
+            { label: 'Div 2', value: 'D2' },
+            { label: 'Div 3', value: 'D3' }
+        ];
+
+        return chips.map(chip => {
+            const isActive = _standinDivisionFilter === chip.value;
+            return `<button class="division-filter-btn ${isActive ? 'active' : ''}" data-div-filter="${chip.value || 'all'}">${chip.label}</button>`;
+        }).join('');
     }
 
     // ========================================
@@ -4247,6 +4733,95 @@ const TeamsBrowserPanel = (function() {
         }, 150);
     }
 
+    async function _fetchDiscordInfo(userId) {
+        if (_discordCache.has(userId)) return _discordCache.get(userId);
+        try {
+            const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+            const userDoc = await getDoc(doc(window.firebase.db, 'users', userId));
+            if (!userDoc.exists()) {
+                _discordCache.set(userId, null);
+                return null;
+            }
+            const data = userDoc.data();
+            const info = data.discordUsername
+                ? { discordUsername: data.discordUsername, discordUserId: data.discordUserId || null }
+                : null;
+            _discordCache.set(userId, info);
+            return info;
+        } catch (error) {
+            console.error('Failed to fetch Discord info for', userId, error);
+            _discordCache.set(userId, null);
+            return null;
+        }
+    }
+
+    function _showStandinTooltip(row, playerData) {
+        _createTooltip();
+
+        if (_tooltipHideTimeout) {
+            clearTimeout(_tooltipHideTimeout);
+            _tooltipHideTimeout = null;
+        }
+
+        const slots = playerData.availableSlots.map(s => _formatSlotForDisplay(s));
+        const slotsHtml = slots.map(s => `<span class="standin-tooltip-slot-chip">${_escapeHtml(s)}</span>`).join('');
+
+        _tooltip.innerHTML = `
+            <div class="tooltip-header">${_escapeHtml(playerData.displayName)}</div>
+            <div class="text-xs text-muted-foreground mb-1">${_escapeHtml(playerData.teamTag)} &middot; ${_escapeHtml(playerData.teamName)}</div>
+            <div class="text-xs text-muted-foreground mb-1">Available for:</div>
+            <div class="standin-tooltip-slots">${slotsHtml}</div>
+            <div class="standin-dm-section mt-2 pt-1.5 border-t border-border" data-discord-uid="${_escapeHtml(playerData.userId || '')}">
+                <span class="text-xs text-muted-foreground">Loading Discord...</span>
+            </div>
+        `;
+
+        // Position tooltip
+        const rowRect = row.getBoundingClientRect();
+        _tooltip.style.visibility = 'hidden';
+        _tooltip.style.display = 'block';
+        const tooltipRect = _tooltip.getBoundingClientRect();
+
+        let left = rowRect.right + 8;
+        let top = rowRect.top;
+
+        if (left + tooltipRect.width > window.innerWidth - 8) {
+            left = rowRect.left - tooltipRect.width - 8;
+        }
+        if (top + tooltipRect.height > window.innerHeight - 8) {
+            top = window.innerHeight - tooltipRect.height - 8;
+        }
+        if (left < 8) left = 8;
+        if (top < 8) top = 8;
+
+        _tooltip.style.left = `${left}px`;
+        _tooltip.style.top = `${top}px`;
+        _tooltip.style.visibility = 'visible';
+
+        // Background fetch Discord info and update tooltip
+        const userId = playerData.userId;
+        if (userId) {
+            _fetchDiscordInfo(userId).then(info => {
+                // Only update if tooltip is still showing for this user
+                const section = _tooltip?.querySelector(`.standin-dm-section[data-discord-uid="${CSS.escape(userId)}"]`);
+                if (!section) return;
+
+                if (info?.discordUserId) {
+                    section.innerHTML = `
+                        <button class="standin-dm-btn" onclick="window.open('discord://-/users/${_escapeHtml(info.discordUserId)}', '_blank')" title="Open Discord DM">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/></svg>
+                            <span>DM ${_escapeHtml(info.discordUsername)}</span>
+                        </button>
+                    `;
+                } else if (info?.discordUsername) {
+                    section.innerHTML = `<span class="text-xs text-muted-foreground">${_escapeHtml(info.discordUsername)} (no DM link)</span>`;
+                } else {
+                    section.innerHTML = `<span class="text-xs text-muted-foreground">No Discord linked</span>`;
+                }
+            });
+        }
+    }
+
     function _hideTooltipImmediate() {
         if (_tooltipHideTimeout) {
             clearTimeout(_tooltipHideTimeout);
@@ -4325,6 +4900,8 @@ const TeamsBrowserPanel = (function() {
         // Remove event listeners
         window.removeEventListener('favorites-updated', _handleFavoritesUpdate);
         window.removeEventListener('team-browser-detail-select', _handleBrowseTeamSelect);
+        window.removeEventListener('standin-search-started', _handleStandinSearch);
+        window.removeEventListener('standin-search-cleared', _handleStandinCleared);
 
         // Cleanup tooltip
         if (_tooltipHideTimeout) {
@@ -4344,6 +4921,13 @@ const TeamsBrowserPanel = (function() {
         _searchQuery = '';
         _playersSortMode = 'alpha';
         _divisionFilters.clear();
+        _standinFilter = null;
+        _standinResults = null;
+        _standinLoading = false;
+        _standinError = false;
+        _standinDivisionFilter = null;
+        _standinGeneration = 0;
+        _discordCache.clear();
         _allTeams = [];
         _allPlayers = [];
         _resetHistoryState();

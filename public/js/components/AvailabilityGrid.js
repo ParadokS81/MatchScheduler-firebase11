@@ -86,6 +86,8 @@ const AvailabilityGrid = (function() {
         let _currentUserId = null;
         let _availabilitySlots = null;      // Local-keyed (for tooltip lookup)
         let _availabilitySlotsUtc = null;   // UTC-keyed (for refreshDisplay)
+        let _unavailabilitySlots = null;    // Local-keyed unavailable players (Slice 15.0)
+        let _unavailabilitySlotsUtc = null; // UTC-keyed unavailable players (Slice 15.0)
         let _onOverflowClickCallback = null;
 
         // Comparison mode state (Slice 3.4)
@@ -558,14 +560,21 @@ const AvailabilityGrid = (function() {
 
             const cellId = cell.dataset.cellId;
             const playerIds = _availabilitySlots?.[cellId] || [];
+            const unavailableIds = _unavailabilitySlots?.[cellId] || [];
+            const totalCount = playerIds.length + unavailableIds.length;
 
-            if (playerIds.length >= TOOLTIP_THRESHOLD && _playerRoster && typeof PlayerTooltip !== 'undefined') {
-                const players = PlayerDisplayService.getPlayersDisplay(
+            if (totalCount >= TOOLTIP_THRESHOLD && _playerRoster && typeof PlayerTooltip !== 'undefined') {
+                const availablePlayers = PlayerDisplayService.getPlayersDisplay(
                     playerIds,
                     _playerRoster,
                     _currentUserId
                 );
-                PlayerTooltip.show(cell, players, _currentUserId);
+                const unavailablePlayers = PlayerDisplayService.getPlayersDisplay(
+                    unavailableIds,
+                    _playerRoster,
+                    _currentUserId
+                );
+                PlayerTooltip.show(cell, availablePlayers, _currentUserId, unavailablePlayers);
             }
         }
 
@@ -885,8 +894,11 @@ const AvailabilityGrid = (function() {
          * @param {string} currentUserId - Current user's ID
          * @param {string} displayMode - 'initials', 'coloredInitials', 'coloredDots', or 'avatars'
          */
-        function _renderPlayerBadges(cell, playerIds, playerRoster, currentUserId, displayMode) {
-            if (!playerIds || playerIds.length === 0) {
+        function _renderPlayerBadges(cell, playerIds, playerRoster, currentUserId, displayMode, unavailableIds) {
+            const hasAvailable = playerIds && playerIds.length > 0;
+            const hasUnavailable = unavailableIds && unavailableIds.length > 0;
+
+            if (!hasAvailable && !hasUnavailable) {
                 cell.innerHTML = '';
                 cell.classList.remove('has-players', 'has-overflow', 'ready-for-match');
                 return;
@@ -894,35 +906,50 @@ const AvailabilityGrid = (function() {
 
             cell.classList.add('has-players');
 
-            const players = PlayerDisplayService.getPlayersDisplay(playerIds, playerRoster, currentUserId);
-            const hasOverflow = players.length > MAX_VISIBLE_BADGES;
-            const visiblePlayers = hasOverflow ? players.slice(0, MAX_VISIBLE_BADGES) : players;
-            const overflowCount = players.length - MAX_VISIBLE_BADGES;
+            const players = hasAvailable ? PlayerDisplayService.getPlayersDisplay(playerIds, playerRoster, currentUserId) : [];
+            const unavailPlayers = hasUnavailable ? PlayerDisplayService.getPlayersDisplay(unavailableIds, playerRoster, currentUserId) : [];
 
-            // Mark cell for tooltip behavior if 4+ players
-            if (players.length >= TOOLTIP_THRESHOLD) {
+            // Available players get priority for visible badge slots
+            const totalVisible = players.length + unavailPlayers.length;
+            const hasOverflow = totalVisible > MAX_VISIBLE_BADGES;
+
+            // Calculate how many of each to show
+            let visibleAvail, visibleUnavail, overflowCount;
+            if (hasOverflow) {
+                // Prioritize available badges
+                visibleAvail = players.slice(0, MAX_VISIBLE_BADGES);
+                const remainingSlots = MAX_VISIBLE_BADGES - visibleAvail.length;
+                visibleUnavail = unavailPlayers.slice(0, Math.max(0, remainingSlots));
+                overflowCount = totalVisible - MAX_VISIBLE_BADGES;
+            } else {
+                visibleAvail = players;
+                visibleUnavail = unavailPlayers;
+                overflowCount = 0;
+            }
+
+            // Mark cell for tooltip behavior if 5+ total players
+            if (totalVisible >= TOOLTIP_THRESHOLD) {
                 cell.classList.add('has-overflow');
-                cell.dataset.playerCount = players.length;
+                cell.dataset.playerCount = totalVisible;
             } else {
                 cell.classList.remove('has-overflow');
                 delete cell.dataset.playerCount;
             }
 
-            // Mark cell as ready for match if 4+ players (prompts leaders to search for pracs)
+            // Mark cell as ready for match if 4+ AVAILABLE players (not unavailable!)
             if (players.length >= 4) {
                 cell.classList.add('ready-for-match');
             } else {
                 cell.classList.remove('ready-for-match');
             }
 
-            let badgesHtml = '<div class="player-badges">';
-
-            visiblePlayers.forEach(player => {
+            // Helper: render a single player badge HTML
+            function renderBadgeHtml(player, extraClass) {
                 const isCurrentUserClass = player.isCurrentUser ? 'current-user' : '';
+                const classes = [isCurrentUserClass, extraClass].filter(Boolean).join(' ');
                 const escapedName = _escapeHtml(player.displayName);
                 const escapedInitials = _escapeHtml(player.initials);
 
-                // Get player color (Slice 5.0.1)
                 const playerColor = typeof PlayerColorService !== 'undefined'
                     ? PlayerColorService.getPlayerColor(player.userId)
                     : null;
@@ -932,57 +959,52 @@ const AvailabilityGrid = (function() {
 
                 switch (displayMode) {
                     case 'avatars':
-                        // Avatar mode: show avatar image (CSS handles sizing to 32px)
                         if (player.photoURL) {
-                            badgesHtml += `
-                                <div class="player-badge avatar ${isCurrentUserClass}" data-player-name="${escapedName}">
-                                    <img src="${player.photoURL}" alt="${escapedInitials}" />
-                                </div>
-                            `;
-                        } else {
-                            // No avatar, fallback to initials
-                            badgesHtml += `
-                                <div class="player-badge initials ${isCurrentUserClass}" data-player-name="${escapedName}">
-                                    ${escapedInitials}
-                                </div>
-                            `;
+                            return `<div class="player-badge avatar ${classes}" data-player-name="${escapedName}">
+                                <img src="${player.photoURL}" alt="${escapedInitials}" />
+                            </div>`;
                         }
-                        break;
+                        return `<div class="player-badge initials ${classes}" data-player-name="${escapedName}">
+                            ${escapedInitials}
+                        </div>`;
 
                     case 'coloredDots':
-                        // Colored dots mode: show small colored circles
-                        badgesHtml += `
-                            <span class="player-badge colored-dot ${isCurrentUserClass}"
-                                  style="background-color: ${colorOrDefault}"
-                                  data-player-name="${escapedName}"
-                                  title="${escapedName}">
-                            </span>
-                        `;
-                        break;
+                        return `<span class="player-badge colored-dot ${classes}"
+                              style="background-color: ${colorOrDefault}"
+                              data-player-name="${escapedName}"
+                              title="${escapedName}">
+                        </span>`;
 
-                    case 'coloredInitials':
-                        // Colored initials mode: initials with assigned color
+                    case 'coloredInitials': {
                         const colorStyle = playerColor ? `color: ${playerColor}` : '';
-                        badgesHtml += `
-                            <div class="player-badge initials colored ${isCurrentUserClass}"
-                                 style="${colorStyle}"
-                                 data-player-name="${escapedName}">
-                                ${escapedInitials}
-                            </div>
-                        `;
-                        break;
+                        return `<div class="player-badge initials colored ${classes}"
+                             style="${colorStyle}"
+                             data-player-name="${escapedName}">
+                            ${escapedInitials}
+                        </div>`;
+                    }
 
                     case 'initials':
                     default:
-                        // Plain initials mode (default)
-                        badgesHtml += `
-                            <div class="player-badge initials ${isCurrentUserClass}" data-player-name="${escapedName}">
-                                ${escapedInitials}
-                            </div>
-                        `;
-                        break;
+                        return `<div class="player-badge initials ${classes}" data-player-name="${escapedName}">
+                            ${escapedInitials}
+                        </div>`;
                 }
+            }
+
+            let badgesHtml = '<div class="player-badges">';
+
+            // Render available player badges
+            visibleAvail.forEach(player => {
+                badgesHtml += renderBadgeHtml(player, '');
             });
+
+            // Render unavailable player badges (Slice 15.0)
+            if (visibleUnavail.length > 0) {
+                visibleUnavail.forEach(player => {
+                    badgesHtml += renderBadgeHtml(player, 'unavailable');
+                });
+            }
 
             if (hasOverflow) {
                 badgesHtml += `
@@ -1023,8 +1045,15 @@ const AvailabilityGrid = (function() {
                 });
             }
 
+            // Extract unavailable data (Slice 15.0)
+            let utcUnavailable = {};
+            if (availabilityData.unavailable && typeof availabilityData.unavailable === 'object') {
+                utcUnavailable = availabilityData.unavailable;
+            }
+
             // Store original UTC slots for refreshDisplay
             _availabilitySlotsUtc = utcSlots;
+            _unavailabilitySlotsUtc = utcUnavailable;
 
             // Build local-keyed slots for tooltip access (map UTC → local)
             const localSlots = {};
@@ -1036,6 +1065,16 @@ const AvailabilityGrid = (function() {
             }
             _availabilitySlots = localSlots;
 
+            // Build local-keyed unavailable slots (Slice 15.0)
+            const localUnavailable = {};
+            for (const [utcSlotId, playerIds] of Object.entries(utcUnavailable)) {
+                const localCellId = _utcToLocal(utcSlotId);
+                if (localCellId) {
+                    localUnavailable[localCellId] = playerIds;
+                }
+            }
+            _unavailabilitySlots = localUnavailable;
+
             const displayMode = typeof PlayerDisplayService !== 'undefined'
                 ? PlayerDisplayService.getDisplayMode()
                 : 'initials';
@@ -1045,8 +1084,9 @@ const AvailabilityGrid = (function() {
             allCells.forEach(cell => {
                 const cellId = cell.dataset.cellId;
                 const playerIds = localSlots[cellId] || [];
+                const unavailableIds = localUnavailable[cellId] || [];
 
-                _renderPlayerBadges(cell, playerIds, playerRoster, currentUserId, displayMode);
+                _renderPlayerBadges(cell, playerIds, playerRoster, currentUserId, displayMode, unavailableIds);
 
                 // Re-apply scheduled match label if this cell has one
                 // (_renderPlayerBadges overwrites innerHTML, so the label gets wiped)
@@ -1080,7 +1120,7 @@ const AvailabilityGrid = (function() {
         function refreshDisplay() {
             if (_availabilitySlotsUtc && _playerRoster && _currentUserId) {
                 updateTeamDisplay(
-                    { slots: _availabilitySlotsUtc },
+                    { slots: _availabilitySlotsUtc, unavailable: _unavailabilitySlotsUtc || {} },
                     _playerRoster,
                     _currentUserId
                 );
