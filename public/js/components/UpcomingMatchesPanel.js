@@ -127,10 +127,6 @@ const UpcomingMatchesPanel = (function() {
                         </div>
                     </div>
                 `;
-            } else if (_userTeamIds.length > 0) {
-                _yourMatchesContainer.innerHTML = `
-                    <p class="text-xs text-muted-foreground italic text-center py-2">No matches scheduled for your teams</p>
-                `;
             } else {
                 _yourMatchesContainer.innerHTML = '';
             }
@@ -145,12 +141,6 @@ const UpcomingMatchesPanel = (function() {
                         <div class="space-y-1.5">
                             ${communityMatches.map(_renderMatchCard).join('')}
                         </div>
-                    </div>
-                `;
-            } else if (allMatches.length === 0) {
-                _upcomingContainer.innerHTML = `
-                    <div class="h-full flex flex-col items-center justify-center py-4">
-                        <p class="text-xs text-muted-foreground italic">No upcoming matches scheduled</p>
                     </div>
                 `;
             } else {

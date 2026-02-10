@@ -764,13 +764,13 @@ const ComparisonModal = (function() {
 
                     // 3. Open Discord DM (slight delay to ensure toast shows)
                     setTimeout(() => {
-                        window.open(`discord://-/users/${discordId}`, '_blank');
+                        window.open(`https://discord.com/users/${discordId}`, '_blank');
                     }, 100);
 
                 } catch (err) {
                     console.error('Failed to copy message:', err);
                     // Fallback: just open Discord
-                    window.open(`discord://-/users/${discordId}`, '_blank');
+                    window.open(`https://discord.com/users/${discordId}`, '_blank');
                     if (typeof ToastService !== 'undefined') {
                         ToastService.showInfo('Opening Discord... (copy failed)');
                     }
@@ -815,7 +815,7 @@ const ComparisonModal = (function() {
                 } catch (err) { /* silent */ }
                 if (_opponentDiscordUserId) {
                     setTimeout(() => {
-                        window.open(`discord://-/users/${_opponentDiscordUserId}`, '_blank');
+                        window.open(`https://discord.com/users/${_opponentDiscordUserId}`, '_blank');
                     }, 100);
                 }
             });

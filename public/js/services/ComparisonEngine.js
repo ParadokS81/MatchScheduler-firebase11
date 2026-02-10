@@ -303,6 +303,13 @@ const ComparisonEngine = (function() {
     // Event Listeners
     // ========================================
 
+    // Recalculate when weeks change (user navigates weeks while comparison is active)
+    window.addEventListener('week-navigation-changed', () => {
+        if (_active) {
+            _calculateMatches();
+        }
+    });
+
     // Listen for filter changes
     window.addEventListener('filter-changed', (e) => {
         _filters = {

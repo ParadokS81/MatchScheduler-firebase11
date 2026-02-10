@@ -141,10 +141,10 @@ const MatchSealedModal = (function() {
                         ToastService.showSuccess('Message copied! Paste in Discord');
                     }
                     setTimeout(() => {
-                        window.open(`discord://-/users/${discordId}`, '_blank');
+                        window.open(`https://discord.com/users/${discordId}`, '_blank');
                     }, 100);
                 } catch (err) {
-                    window.open(`discord://-/users/${discordId}`, '_blank');
+                    window.open(`https://discord.com/users/${discordId}`, '_blank');
                 }
             });
         });

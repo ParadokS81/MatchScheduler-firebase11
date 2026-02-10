@@ -548,7 +548,8 @@ const SelectionActionButton = (function() {
         _container.style.visibility = '';
 
         let left = _currentBounds.right + padding;
-        let top = _currentBounds.bottom - containerHeight;
+        // Anchor to selection top, not bottom-minus-height (prevents jump when content changes)
+        let top = _currentBounds.top;
 
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;

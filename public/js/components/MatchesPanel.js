@@ -14,7 +14,7 @@ const MatchesPanel = (function() {
     let _archivedExpanded = false;
     let _selectedGameTypes = {}; // proposalId → 'official' | 'practice' | null
     let _rosterTooltip = null;
-    let _rosterTooltipHideTimeout = null;
+    let _rosterTooltipAnchor = null; // DOM element that triggered the tooltip
 
     // ─── Initialization ────────────────────────────────────────────────
 
@@ -61,6 +61,11 @@ const MatchesPanel = (function() {
         _container.addEventListener('click', _handleClick);
         _container.addEventListener('pointerenter', _handleMatchRowEnter, true);
         _container.addEventListener('pointerleave', _handleMatchRowLeave, true);
+
+        // Dismiss tooltip on click, scroll, or leaving the container entirely
+        document.addEventListener('click', _hideRosterTooltip, true);
+        _container.addEventListener('scroll', _hideRosterTooltip, true);
+        _container.addEventListener('mouseleave', _hideRosterTooltip);
 
         // Set up Firestore listeners for proposals involving user's teams
         await _setupProposalListeners();
@@ -224,6 +229,9 @@ const MatchesPanel = (function() {
      */
     async function _renderAll() {
         if (!_container) return;
+
+        // Hide tooltip before re-render (DOM elements are about to be destroyed)
+        _hideRosterTooltip();
 
         const proposals = ProposalService.getProposalsFromCache();
 
@@ -1065,10 +1073,7 @@ const MatchesPanel = (function() {
             const weekNumber = parseInt(weekId.split('-')[1]);
             WeekNavigation.setWeekNumber(weekNumber);
 
-            // 2. Switch to calendar tab
-            BottomPanelController.switchTab('calendar');
-
-            // 3. Select the opponent team in the browser
+            // 2. Select the opponent team in the browser
             if (typeof TeamBrowserState !== 'undefined') {
                 TeamBrowserState.clearSelection();
                 TeamBrowserState.selectTeam(opponentTeamId);
@@ -1191,7 +1196,7 @@ const MatchesPanel = (function() {
                     const discordUserId = userDoc.data().discordUserId;
                     if (discordUserId) {
                         setTimeout(() => {
-                            window.open(`discord://-/users/${discordUserId}`, '_blank');
+                            window.open(`https://discord.com/users/${discordUserId}`, '_blank');
                         }, 100);
                         return;
                     }
@@ -1241,30 +1246,31 @@ const MatchesPanel = (function() {
     // ─── Roster Tooltip ────────────────────────────────────────────────
 
     function _handleMatchRowEnter(e) {
-        // Trigger on scheduled match rows OR slot count badges in proposal cards
-        const row = e.target.closest('.upcoming-match-row');
-        const slotCount = e.target.closest('.slot-col-count');
-        const target = row || (slotCount ? slotCount.closest('.slot-row') : null);
-        if (!target) return;
-        if (_rosterTooltipHideTimeout) {
-            clearTimeout(_rosterTooltipHideTimeout);
-            _rosterTooltipHideTimeout = null;
-        }
-        _showRosterTooltip(target, slotCount || row);
+        // Trigger on scheduled match rows OR any part of a slot row in expanded proposals
+        const row = e.target.closest('.upcoming-match-row') || e.target.closest('.slot-row');
+        if (!row) return;
+
+        // Position tooltip at the count badge if present, otherwise at the row
+        const slotCount = row.querySelector('.slot-col-count');
+        _rosterTooltipAnchor = row;
+        _showRosterTooltip(row, slotCount || row);
     }
 
     function _handleMatchRowLeave(e) {
-        const row = e.target.closest('.upcoming-match-row');
-        const slotCount = e.target.closest('.slot-col-count');
-        if (!row && !slotCount) return;
+        if (!_rosterTooltipAnchor) return;
 
-        // Don't hide if pointer moved to another element within the same row
-        const sourceRow = row || (slotCount ? slotCount.closest('.slot-row') : null);
-        if (sourceRow && e.relatedTarget && sourceRow.contains(e.relatedTarget)) return;
+        const row = e.target.closest('.upcoming-match-row') || e.target.closest('.slot-row');
+        if (!row || row !== _rosterTooltipAnchor) return;
 
-        _rosterTooltipHideTimeout = setTimeout(() => {
-            if (_rosterTooltip) _rosterTooltip.style.display = 'none';
-        }, 150);
+        // Don't hide if pointer moved to a child within the row
+        if (e.relatedTarget && _rosterTooltipAnchor.contains(e.relatedTarget)) return;
+
+        _hideRosterTooltip();
+    }
+
+    function _hideRosterTooltip() {
+        if (_rosterTooltip) _rosterTooltip.style.display = 'none';
+        _rosterTooltipAnchor = null;
     }
 
     async function _showRosterTooltip(row, positionEl) {
@@ -1353,44 +1359,32 @@ const MatchesPanel = (function() {
             </div>
         `;
 
-        // Create or reuse tooltip element
+        // Create or reuse tooltip element (peek-only — no hover interaction needed)
         if (!_rosterTooltip) {
             _rosterTooltip = document.createElement('div');
             _rosterTooltip.className = 'match-tooltip';
+            _rosterTooltip.style.pointerEvents = 'none'; // Pass-through — don't intercept clicks/hovers
             document.body.appendChild(_rosterTooltip);
-
-            // Keep tooltip visible when hovering over it (so links are clickable)
-            _rosterTooltip.addEventListener('mouseenter', () => {
-                if (_rosterTooltipHideTimeout) {
-                    clearTimeout(_rosterTooltipHideTimeout);
-                    _rosterTooltipHideTimeout = null;
-                }
-            });
-            _rosterTooltip.addEventListener('mouseleave', () => {
-                _rosterTooltipHideTimeout = setTimeout(() => {
-                    if (_rosterTooltip) _rosterTooltip.style.display = 'none';
-                }, 150);
-            });
         }
 
         _rosterTooltip.innerHTML = html;
 
-        // Position tooltip near the anchor element (count badge or match row)
+        // Position tooltip to the RIGHT of the anchor element (so it doesn't cover the slot list)
         const rowRect = anchorEl.getBoundingClientRect();
         _rosterTooltip.style.visibility = 'hidden';
         _rosterTooltip.style.display = 'block';
         const ttRect = _rosterTooltip.getBoundingClientRect();
 
-        let left = rowRect.left;
-        let top = rowRect.bottom + 4;
+        let left = rowRect.right + 8;
+        let top = rowRect.top;
 
-        // If tooltip would go off bottom, show above
-        if (top + ttRect.height > window.innerHeight - 8) {
-            top = rowRect.top - ttRect.height - 4;
-        }
-        // If tooltip would go off right edge, shift left
+        // If tooltip would go off right edge, show to the left instead
         if (left + ttRect.width > window.innerWidth - 8) {
-            left = window.innerWidth - ttRect.width - 8;
+            left = rowRect.left - ttRect.width - 8;
+        }
+        // If tooltip would go off bottom, shift up
+        if (top + ttRect.height > window.innerHeight - 8) {
+            top = window.innerHeight - ttRect.height - 8;
         }
         if (left < 8) left = 8;
         if (top < 8) top = 8;
@@ -1418,16 +1412,16 @@ const MatchesPanel = (function() {
             _container.removeEventListener('click', _handleClick);
             _container.removeEventListener('pointerenter', _handleMatchRowEnter, true);
             _container.removeEventListener('pointerleave', _handleMatchRowLeave, true);
+            _container.removeEventListener('scroll', _hideRosterTooltip, true);
+            _container.removeEventListener('mouseleave', _hideRosterTooltip);
         }
+        document.removeEventListener('click', _hideRosterTooltip, true);
 
         // Remove roster tooltip
+        _rosterTooltipAnchor = null;
         if (_rosterTooltip) {
             _rosterTooltip.remove();
             _rosterTooltip = null;
-        }
-        if (_rosterTooltipHideTimeout) {
-            clearTimeout(_rosterTooltipHideTimeout);
-            _rosterTooltipHideTimeout = null;
         }
 
         _container = null;

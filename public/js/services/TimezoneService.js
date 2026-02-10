@@ -540,6 +540,7 @@ const TimezoneService = (function() {
         setUserTimezone,
         getOffsetMinutes,
         getOffsetHours,
+        getBaseOffsetMinutes,
         localToUtcSlot,
         utcToLocalSlot,
         getDisplayTimeSlots,

@@ -650,9 +650,12 @@ const UserProfile = (function() {
 
     /**
      * Check for new feedback items (admin only).
-     * Calls getFeedbackCount Cloud Function - fails silently for non-admins.
+     * Calls getFeedbackCount Cloud Function - server checks admin permission.
+     * Non-admins get permission-denied (silenced). Other errors shown as "?" badge.
      */
     async function _checkFeedbackCount() {
+        if (!_currentUser?.uid) return;
+
         try {
             const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
             const functions = window.firebase.functions;
@@ -660,17 +663,31 @@ const UserProfile = (function() {
             const result = await getFeedbackCount({});
 
             const count = result.data.count;
-            const badge = document.getElementById('feedback-badge');
-            if (badge) {
-                badge.textContent = count > 99 ? '99+' : count;
-                badge.classList.remove('hidden');
-                if (count === 0) {
-                    badge.classList.remove('bg-red-500');
-                    badge.classList.add('bg-muted-foreground/40');
-                }
-            }
+            _updateFeedbackBadge(count);
         } catch (e) {
-            // Expected for non-admin users - fail silently
+            // permission-denied = not admin, expected for most users
+            if (e.code === 'functions/permission-denied') return;
+            console.warn('⚠️ Feedback badge failed:', e.code || e.message, '| UID:', _currentUser?.uid);
+            _updateFeedbackBadge('?');
+        }
+    }
+
+    function _updateFeedbackBadge(count) {
+        const badge = document.getElementById('feedback-badge');
+        if (!badge) return;
+
+        badge.textContent = typeof count === 'number' && count > 99 ? '99+' : count;
+        badge.classList.remove('hidden');
+
+        if (count === 0) {
+            badge.classList.remove('bg-red-500');
+            badge.style.backgroundColor = 'rgba(156, 163, 175, 0.4)';
+        } else if (count === '?') {
+            badge.classList.remove('bg-red-500');
+            badge.style.backgroundColor = '#ca8a04';
+        } else {
+            badge.style.backgroundColor = '';
+            badge.classList.add('bg-red-500');
         }
     }
 

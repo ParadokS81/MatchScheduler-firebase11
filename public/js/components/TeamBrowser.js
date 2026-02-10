@@ -145,7 +145,7 @@ const TeamBrowser = (function() {
                                autocorrect="off"
                                autocapitalize="off"
                                spellcheck="false"
-                               class="w-full px-3 py-1.5 text-sm bg-muted border border-border rounded-md
+                               class="w-full pl-3 pr-8 py-1.5 text-sm bg-muted border border-border rounded-md
                                       focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary
                                       placeholder:text-muted-foreground"
                         />
@@ -212,7 +212,7 @@ const TeamBrowser = (function() {
                                autocorrect="off"
                                autocapitalize="off"
                                spellcheck="false"
-                               class="w-full px-3 py-1.5 text-sm bg-muted border border-border rounded-md
+                               class="w-full pl-3 pr-8 py-1.5 text-sm bg-muted border border-border rounded-md
                                       focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary
                                       placeholder:text-muted-foreground"
                         />
@@ -287,10 +287,15 @@ const TeamBrowser = (function() {
             TeamBrowserState.selectTeams(visibleTeamIds);
         });
 
-        // Clear — deselects everything (turns off comparison)
+        // Clear — deselects everything + clears search (turns off comparison)
         const clearBtn = document.getElementById('clear-selection-btn');
         clearBtn?.addEventListener('click', () => {
             TeamBrowserState.clearSelection();
+            const searchInput = document.getElementById('team-search-input');
+            if (searchInput && searchInput.value) {
+                searchInput.value = '';
+                TeamBrowserState.setSearchQuery('');
+            }
         });
     }
 

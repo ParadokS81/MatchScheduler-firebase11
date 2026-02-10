@@ -470,6 +470,7 @@ const ProfileModal = (function() {
         if (_userProfile?.avatarSource) return _userProfile.avatarSource;
         if (_userProfile?.customAvatarUrl) return 'custom';
         if (_userProfile?.discordAvatarHash) return 'discord';
+        if (_userProfile?.authProvider === 'discord' && _userProfile?.photoURL) return 'discord';
         if (_userProfile?.authProvider === 'google' && _currentUser?.photoURL) return 'google';
         return 'initials';
     }
@@ -485,7 +486,8 @@ const ProfileModal = (function() {
                     const ext = hash.startsWith('a_') ? 'gif' : 'png';
                     return `https://cdn.discordapp.com/avatars/${_userProfile.discordUserId}/${hash}.${ext}?size=128`;
                 }
-                return null;
+                // Fall back to stored photoURL (e.g., Discord user without avatarHash)
+                return _userProfile?.photoURL || null;
             case 'google':
                 return _currentUser?.photoURL;
             case 'default':

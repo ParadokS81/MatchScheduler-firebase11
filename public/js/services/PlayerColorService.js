@@ -80,12 +80,19 @@ const PlayerColorService = (function() {
     }
 
     /**
-     * Get color for a player, with default fallback for display modes that need a color
+     * Get color for a player, with deterministic random fallback from preset palette
      * @param {string} targetUserId - The player to get color for
-     * @returns {string} Hex color (assigned or default gray)
+     * @returns {string} Hex color (assigned or random-from-palette)
      */
     function getPlayerColorOrDefault(targetUserId) {
-        return _playerColors[targetUserId] || DEFAULT_COLOR;
+        if (_playerColors[targetUserId]) return _playerColors[targetUserId];
+        // Deterministic "random" color based on userId hash — same user always gets same color
+        let hash = 0;
+        for (let i = 0; i < targetUserId.length; i++) {
+            hash = ((hash << 5) - hash) + targetUserId.charCodeAt(i);
+            hash |= 0;
+        }
+        return PRESET_COLORS[Math.abs(hash) % PRESET_COLORS.length];
     }
 
     /**

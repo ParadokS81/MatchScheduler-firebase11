@@ -7,7 +7,7 @@ const db = getFirestore();
 // Add production UIDs here alongside dev UIDs
 const ADMIN_UIDS = [
     'dev-user-001',                    // Dev: ParadokS
-    'Mu8Wvso3wmQAy6LSKS2UoR65Etn1',   // Prod: ParadokS
+    'qw-sr-paradoks',                   // Prod: ParadokS (Discord auth)
 ];
 
 /**
@@ -98,6 +98,7 @@ exports.getFeedbackCount = functions
                          context.auth.token.admin === true;
 
         if (!isAdmin) {
+            console.warn('getFeedbackCount denied for UID:', context.auth.uid);
             throw new functions.https.HttpsError('permission-denied', 'Not authorized');
         }
 

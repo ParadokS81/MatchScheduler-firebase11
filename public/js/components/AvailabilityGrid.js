@@ -81,6 +81,9 @@ const AvailabilityGrid = (function() {
         // Selection change callback
         let _onSelectionChangeCallback = null;
 
+        // Past-slot tracking: set of local cell IDs that are in the past
+        let _pastCells = new Set();
+
         // Team view state (Slice 2.5)
         let _playerRoster = null;
         let _currentUserId = null;
@@ -114,6 +117,55 @@ const AvailabilityGrid = (function() {
                     }
                 }
             }
+        }
+
+        /**
+         * Build the set of past cell IDs for the current week.
+         * A cell is past if its real-world UTC datetime is before now.
+         * Grid cell times are in CET base format — convert to UTC for comparison.
+         */
+        function _buildPastCells() {
+            _pastCells.clear();
+
+            const monday = DateUtils.getMondayOfWeek(_weekId);
+            const now = Date.now();
+
+            // Get base timezone offset (CET) for this week's Monday
+            const baseOffsetMin = typeof TimezoneService !== 'undefined'
+                ? TimezoneService.getBaseOffsetMinutes(monday)
+                : 60; // Default CET = UTC+1
+
+            const timeSlots = _getTimeSlots();
+
+            for (let d = 0; d < DAYS.length; d++) {
+                for (const time of timeSlots) {
+                    // Cell time is in CET base — convert to UTC
+                    const hour = parseInt(time.slice(0, 2));
+                    const min = parseInt(time.slice(2));
+                    const cetTotalMin = hour * 60 + min;
+                    const utcTotalMin = cetTotalMin - baseOffsetMin;
+
+                    // Build UTC date for this cell
+                    const cellDate = new Date(monday.getTime());
+                    cellDate.setUTCDate(monday.getUTCDate() + d);
+                    cellDate.setUTCHours(0, 0, 0, 0);
+                    // Add UTC minutes (handles day wrap)
+                    cellDate.setUTCMinutes(utcTotalMin);
+
+                    if (cellDate.getTime() < now) {
+                        _pastCells.add(`${DAYS[d]}_${time}`);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Check if a cell is in the past.
+         * @param {string} cellId - Local cell ID (e.g., 'mon_1900')
+         * @returns {boolean}
+         */
+        function _isPastCell(cellId) {
+            return _pastCells.has(cellId);
         }
 
         /**
@@ -183,6 +235,8 @@ const AvailabilityGrid = (function() {
          * Handle cell click with notification
          */
         function _handleCellClickWithNotify(cellId) {
+            if (_isPastCell(cellId)) return;
+
             const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
             if (!cell) return;
 
@@ -229,7 +283,10 @@ const AvailabilityGrid = (function() {
          * Apply rectangular selection with toggle behavior
          */
         function _applyRectangularSelection(startId, endId) {
-            const cellsInRect = _getCellsInRectangle(startId, endId);
+            const cellsInRect = _getCellsInRectangle(startId, endId)
+                .filter(id => !_isPastCell(id));
+
+            if (cellsInRect.length === 0) return;
 
             // Toggle behavior: if all are selected, deselect all; else select all
             const allSelected = cellsInRect.every(id => _selectedCells.has(id));
@@ -258,6 +315,7 @@ const AvailabilityGrid = (function() {
 
             const cellsInRect = _getCellsInRectangle(startId, endId);
             cellsInRect.forEach(cellId => {
+                if (_isPastCell(cellId)) return;
                 const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
                 if (cell) cell.classList.add('drag-preview');
             });
@@ -288,6 +346,9 @@ const AvailabilityGrid = (function() {
 
             const cell = e.target.closest('.grid-cell');
             if (!cell || !cell.dataset.cellId) return;
+
+            // Don't start drag on past cells
+            if (_isPastCell(cell.dataset.cellId)) return;
 
             _isDragging = true;
             _dragStartCell = cell.dataset.cellId;
@@ -386,7 +447,10 @@ const AvailabilityGrid = (function() {
          * Handle day header click (toggle entire column)
          */
         function _handleDayHeaderClick(day) {
-            const columnCells = _getTimeSlots().map(time => `${day}_${time}`);
+            const columnCells = _getTimeSlots().map(time => `${day}_${time}`)
+                .filter(id => !_isPastCell(id));
+
+            if (columnCells.length === 0) return;
 
             // Toggle: if all selected, deselect; else select all
             const allSelected = columnCells.every(id => _selectedCells.has(id));
@@ -411,7 +475,10 @@ const AvailabilityGrid = (function() {
          * Handle time header click (toggle entire row)
          */
         function _handleTimeHeaderClick(time) {
-            const rowCells = DAYS.map(day => `${day}_${time}`);
+            const rowCells = DAYS.map(day => `${day}_${time}`)
+                .filter(id => !_isPastCell(id));
+
+            if (rowCells.length === 0) return;
 
             // Toggle: if all selected, deselect; else select all
             const allSelected = rowCells.every(id => _selectedCells.has(id));
@@ -439,6 +506,7 @@ const AvailabilityGrid = (function() {
             DAYS.forEach(day => {
                 _getTimeSlots().forEach(time => {
                     const cellId = `${day}_${time}`;
+                    if (_isPastCell(cellId)) return;
                     _selectedCells.add(cellId);
                     const cell = _container?.querySelector(`[data-cell-id="${cellId}"]`);
                     if (cell) cell.classList.add('selected');
@@ -458,8 +526,9 @@ const AvailabilityGrid = (function() {
         function _render() {
             if (!_container) return;
 
-            // Build UTC conversion maps for this week
+            // Build UTC conversion maps and past-cell tracking for this week
             _buildUtcMaps();
+            _buildPastCells();
 
             // Get day labels with dates for this week
             const dayLabelsWithDates = getDayLabelsWithDates(_weekId);
@@ -479,9 +548,11 @@ const AvailabilityGrid = (function() {
                     <!-- Day Headers Row -->
                     <div class="grid-header">
                         <div class="time-label-spacer"></div>
-                        ${DAYS.map((day, idx) => `
-                            <div class="day-header clickable" data-day="${day}">${dayLabelsWithDates[idx]}</div>
-                        `).join('')}
+                        ${DAYS.map((day, idx) => {
+                            const allPast = timeSlots.every(time => _isPastCell(`${day}_${time}`));
+                            const pastDayClass = allPast ? ' past-day' : '';
+                            return `<div class="day-header clickable${pastDayClass}" data-day="${day}">${dayLabelsWithDates[idx]}</div>`;
+                        }).join('')}
                     </div>
 
                     <!-- Time Rows -->
@@ -497,7 +568,8 @@ const AvailabilityGrid = (function() {
                                 ${DAYS.map(day => {
                                     const cellId = `${day}_${time}`;
                                     const utcSlotId = _localToUtc(cellId);
-                                    return `<div class="grid-cell" data-cell-id="${cellId}" data-utc-slot="${utcSlotId}"></div>`;
+                                    const pastClass = _isPastCell(cellId) ? ' past-slot' : '';
+                                    return `<div class="grid-cell${pastClass}" data-cell-id="${cellId}" data-utc-slot="${utcSlotId}"></div>`;
                                 }).join('')}
                             </div>
                         `;}).join('')}
@@ -765,6 +837,7 @@ const AvailabilityGrid = (function() {
 
             // Reset state
             _selectedCells.clear();
+            _pastCells.clear();
             _isDragging = false;
             _dragStartCell = null;
             _lastClickedCell = null;
@@ -865,6 +938,7 @@ const AvailabilityGrid = (function() {
         function selectCell(utcSlotId) {
             const localCellId = _utcToLocal(utcSlotId);
             if (!localCellId) return; // Slot outside display range
+            if (_isPastCell(localCellId)) return;
             const cell = _container?.querySelector(`[data-cell-id="${localCellId}"]`);
             if (cell && !_selectedCells.has(localCellId)) {
                 _selectedCells.add(localCellId);
@@ -1467,14 +1541,14 @@ const AvailabilityGrid = (function() {
             document.body.appendChild(_matchTooltip);
 
             // Keep tooltip visible when hovering over it
-            _matchTooltip.addEventListener('mouseenter', () => {
+            _matchTooltip.addEventListener('pointerenter', () => {
                 if (_matchTooltipHideTimeout) {
                     clearTimeout(_matchTooltipHideTimeout);
                     _matchTooltipHideTimeout = null;
                 }
             });
 
-            _matchTooltip.addEventListener('mouseleave', () => {
+            _matchTooltip.addEventListener('pointerleave', () => {
                 _hideMatchTooltip();
             });
         }
@@ -1636,7 +1710,7 @@ const AvailabilityGrid = (function() {
                     _matchTooltip.style.display = 'none';
                 }
                 _matchTooltipCell = null;
-            }, 150);
+            }, 300);
         }
 
         /**
@@ -1718,6 +1792,10 @@ const AvailabilityGrid = (function() {
                 const relatedTarget = e.relatedTarget;
                 if (relatedTarget && cell.contains(relatedTarget)) {
                     // Still inside the cell, don't hide
+                    return;
+                }
+                // If mouse is heading to the tooltip itself, don't hide
+                if (_matchTooltip && relatedTarget && (_matchTooltip === relatedTarget || _matchTooltip.contains(relatedTarget))) {
                     return;
                 }
                 _hideMatchTooltip();
