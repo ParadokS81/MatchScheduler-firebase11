@@ -399,7 +399,14 @@ body {
   border-top: 1px solid var(--border);
 }
 
-/* Slice 13.0f: Spacing between roster and matches sections */
+/* Sidebar proposal previews */
+#sidebar-proposals-container:not(:empty) {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Slice 13.0f: Spacing between roster/proposals and matches sections */
 #your-matches-container {
   margin-top: 1rem;
   padding-top: 0.75rem;
@@ -1090,6 +1097,17 @@ body {
   background-color: oklch(from var(--primary) l c h / 0.3);
   outline: 2px dashed var(--primary);
   outline-offset: -2px;
+}
+
+/* Past timeslots — visually hidden, non-interactive */
+.grid-cell.past-slot {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Past day headers — dimmed when all cells in column are past */
+.day-header.past-day {
+  opacity: 0.3;
 }
 
 /* Prevent text selection during drag */
@@ -1837,6 +1855,16 @@ body {
   font-size: 0.75rem;
 }
 
+/* Invisible bridge so mouse can travel from cell to tooltip across the gap */
+.match-tooltip::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -1rem;
+  width: 1rem;
+  height: 100%;
+}
+
 /* Side-by-side grid layout for user team vs opponents */
 .match-tooltip-grid {
   display: flex;
@@ -1853,7 +1881,9 @@ body {
 }
 
 .match-tooltip-grid .opponents-column {
-  /* Opponents column - can have multiple teams stacked */
+  /* Opponents column - scrollable when >3 teams */
+  max-height: 30rem;
+  overflow-y: auto;
 }
 
 /* Footer with H2H link */
@@ -2374,6 +2404,22 @@ body {
   animation: shake 0.3s ease-in-out;
 }
 
+/* Roster collapsible toggle */
+.roster-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.roster-chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  line-height: 1;
+}
+
+.roster-chevron.rotate-90 {
+  transform: rotate(90deg);
+}
+
 /* Roster member hover for color picker (only in colored modes) */
 .roster-member {
   transition: background-color 150ms ease;
@@ -2417,6 +2463,33 @@ body {
 .team-logo-switch:hover {
   filter: grayscale(0%);
   opacity: 1;
+}
+
+/* Team identity hover popup - reveals roster + settings on hover */
+.team-hover-popup {
+  position: absolute;
+  top: 100%;
+  left: -0.5rem;
+  right: -0.5rem;
+  z-index: 20;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.team-identity-hover {
+  padding-bottom: 0.25rem;
+}
+
+.team-identity-hover:hover .team-hover-popup,
+.team-identity-hover.pinned .team-hover-popup {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* ========================================
@@ -2544,6 +2617,7 @@ body {
 .teams-detail-panel {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -3636,6 +3710,7 @@ body {
     flex-direction: column;
     min-width: 0;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .mh-preview-empty {
@@ -4859,6 +4934,17 @@ body {
   /* Left drawer: make gear icon always visible on mobile (no hover) */
   .mobile-drawer-content .team-settings-icon {
     opacity: 1;
+  }
+
+  /* Left drawer: hover popup always visible on mobile (no hover available) */
+  .mobile-drawer-content .team-hover-popup {
+    position: static;
+    opacity: 1;
+    pointer-events: auto;
+    box-shadow: none;
+    border: none;
+    background: transparent;
+    padding: 0.5rem 0 0;
   }
 
   /* Left drawer: roster fills full width */

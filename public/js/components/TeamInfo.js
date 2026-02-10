@@ -17,6 +17,7 @@ const TeamInfo = (function() {
     let _teamListener = null; // Direct Firebase listener for selected team
     let _userProfileListener = null;
     let _initialized = false;
+    let _activeColorPickerUserId = null; // Track inline color picker state across re-renders
 
     // Initialize component - now takes two container IDs
     function init(identityContainerId, rosterContainerId) {
@@ -46,6 +47,21 @@ const TeamInfo = (function() {
         // Slice 5.0.1: Re-render roster when display mode or player colors change
         window.addEventListener('display-mode-changed', _render);
         window.addEventListener('player-colors-changed', _render);
+
+        // Event delegation for inline color picker in hover popup
+        _identityContainer.addEventListener('click', (e) => {
+            const member = e.target.closest('.roster-member');
+            if (!member) return;
+            const displayMode = typeof PlayerDisplayService !== 'undefined'
+                ? PlayerDisplayService.getDisplayMode()
+                : 'initials';
+            if (displayMode !== 'coloredInitials' && displayMode !== 'coloredDots') return;
+            e.stopPropagation();
+            const userId = member.dataset.userId;
+            if (userId) {
+                _showInlineColorPicker(userId, member);
+            }
+        });
 
         console.log('🏆 TeamInfo component initialized (split containers)');
     }
@@ -169,6 +185,19 @@ const TeamInfo = (function() {
 
         } catch (error) {
             console.error('❌ Error loading user teams:', error);
+
+            // Retry once after 1s — covers race condition where TeamService
+            // cache isn't ready yet on F5 refresh
+            if (!_loadUserTeams._retried) {
+                _loadUserTeams._retried = true;
+                console.log('🔄 Retrying team load in 1s...');
+                setTimeout(() => {
+                    _loadUserTeams._retried = false;
+                    _loadUserTeams();
+                }, 1000);
+                return;
+            }
+            _loadUserTeams._retried = false;
             _userTeams = [];
             _selectedTeam = null;
             _render();
@@ -315,17 +344,24 @@ const TeamInfo = (function() {
         if (!_identityContainer || !_rosterContainer) return;
 
         if (!_currentUser) {
-            // Guest mode
             _renderGuestMode();
         } else if (_userTeams.length === 0) {
-            // No teams
             _renderNoTeamsMode();
         } else {
-            // Has teams
             _renderTeamsMode();
         }
 
         _attachEventListeners();
+
+        // Restore inline color picker if it was open (survives re-renders from color changes)
+        if (_activeColorPickerUserId) {
+            const memberEl = _identityContainer.querySelector(`[data-user-id="${_activeColorPickerUserId}"]`);
+            if (memberEl) {
+                _showInlineColorPicker(_activeColorPickerUserId, memberEl);
+            } else {
+                _activeColorPickerUserId = null;
+            }
+        }
     }
 
     // Render guest mode
@@ -389,7 +425,7 @@ const TeamInfo = (function() {
         _rosterContainer.innerHTML = '';
     }
 
-    // Render teams mode - Slice 13.0f: Split into identity + roster
+    // Render teams mode - clean identity with hover popup for roster/settings
     function _renderTeamsMode() {
         if (!_selectedTeam) return;
 
@@ -398,7 +434,7 @@ const TeamInfo = (function() {
             ? PlayerDisplayService.getDisplayMode()
             : 'initials';
 
-        // === Identity Section (Logo + Name + Tag) ===
+        // === Active team logo ===
         const activeLogoUrl = _selectedTeam.activeLogo?.urls?.medium;
         const activeLogoContent = activeLogoUrl
             ? `<img src="${activeLogoUrl}" alt="${_selectedTeam.teamName} logo" class="w-full h-full object-cover">`
@@ -421,38 +457,56 @@ const TeamInfo = (function() {
             `;
         }
 
-        // Determine logo size based on whether there's a second team
         const logoSize = inactiveTeam ? 'w-28 h-28' : 'w-36 h-36';
 
+        // === Roster HTML for hover popup ===
+        const rosterHTML = _buildRosterHTML(displayMode);
+
         _identityContainer.innerHTML = `
-            <div class="flex flex-col items-center text-center">
+            <div class="team-identity-hover relative flex flex-col items-center text-center">
                 <!-- Logo row -->
-                <div class="flex items-end justify-center gap-2 mb-3">
+                <div class="flex items-end justify-center gap-2 mb-2">
                     <div class="team-logo-clickable overflow-hidden ${logoSize} flex items-center justify-center cursor-pointer transition-all"
                          data-action="team-manage" title="Manage team">
                         ${activeLogoContent}
                     </div>
                     ${inactiveLogoHTML}
                 </div>
-                <!-- Team name + tag (larger, prominent) -->
-                <div class="flex items-center justify-center gap-2 mb-3">
-                    <span class="text-lg font-semibold text-primary">${_selectedTeam.teamName}</span>
-                    <span class="text-muted-foreground">${_selectedTeam.teamTag || ''}</span>
-                    <span class="team-settings-icon opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
-                          data-action="open-settings" title="Team Settings">
-                        <svg class="w-4 h-4 text-muted-foreground hover:text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                        </svg>
-                    </span>
+                <!-- Team name only - clean -->
+                <span class="text-xl font-semibold text-primary">${_selectedTeam.teamName}</span>
+
+                <!-- Hover popup: tag + settings + roster + inline color picker -->
+                <div class="team-hover-popup">
+                    <div class="flex items-center justify-center gap-3 mb-2">
+                        <span class="text-sm text-muted-foreground">${_selectedTeam.teamTag || ''}</span>
+                        <span class="text-xs text-muted-foreground">${_selectedTeam.playerRoster.length}p</span>
+                        <span class="team-settings-icon opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
+                              data-action="open-settings" title="Team Settings">
+                            <svg class="w-4 h-4 text-muted-foreground hover:text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </span>
+                    </div>
+                    <div class="space-y-0.5">
+                        ${rosterHTML}
+                    </div>
+                    <div class="inline-color-picker"></div>
                 </div>
             </div>
         `;
 
-        // === Roster Section (centered) ===
-        const rosterHTML = _selectedTeam.playerRoster.map(player => {
+        // Roster container emptied - roster lives in hover popup now
+        _rosterContainer.innerHTML = '';
+    }
+
+    // Build roster HTML (used by hover popup)
+    function _buildRosterHTML(displayMode) {
+        if (!_selectedTeam?.playerRoster) return '';
+
+        return _selectedTeam.playerRoster.map(player => {
             const colorOrDefault = typeof PlayerColorService !== 'undefined'
                 ? PlayerColorService.getPlayerColorOrDefault(player.userId)
                 : '#6B7280';
@@ -487,12 +541,119 @@ const TeamInfo = (function() {
                 </div>
             `;
         }).join('');
+    }
 
-        _rosterContainer.innerHTML = `
-            <div class="space-y-0.5 max-w-fit mx-auto">
-                ${rosterHTML}
+    // ─── Inline Color Picker (embedded in hover popup) ─────────────
+    function _showInlineColorPicker(userId, memberEl) {
+        const hoverArea = _identityContainer.querySelector('.team-identity-hover');
+        const pickerContainer = _identityContainer.querySelector('.inline-color-picker');
+        if (!hoverArea || !pickerContainer) return;
+
+        _activeColorPickerUserId = userId;
+
+        // Pin popup open (stays visible without hover)
+        hoverArea.classList.add('pinned');
+
+        // Highlight active member
+        _identityContainer.querySelectorAll('.roster-member').forEach(m => {
+            m.classList.toggle('bg-muted', m.dataset.userId === userId);
+        });
+
+        // Get color data
+        const currentColor = typeof PlayerColorService !== 'undefined'
+            ? PlayerColorService.getPlayerColor(userId) : null;
+        const presetColors = typeof PlayerColorService !== 'undefined'
+            ? PlayerColorService.getPresetColors()
+            : ['#FF6B6B', '#FFD93D', '#6BCB77', '#45B7D1', '#A78BFA', '#F472B6'];
+
+        pickerContainer.innerHTML = `
+            <div class="pt-2 mt-2 border-t border-border">
+                <div class="grid grid-cols-6 gap-2 mb-2">
+                    ${presetColors.map(color => `
+                        <button class="color-swatch w-6 h-6 rounded-full border-2 transition-all hover:scale-110
+                                       ${color === currentColor ? 'border-primary ring-2 ring-primary/50' : 'border-transparent hover:border-border'}"
+                                style="background-color: ${color}"
+                                data-color="${color}" title="${color}">
+                        </button>
+                    `).join('')}
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text"
+                           class="color-hex-input flex-1 px-2 py-1 text-xs bg-input border border-border rounded font-mono uppercase"
+                           placeholder="#RRGGBB" value="${currentColor || ''}" maxlength="7">
+                    <button class="clear-color-btn text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted transition-colors">
+                        Clear
+                    </button>
+                </div>
             </div>
         `;
+
+        // Color swatch clicks
+        pickerContainer.querySelectorAll('.color-swatch').forEach(swatch => {
+            swatch.addEventListener('click', (e) => {
+                e.stopPropagation();
+                _applyInlineColor(userId, swatch.dataset.color);
+            });
+        });
+
+        // Clear button
+        pickerContainer.querySelector('.clear-color-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _applyInlineColor(userId, null);
+        });
+
+        // Hex input enter
+        const hexInput = pickerContainer.querySelector('.color-hex-input');
+        hexInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const value = hexInput.value.trim();
+                if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
+                    _applyInlineColor(userId, value);
+                } else if (value === '') {
+                    _applyInlineColor(userId, null);
+                }
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                _hideInlineColorPicker();
+            }
+        });
+
+        // Click outside to dismiss (deferred to avoid immediate trigger)
+        document.removeEventListener('click', _handlePopupOutsideClick);
+        setTimeout(() => {
+            document.addEventListener('click', _handlePopupOutsideClick);
+        }, 0);
+    }
+
+    function _applyInlineColor(userId, color) {
+        if (typeof PlayerColorService !== 'undefined') {
+            PlayerColorService.setPlayerColor(userId, color);
+            // Re-render will be triggered by player-colors-changed event
+            // _activeColorPickerUserId persists so the picker reopens after render
+        }
+    }
+
+    function _handlePopupOutsideClick(e) {
+        const hoverArea = _identityContainer?.querySelector('.team-identity-hover');
+        if (hoverArea && !hoverArea.contains(e.target)) {
+            _hideInlineColorPicker();
+        }
+    }
+
+    function _hideInlineColorPicker() {
+        _activeColorPickerUserId = null;
+        document.removeEventListener('click', _handlePopupOutsideClick);
+
+        const hoverArea = _identityContainer?.querySelector('.team-identity-hover');
+        if (hoverArea) hoverArea.classList.remove('pinned');
+
+        const pickerContainer = _identityContainer?.querySelector('.inline-color-picker');
+        if (pickerContainer) pickerContainer.innerHTML = '';
+
+        _identityContainer?.querySelectorAll('.roster-member').forEach(m => {
+            m.classList.remove('bg-muted');
+        });
     }
 
     // Attach event listeners
@@ -563,22 +724,7 @@ const TeamInfo = (function() {
             });
         });
 
-        // Slice 5.0.1: Roster member click for color picker (only in colored modes)
-        const displayMode = typeof PlayerDisplayService !== 'undefined'
-            ? PlayerDisplayService.getDisplayMode()
-            : 'initials';
-
-        if (displayMode === 'coloredInitials' || displayMode === 'coloredDots') {
-            const rosterMembers = document.querySelectorAll('.roster-member');
-            rosterMembers.forEach(member => {
-                member.addEventListener('click', (e) => {
-                    const userId = member.dataset.userId;
-                    if (userId && typeof ColorPickerPopover !== 'undefined') {
-                        ColorPickerPopover.show(member, userId);
-                    }
-                });
-            });
-        }
+        // Slice 5.0.1: Color picker click is handled via event delegation on _identityContainer (set up in init)
     }
 
     // Handle join/create team
@@ -695,6 +841,21 @@ const TeamInfo = (function() {
     // Slice 13.0f: Get the currently selected team (for other components to access)
     function getSelectedTeam() {
         return _selectedTeam;
+    }
+
+    // ─── Roster Collapse Persistence ────────────────────────────────
+    const ROSTER_COLLAPSED_KEY = 'matchscheduler-roster-collapsed';
+
+    function _getRosterCollapsed() {
+        try {
+            return localStorage.getItem(ROSTER_COLLAPSED_KEY) !== 'false';
+        } catch { return true; }
+    }
+
+    function _setRosterCollapsed(collapsed) {
+        try {
+            localStorage.setItem(ROSTER_COLLAPSED_KEY, collapsed ? 'true' : 'false');
+        } catch { /* localStorage unavailable */ }
     }
 
     // Public API
