@@ -138,7 +138,7 @@ const GridActionButtons = (function() {
                 }
             }
 
-            if (_clearSelections) _clearSelections();
+            // Don't clear selections — leader may want to add same slots for more members
 
         } catch (error) {
             console.error('Add other failed:', error);
@@ -172,7 +172,7 @@ const GridActionButtons = (function() {
                 }
             }
 
-            if (_clearSelections) _clearSelections();
+            // Don't clear selections — leader may want to remove same slots for more members
 
         } catch (error) {
             console.error('Remove other failed:', error);
@@ -274,7 +274,7 @@ const GridActionButtons = (function() {
                 }
             }
 
-            if (_clearSelections) _clearSelections();
+            // Don't clear selections — leader may want to mark same slots for more members
 
         } catch (error) {
             console.error('Mark other unavailable failed:', error);
@@ -308,7 +308,7 @@ const GridActionButtons = (function() {
                 }
             }
 
-            if (_clearSelections) _clearSelections();
+            // Don't clear selections — leader may want to unmark same slots for more members
 
         } catch (error) {
             console.error('Unmark other unavailable failed:', error);
