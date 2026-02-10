@@ -252,8 +252,12 @@ const TimezoneService = (function() {
                 .filter(s => !DISPLAY_TIME_SLOTS.includes(s));
             slots = slots.concat(extras);
         }
-        // Sort chronologically by numeric value
-        return slots.sort((a, b) => parseInt(a) - parseInt(b));
+        // Sort by local display time so grid rows are chronological for the user
+        return slots.sort((a, b) => {
+            const localA = baseToLocalDisplay(a).replace(':', '');
+            const localB = baseToLocalDisplay(b).replace(':', '');
+            return parseInt(localA) - parseInt(localB);
+        });
     }
 
     /**
