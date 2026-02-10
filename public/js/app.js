@@ -279,6 +279,13 @@ const MatchSchedulerApp = (function() {
             UpcomingMatchesPanel.init('your-matches-container', 'upcoming-matches-container');
         }
 
+        // Sidebar proposal previews
+        if (typeof SidebarProposals !== 'undefined') {
+            SidebarProposals.init('sidebar-proposals-container');
+            window.addEventListener('team-joined', () => SidebarProposals.reinit());
+            window.addEventListener('team-left', () => SidebarProposals.reinit());
+        }
+
         // Slice 12.0a: Apply saved timeslot filter on startup
         _updateGridLayout();
 
@@ -367,6 +374,9 @@ const MatchSchedulerApp = (function() {
         // When comparison results update, refresh highlights
         window.addEventListener('comparison-updated', () => {
             console.log('📊 Comparison updated - refreshing highlights');
+            // Ensure grids are in comparison mode (may have been reset by grid rebuild)
+            if (_weekDisplay1) _weekDisplay1.enterComparisonMode();
+            if (_weekDisplay2) _weekDisplay2.enterComparisonMode();
             _updateComparisonHighlights();
         });
 
@@ -471,6 +481,12 @@ const MatchSchedulerApp = (function() {
 
         // Also refresh scheduled match highlights
         _updateScheduledMatchHighlights();
+
+        // Restore comparison mode on the recreated grid if comparison is active
+        if (typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isActive()) {
+            _weekDisplay2.enterComparisonMode();
+            _updateComparisonHighlights();
+        }
     }
 
     /**
@@ -564,6 +580,10 @@ const MatchSchedulerApp = (function() {
                 if (_weekDisplay1 && currentUserId) {
                     _weekDisplay1.getGrid()?.updateAvailabilityDisplay(data, currentUserId);
                     _updateTeamDisplay(_weekDisplay1, data, currentUserId);
+                    // Re-apply comparison highlights (updateTeamDisplay rebuilds cell innerHTML)
+                    if (typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isActive()) {
+                        _weekDisplay1.updateComparisonHighlights();
+                    }
                 }
             });
         }
@@ -586,6 +606,10 @@ const MatchSchedulerApp = (function() {
                 if (_weekDisplay2 && currentUserId) {
                     _weekDisplay2.getGrid()?.updateAvailabilityDisplay(data, currentUserId);
                     _updateTeamDisplay(_weekDisplay2, data, currentUserId);
+                    // Re-apply comparison highlights (updateTeamDisplay rebuilds cell innerHTML)
+                    if (typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isActive()) {
+                        _weekDisplay2.updateComparisonHighlights();
+                    }
                 }
             });
         }
@@ -814,6 +838,10 @@ const MatchSchedulerApp = (function() {
         // Clean up UpcomingMatchesPanel
         if (typeof UpcomingMatchesPanel !== 'undefined') {
             UpcomingMatchesPanel.cleanup();
+        }
+        // Clean up SidebarProposals
+        if (typeof SidebarProposals !== 'undefined') {
+            SidebarProposals.cleanup();
         }
     }
 

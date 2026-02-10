@@ -18,7 +18,7 @@ const Router = (function() {
     let _currentHash = '';      // Track to avoid redundant pushes
 
     // Valid top-level tabs
-    const VALID_TABS = new Set(['calendar', 'teams', 'players', 'matches', 'tournament']);
+    const VALID_TABS = new Set(['matches', 'calendar', 'teams', 'players', 'tournament']);
     const VALID_SUB_TABS = new Set(['details', 'history', 'h2h']);
 
     // ========================================
@@ -126,9 +126,9 @@ const Router = (function() {
         const segments = pathPart.split('/').filter(Boolean);
         const params = queryPart ? Object.fromEntries(new URLSearchParams(queryPart)) : {};
 
-        if (segments.length === 0) return { tab: 'calendar' };
+        if (segments.length === 0) return { tab: 'matches' };
 
-        const tab = VALID_TABS.has(segments[0]) ? segments[0] : 'calendar';
+        const tab = VALID_TABS.has(segments[0]) ? segments[0] : 'matches';
 
         if (tab === 'teams' && segments.length >= 2) {
             const subTab = VALID_SUB_TABS.has(segments[2]) ? segments[2] : 'details';
