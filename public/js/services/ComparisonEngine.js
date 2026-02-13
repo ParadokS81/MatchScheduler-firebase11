@@ -26,15 +26,15 @@ const ComparisonEngine = (function() {
      */
     function _getVisibleWeeks() {
         const currentWeek = WeekNavigation.getCurrentWeekNumber();
-        const now = new Date();
-        const year = now.getUTCFullYear();
+        const year = DateUtils.getISOWeekYear(new Date());
+        const maxWeek = DateUtils.getISOWeeksInYear(year);
 
         // Format: "YYYY-WW" (ISO format with leading zero)
         const week1 = `${year}-${String(currentWeek).padStart(2, '0')}`;
 
-        // Handle year boundary
+        // Handle year boundary (week 52 or 53 → week 1 of next year)
         let week2;
-        if (currentWeek >= 52) {
+        if (currentWeek >= maxWeek) {
             week2 = `${year + 1}-01`;
         } else {
             week2 = `${year}-${String(currentWeek + 1).padStart(2, '0')}`;

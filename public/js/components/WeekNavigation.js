@@ -9,25 +9,20 @@ const WeekNavigation = (function() {
     let _callbacks = [];    // Listeners for week changes
 
     /**
-     * Get current ISO week number
-     * @returns {number} Current week number (1-52)
+     * Get current ISO week number (delegates to DateUtils canonical implementation)
+     * @returns {number} Current ISO week number (1-53)
      */
     function _calculateCurrentWeekNumber() {
-        const now = new Date();
-        const year = now.getUTCFullYear();
+        return DateUtils.getCurrentWeekNumber();
+    }
 
-        // Must match DateUtils.getMondayOfWeek definition:
-        // Week 1 = first full week starting Monday after Jan 1
-        const jan1 = new Date(Date.UTC(year, 0, 1));
-        const dayOfWeek = jan1.getUTCDay();
-        const daysToFirstMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
-        const firstMonday = new Date(Date.UTC(year, 0, 1 + daysToFirstMonday));
-
-        // Calculate days since first Monday
-        const daysSinceFirstMonday = Math.floor((now - firstMonday) / (24 * 60 * 60 * 1000));
-
-        // Week number is 1 + floor(days / 7)
-        return Math.max(1, Math.floor(daysSinceFirstMonday / 7) + 1);
+    /**
+     * Get max week number for the current ISO week-year
+     * @returns {number} 52 or 53
+     */
+    function _getMaxWeek() {
+        const year = DateUtils.getISOWeekYear(new Date());
+        return DateUtils.getISOWeeksInYear(year);
     }
 
     /**
@@ -74,7 +69,7 @@ const WeekNavigation = (function() {
      * Navigate to next week pair
      */
     function navigateNext() {
-        if (_anchorWeek < 52) {
+        if (_anchorWeek < _getMaxWeek()) {
             _anchorWeek++;
             _notifyListeners();
             console.log('📅 Navigated to week:', _anchorWeek);
@@ -83,10 +78,10 @@ const WeekNavigation = (function() {
 
     /**
      * Navigate directly to a specific week number
-     * @param {number} weekNumber - Target week (1-52)
+     * @param {number} weekNumber - Target week (1-53)
      */
     function setWeekNumber(weekNumber) {
-        if (weekNumber < 1 || weekNumber > 52) return;
+        if (weekNumber < 1 || weekNumber > _getMaxWeek()) return;
         if (_anchorWeek === weekNumber) return;
         _anchorWeek = weekNumber;
         _notifyListeners();
@@ -144,7 +139,7 @@ const WeekNavigation = (function() {
      * @returns {boolean}
      */
     function canNavigateNext() {
-        return _anchorWeek < 52;
+        return _anchorWeek < _getMaxWeek();
     }
 
     function cleanup() {
