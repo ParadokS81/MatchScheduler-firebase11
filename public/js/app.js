@@ -8,21 +8,34 @@ const MatchSchedulerApp = (function() {
 
     // Private variables
     let _initialized = false;
+    let _initializing = false; // Guard against concurrent async init
     let _currentUser = null;
     let _selectedTeam = null;
     let _weekDisplay1 = null;
     let _weekDisplay2 = null;
 
     // Initialize application
-    function init() {
-        if (_initialized) return;
+    async function init() {
+        if (_initialized || _initializing) return;
+        _initializing = true;
 
         console.log('🚀 MatchScheduler v3.0 - Initializing...');
 
         // Wait for Firebase to be ready
         if (typeof window.firebase === 'undefined') {
+            _initializing = false;
             setTimeout(init, 100);
             return;
+        }
+
+        // Wait for auth state to be determined before initializing components.
+        // This prevents the flash of "Sign in" UI on page refresh when user is
+        // actually logged in (Firebase restores auth from IndexedDB asynchronously).
+        if (typeof AuthService !== 'undefined' && AuthService.waitForAuthReady) {
+            await Promise.race([
+                AuthService.waitForAuthReady(),
+                new Promise(resolve => setTimeout(resolve, 3000)) // 3s safety timeout
+            ]);
         }
 
         _initializeComponents();

@@ -130,6 +130,8 @@ const updateAvailability = functions
             updateData[`unavailable.${slotId}`] = FieldValue.arrayRemove(effectiveUserId);
         } else if (action === 'remove') {
             updateData[`slots.${slotId}`] = FieldValue.arrayRemove(effectiveUserId);
+            // Also clear any away mark so "- Me" fully resets the slot
+            updateData[`unavailable.${slotId}`] = FieldValue.arrayRemove(effectiveUserId);
         } else if (action === 'markUnavailable') {
             updateData[`unavailable.${slotId}`] = FieldValue.arrayUnion(effectiveUserId);
             // Mutual exclusion: marking unavailable removes availability

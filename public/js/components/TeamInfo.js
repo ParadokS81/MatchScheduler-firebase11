@@ -50,6 +50,17 @@ const TeamInfo = (function() {
 
         // Event delegation for inline color picker in hover popup
         _identityContainer.addEventListener('click', (e) => {
+            // Mobile: team name toggles roster popup
+            const nameToggle = e.target.closest('.team-name-toggle');
+            if (nameToggle) {
+                const popup = _identityContainer.querySelector('.team-hover-popup');
+                if (popup) {
+                    popup.classList.toggle('mobile-open');
+                    nameToggle.classList.toggle('open');
+                }
+                return;
+            }
+
             const member = e.target.closest('.roster-member');
             if (!member) return;
             const displayMode = typeof PlayerDisplayService !== 'undefined'
@@ -472,14 +483,13 @@ const TeamInfo = (function() {
                     </div>
                     ${inactiveLogoHTML}
                 </div>
-                <!-- Team name only - clean -->
-                <span class="text-xl font-semibold text-primary">${_selectedTeam.teamName}</span>
+                <!-- Team name — on mobile acts as roster toggle -->
+                <span class="text-xl font-semibold text-primary team-name-toggle">${_selectedTeam.teamName}</span>
 
                 <!-- Hover popup: tag + settings + roster + inline color picker -->
                 <div class="team-hover-popup">
                     <div class="flex items-center justify-center gap-3 mb-2">
                         <span class="text-sm text-muted-foreground">${_selectedTeam.teamTag || ''}</span>
-                        <span class="text-xs text-muted-foreground">${_selectedTeam.playerRoster.length}p</span>
                         <span class="team-settings-icon opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
                               data-action="open-settings" title="Team Settings">
                             <svg class="w-4 h-4 text-muted-foreground hover:text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -564,11 +574,11 @@ const TeamInfo = (function() {
             ? PlayerColorService.getPlayerColor(userId) : null;
         const presetColors = typeof PlayerColorService !== 'undefined'
             ? PlayerColorService.getPresetColors()
-            : ['#FF6B6B', '#FFD93D', '#6BCB77', '#45B7D1', '#A78BFA', '#F472B6'];
+            : ['#E06666', '#FFD966', '#93C47D', '#76A5AF', '#6D9EEB', '#C27BA0'];
 
         pickerContainer.innerHTML = `
             <div class="pt-2 mt-2 border-t border-border">
-                <div class="grid grid-cols-6 gap-2 mb-2">
+                <div class="grid grid-cols-3 gap-2 mb-2">
                     ${presetColors.map(color => `
                         <button class="color-swatch w-6 h-6 rounded-full border-2 transition-all hover:scale-110
                                        ${color === currentColor ? 'border-primary ring-2 ring-primary/50' : 'border-transparent hover:border-border'}"

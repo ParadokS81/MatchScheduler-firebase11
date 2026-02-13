@@ -11,7 +11,7 @@ const WeekDisplay = (function() {
      * @returns {string} Formatted label like "Week 5: Jan 27 - Feb 2"
      */
     function getWeekLabel(weekNumber) {
-        const year = new Date().getUTCFullYear();
+        const year = DateUtils.getISOWeekYear(new Date());
         const monday = DateUtils.getMondayOfWeek(weekNumber, year);
 
         // Calculate Sunday
@@ -436,8 +436,7 @@ const WeekDisplay = (function() {
          * @returns {string} Week ID like "2026-05"
          */
         function getWeekId() {
-            const now = new Date();
-            const year = now.getUTCFullYear();
+            const year = DateUtils.getISOWeekYear(new Date());
             return `${year}-${String(_weekNumber).padStart(2, '0')}`;
         }
 

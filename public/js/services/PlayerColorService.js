@@ -13,20 +13,14 @@ const PlayerColorService = (function() {
     // Default color for unassigned players (used in coloredDots mode)
     const DEFAULT_COLOR = '#6B7280'; // gray-500
 
-    // Preset colors optimized for dark backgrounds
+    // Preset colors - 6 colors at 60° hue intervals (+ gray default = 7 distinct)
     const PRESET_COLORS = [
-        '#FF6B6B', // Red
-        '#FF8E53', // Orange
-        '#FFD93D', // Yellow
-        '#6BCB77', // Green
-        '#4ECDC4', // Teal
-        '#45B7D1', // Cyan
-        '#5D9CEC', // Blue
-        '#A78BFA', // Purple
-        '#F472B6', // Pink
-        '#9CA3AF', // Gray
-        '#FBBF24', // Amber
-        '#34D399', // Emerald
+        '#E06666', // Red      (0°)
+        '#FFD966', // Yellow   (60°)
+        '#93C47D', // Green    (120°)
+        '#76A5AF', // Teal     (180°)
+        '#6D9EEB', // Blue     (240°)
+        '#C27BA0', // Pink     (300°)
     ];
 
     /**

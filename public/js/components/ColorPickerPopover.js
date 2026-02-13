@@ -25,7 +25,7 @@ const ColorPickerPopover = (function() {
 
         const presetColors = typeof PlayerColorService !== 'undefined'
             ? PlayerColorService.getPresetColors()
-            : ['#FF6B6B', '#FFD93D', '#6BCB77', '#45B7D1', '#A78BFA', '#F472B6'];
+            : ['#E06666', '#FFD966', '#93C47D', '#76A5AF', '#6D9EEB', '#C27BA0'];
 
         // Remove existing popover if any
         if (_popover) {
@@ -35,7 +35,7 @@ const ColorPickerPopover = (function() {
         _popover = document.createElement('div');
         _popover.className = 'color-picker-popover fixed z-50 bg-card border border-border rounded-lg shadow-xl p-3';
         _popover.innerHTML = `
-            <div class="grid grid-cols-6 gap-2 mb-3">
+            <div class="grid grid-cols-3 gap-2 mb-3">
                 ${presetColors.map(color => `
                     <button class="color-swatch w-6 h-6 rounded-full border-2 transition-all hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary/50
                                    ${color === currentColor ? 'border-primary ring-2 ring-primary/50' : 'border-transparent hover:border-border'}"

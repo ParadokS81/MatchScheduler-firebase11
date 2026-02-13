@@ -702,10 +702,24 @@ const UserProfile = (function() {
         window.removeEventListener('profile-updated', _renderCompactContent);
     }
 
+    // Get avatar URL for external consumers (e.g. MobileBottomBar)
+    function getAvatarUrl() {
+        return _userProfile?.photoURL || _currentUser?.photoURL || null;
+    }
+
+    // Open profile modal from external caller (e.g. MobileBottomBar avatar tap)
+    function openProfileModal() {
+        if (_currentUser && typeof ProfileModal !== 'undefined') {
+            ProfileModal.show(_currentUser, _userProfile);
+        }
+    }
+
     // Public API
     return {
         init,
         renderCompact,
+        getAvatarUrl,
+        openProfileModal,
         cleanup
     };
 })();

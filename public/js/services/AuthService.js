@@ -37,6 +37,10 @@ const AuthService = (function() {
     let _isDevMode = false;
     let _pendingForceNew = false;  // Flag for forceNew during Discord sign-in
 
+    // Auth readiness gate — resolves when first onAuthStateChanged fires
+    let _authReadyResolve = null;
+    let _authReadyPromise = new Promise(resolve => { _authReadyResolve = resolve; });
+
     /**
      * Check if we should use dev mode (localhost + DEV_MODE enabled)
      */
@@ -124,14 +128,22 @@ const AuthService = (function() {
     async function _setupAuthStateListener() {
         try {
             const { onAuthStateChanged } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js');
-            
+
             // Listen for auth state changes
+            let _firstFire = true;
             onAuthStateChanged(_auth, (user) => {
                 _currentUser = user;
+                // Resolve authReady on the first callback (user or null)
+                if (_firstFire) {
+                    _firstFire = false;
+                    _authReadyResolve(user);
+                }
                 _notifyAuthListeners(user);
             });
         } catch (error) {
             console.error('❌ Failed to setup auth listener:', error);
+            // Resolve with null so app doesn't hang
+            _authReadyResolve(null);
         }
     }
     
@@ -656,6 +668,11 @@ const AuthService = (function() {
         }
     }
     
+    // Wait for auth state to be determined (resolves with user or null)
+    function waitForAuthReady() {
+        return _authReadyPromise;
+    }
+
     // Get current user
     function getCurrentUser() {
         return _currentUser;
@@ -718,6 +735,7 @@ const AuthService = (function() {
         createProfile,
         updateProfile,
         deleteAccount,
+        waitForAuthReady,
         getCurrentUser,
         isAuthenticated,
         onAuthStateChange,

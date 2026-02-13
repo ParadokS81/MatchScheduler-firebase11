@@ -6,6 +6,8 @@ const MobileBottomBar = (function() {
     let _yourNumBtn = null;
     let _oppNumBtn = null;
     let _templateBtn = null;
+    let _authBtn = null;
+    let _authUnsubscribe = null;
     let _unsubWeekChange = null;
     let _initialized = false;
 
@@ -143,14 +145,23 @@ const MobileBottomBar = (function() {
         });
         rightBtn.classList.add('mobile-bb-drawer-toggle');
 
-        // Template button (between left drawer and week nav)
+        // Auth button (login / avatar) — between left drawer and template
+        _authBtn = document.createElement('button');
+        _authBtn.id = 'mobile-bb-auth';
+        _authBtn.className = 'mobile-bb-btn mobile-bb-auth-btn';
+        _authBtn.setAttribute('aria-label', 'Login');
+        _authBtn.addEventListener('click', _handleAuthBtnClick);
+        _updateAuthButton(AuthService.getCurrentUser());
+
+        // Template button (between auth button and week nav)
         _templateBtn = _createButton('mobile-bb-template', '📋', 'Templates', (e) => {
             _showTemplatePopup(_templateBtn, e);
         });
         _templateBtn.classList.add('mobile-bb-template-btn');
 
-        // Assemble: [☰] [📋] [◀W6▶] [tab icons] [Compare 1v1] [☰]
+        // Assemble: [☰] [👤/LOGIN] [📋] [◀W6▶] [tab icons] [Compare 1v1] [☰]
         _container.appendChild(leftBtn);
+        _container.appendChild(_authBtn);
         _container.appendChild(_templateBtn);
         _container.appendChild(weekGroup);
         _container.appendChild(tabGroup);
@@ -266,6 +277,19 @@ const MobileBottomBar = (function() {
 
         // Re-enable buttons when user's team becomes available
         window.addEventListener('user-team-changed', _syncDisabledState);
+
+        // Track auth state for login/avatar button
+        if (typeof AuthService !== 'undefined') {
+            _authUnsubscribe = AuthService.onAuthStateChange(_updateAuthButton);
+        }
+
+        // Update avatar after profile setup completes (user may now have photo)
+        window.addEventListener('profile-setup-complete', () => {
+            _updateAuthButton(AuthService.getCurrentUser());
+        });
+        window.addEventListener('profile-updated', () => {
+            _updateAuthButton(AuthService.getCurrentUser());
+        });
     }
 
     function _setActiveTab(tabId) {
@@ -433,10 +457,136 @@ const MobileBottomBar = (function() {
         }
     }
 
+    // ========================================
+    // Auth Button (Login / Avatar)
+    // ========================================
+
+    function _updateAuthButton(user) {
+        if (!_authBtn) return;
+
+        if (user) {
+            // Logged in — show avatar
+            const avatarUrl = (typeof UserProfile !== 'undefined' && UserProfile.getAvatarUrl())
+                || user.photoURL
+                || null;
+
+            if (avatarUrl) {
+                _authBtn.innerHTML = `<img src="${avatarUrl}" alt="Profile" class="mobile-bb-avatar">`;
+            } else {
+                // Fallback: generic user icon
+                _authBtn.innerHTML = '<svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+            }
+            _authBtn.setAttribute('aria-label', 'Profile');
+        } else {
+            // Guest — show LOGIN text
+            _authBtn.innerHTML = '<span class="mobile-bb-login-label">LOGIN</span>';
+            _authBtn.setAttribute('aria-label', 'Sign in');
+        }
+    }
+
+    function _handleAuthBtnClick(e) {
+        e.stopPropagation();
+        _dismissLoginPopup();
+
+        const user = typeof AuthService !== 'undefined' ? AuthService.getCurrentUser() : null;
+
+        if (user) {
+            // Logged in — open profile modal
+            if (typeof UserProfile !== 'undefined') {
+                UserProfile.openProfileModal();
+            }
+        } else {
+            // Guest — show login popup
+            _showLoginPopup(e);
+        }
+    }
+
+    function _showLoginPopup(e) {
+        const existing = document.getElementById('mobile-login-popup');
+        if (existing) {
+            _dismissLoginPopup();
+            return;
+        }
+
+        const popup = document.createElement('div');
+        popup.className = 'mobile-login-popup';
+        popup.id = 'mobile-login-popup';
+
+        // Discord button (primary)
+        const discordBtn = document.createElement('button');
+        discordBtn.className = 'mobile-login-popup-btn mobile-login-discord';
+        discordBtn.innerHTML = `
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+            </svg>
+            Discord
+        `;
+        discordBtn.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            discordBtn.disabled = true;
+            discordBtn.textContent = 'Signing in...';
+            try {
+                await AuthService.signInWithDiscord();
+                _dismissLoginPopup();
+            } catch (err) {
+                console.error('Discord sign-in failed:', err);
+                discordBtn.disabled = false;
+                discordBtn.innerHTML = 'Retry Discord';
+            }
+        });
+
+        // Google button (secondary)
+        const googleBtn = document.createElement('button');
+        googleBtn.className = 'mobile-login-popup-btn mobile-login-google';
+        googleBtn.innerHTML = `
+            <svg class="w-4 h-4" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            Google
+        `;
+        googleBtn.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            googleBtn.disabled = true;
+            googleBtn.textContent = 'Signing in...';
+            try {
+                await AuthService.signInWithGoogle();
+                _dismissLoginPopup();
+            } catch (err) {
+                console.error('Google sign-in failed:', err);
+                googleBtn.disabled = false;
+                googleBtn.innerHTML = 'Retry Google';
+            }
+        });
+
+        popup.appendChild(discordBtn);
+        popup.appendChild(googleBtn);
+
+        // Position above the auth button
+        const rect = _authBtn.getBoundingClientRect();
+        popup.style.left = `${rect.left + rect.width / 2}px`;
+        popup.style.top = `${rect.top}px`;
+
+        document.body.appendChild(popup);
+
+        requestAnimationFrame(() => {
+            document.addEventListener('click', _dismissLoginPopup, { once: true });
+        });
+    }
+
+    function _dismissLoginPopup() {
+        const existing = document.getElementById('mobile-login-popup');
+        if (existing) existing.remove();
+    }
+
     function cleanup() {
         _dismissFilterPicker();
         _dismissTemplatePopup();
+        _dismissLoginPopup();
         if (_unsubWeekChange) _unsubWeekChange();
+        if (_authUnsubscribe) _authUnsubscribe();
         window.removeEventListener('filter-changed', _syncFilterState);
         window.removeEventListener('user-team-changed', _syncDisabledState);
         if (_container) _container.innerHTML = '';
@@ -444,6 +594,8 @@ const MobileBottomBar = (function() {
         _yourNumBtn = null;
         _oppNumBtn = null;
         _templateBtn = null;
+        _authBtn = null;
+        _authUnsubscribe = null;
         _initialized = false;
     }
 

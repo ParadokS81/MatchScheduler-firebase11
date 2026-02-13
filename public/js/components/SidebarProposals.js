@@ -144,18 +144,18 @@ const SidebarProposals = (function() {
             ? (proposal.opponentTeamTag || proposal.opponentTeamName)
             : (proposal.proposerTeamTag || proposal.proposerTeamName);
 
-        // Game type badge — full words
+        // Game type badge — abbreviated for sidebar space
         const gameType = proposal.gameType;
         const gameTypeBadge = gameType === 'official'
-            ? '<span class="text-[0.625rem] font-semibold text-green-400 shrink-0">Official</span>'
+            ? '<span class="text-[0.625rem] font-semibold text-green-400 shrink-0 w-[2rem] text-right">OFFI</span>'
             : gameType === 'practice'
-                ? '<span class="text-[0.625rem] font-semibold text-muted-foreground shrink-0">Practice</span>'
-                : '';
+                ? '<span class="text-[0.625rem] font-semibold text-amber-400 shrink-0 w-[2rem] text-right">PRAC</span>'
+                : '<span class="w-[2rem] shrink-0"></span>';
 
         // Week label: "This Week", "Next Week", or "Week XX"
         const weekNum = parseInt(proposal.weekId?.split('-')[1] || '0', 10);
-        const currentWeek = typeof WeekNavigation !== 'undefined'
-            ? WeekNavigation.getCurrentWeekNumber()
+        const currentWeek = typeof DateUtils !== 'undefined'
+            ? DateUtils.getCurrentWeekNumber()
             : 0;
         let weekLabel;
         if (weekNum === currentWeek) {
@@ -175,9 +175,9 @@ const SidebarProposals = (function() {
                  data-action="open-proposal" data-proposal-id="${proposal.id}"
                  title="vs ${_escapeHtml(opponentName)} · ${weekLabel}">
                 ${logoHtml}
-                <span class="text-xs font-medium truncate min-w-0">${_escapeHtml(opponentName)}</span>
+                <span class="text-xs font-medium truncate min-w-0 flex-1">${_escapeHtml(opponentName)}</span>
                 ${gameTypeBadge}
-                <span class="text-[0.625rem] text-muted-foreground shrink-0 ml-auto">${weekLabel}</span>
+                <span class="text-[0.625rem] text-muted-foreground shrink-0 w-[3.5rem] text-right">${weekLabel}</span>
             </div>
         `;
     }

@@ -345,12 +345,16 @@ const AvailabilityService = (function() {
             ? JSON.parse(JSON.stringify(_cache.get(cacheKey)))
             : null;
 
-        // Optimistic update
+        // Optimistic update - remove from both slots and unavailable (away)
         const currentData = _cache.get(cacheKey);
-        if (currentData && currentData.slots) {
+        if (currentData) {
             slotIds.forEach(slotId => {
-                if (currentData.slots[slotId]) {
+                if (currentData.slots?.[slotId]) {
                     currentData.slots[slotId] = currentData.slots[slotId]
+                        .filter(id => id !== userId);
+                }
+                if (currentData.unavailable?.[slotId]) {
+                    currentData.unavailable[slotId] = currentData.unavailable[slotId]
                         .filter(id => id !== userId);
                 }
             });
@@ -367,11 +371,12 @@ const AvailabilityService = (function() {
 
                 slotIds.forEach(slotId => {
                     updateData[`slots.${slotId}`] = arrayRemove(userId);
+                    updateData[`unavailable.${slotId}`] = arrayRemove(userId);
                 });
                 updateData.lastUpdated = serverTimestamp();
 
                 await updateDoc(docRef, updateData);
-                console.log(`🔧 DEV: Removed ${userId} from ${slotIds.length} slots`);
+                console.log(`🔧 DEV: Removed ${userId} from ${slotIds.length} slots (including away)`);
                 return { success: true };
             }
 
@@ -425,12 +430,16 @@ const AvailabilityService = (function() {
             ? JSON.parse(JSON.stringify(_cache.get(cacheKey)))
             : null;
 
-        // Optimistic update
+        // Optimistic update - remove from both slots and unavailable (away)
         const currentData = _cache.get(cacheKey);
-        if (currentData && currentData.slots) {
+        if (currentData) {
             slotIds.forEach(slotId => {
-                if (currentData.slots[slotId]) {
+                if (currentData.slots?.[slotId]) {
                     currentData.slots[slotId] = currentData.slots[slotId]
+                        .filter(id => id !== targetUserId);
+                }
+                if (currentData.unavailable?.[slotId]) {
+                    currentData.unavailable[slotId] = currentData.unavailable[slotId]
                         .filter(id => id !== targetUserId);
                 }
             });
@@ -445,11 +454,12 @@ const AvailabilityService = (function() {
                 const updateData = {};
                 slotIds.forEach(slotId => {
                     updateData[`slots.${slotId}`] = arrayRemove(targetUserId);
+                    updateData[`unavailable.${slotId}`] = arrayRemove(targetUserId);
                 });
                 updateData.lastUpdated = serverTimestamp();
 
                 await updateDoc(docRef, updateData);
-                console.log(`🔧 DEV: Removed ${targetUserId} from ${slotIds.length} slots (by ${currentUserId})`);
+                console.log(`🔧 DEV: Removed ${targetUserId} from ${slotIds.length} slots including away (by ${currentUserId})`);
                 return { success: true };
             }
 

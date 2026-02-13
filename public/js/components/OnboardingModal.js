@@ -218,15 +218,15 @@ const OnboardingModal = (function() {
                         </label>
                         <div class="flex gap-4">
                             <label class="flex items-center gap-2">
-                                <input type="checkbox" name="divisions" value="1" class="text-primary">
+                                <input type="checkbox" name="divisions" value="D1" class="text-primary">
                                 <span class="text-sm text-foreground">Division 1</span>
                             </label>
                             <label class="flex items-center gap-2">
-                                <input type="checkbox" name="divisions" value="2" class="text-primary">
+                                <input type="checkbox" name="divisions" value="D2" class="text-primary">
                                 <span class="text-sm text-foreground">Division 2</span>
                             </label>
                             <label class="flex items-center gap-2">
-                                <input type="checkbox" name="divisions" value="3" class="text-primary">
+                                <input type="checkbox" name="divisions" value="D3" class="text-primary">
                                 <span class="text-sm text-foreground">Division 3</span>
                             </label>
                         </div>

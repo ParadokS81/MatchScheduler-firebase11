@@ -7,6 +7,48 @@ const { getMondayOfWeek, isValidWeekRange, computeExpiresAt, computeScheduledDat
 
 const db = getFirestore();
 
+// ─── Slot Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Compute the next 30-min slot after a given slotId.
+ * e.g. "thu_2230" → "thu_2300", "thu_2330" → "fri_0000"
+ * Returns null if it would wrap past Sunday.
+ */
+function nextSlot(slotId) {
+    const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    const [day, time] = slotId.split('_');
+    let h = parseInt(time.slice(0, 2));
+    let m = parseInt(time.slice(2));
+    let dayIdx = days.indexOf(day);
+
+    m += 30;
+    if (m >= 60) { m = 0; h++; }
+    if (h >= 24) { h = 0; dayIdx++; }
+    if (dayIdx >= days.length) return null;
+
+    return `${days[dayIdx]}_${String(h).padStart(2, '0')}${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Get all blocked slots for a team in a week (match slots + 1-slot buffer after each).
+ */
+async function getBlockedSlotsForTeam(teamId, weekId) {
+    const snapshot = await db.collection('scheduledMatches')
+        .where('blockedTeams', 'array-contains', teamId)
+        .where('weekId', '==', weekId)
+        .where('status', '==', 'upcoming')
+        .get();
+
+    const blocked = new Set();
+    snapshot.forEach(doc => {
+        const slot = doc.data().blockedSlot;
+        blocked.add(slot);
+        const buffer = nextSlot(slot);
+        if (buffer) blocked.add(buffer);
+    });
+    return blocked;
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /**
@@ -282,27 +324,15 @@ exports.confirmSlot = functions
 
             const side = isProposerSide ? 'proposer' : 'opponent';
 
-            // Check if slot is blocked by existing scheduled match.
-            // These are non-transactional queries (Firestore transactions only support
-            // single-doc reads). The race window is negligible (~50ms) and acceptable.
-            const blockedQuery1 = await db.collection('scheduledMatches')
-                .where('blockedTeams', 'array-contains', proposal.proposerTeamId)
-                .where('weekId', '==', proposal.weekId)
-                .where('slotId', '==', slotId)
-                .where('status', '==', 'upcoming')
-                .limit(1)
-                .get();
+            // Check if slot is blocked by existing scheduled match (including 1-slot buffer).
+            // Non-transactional queries — race window is negligible (~50ms) and acceptable.
+            const [proposerBlocked, opponentBlocked] = await Promise.all([
+                getBlockedSlotsForTeam(proposal.proposerTeamId, proposal.weekId),
+                getBlockedSlotsForTeam(proposal.opponentTeamId, proposal.weekId)
+            ]);
 
-            const blockedQuery2 = await db.collection('scheduledMatches')
-                .where('blockedTeams', 'array-contains', proposal.opponentTeamId)
-                .where('weekId', '==', proposal.weekId)
-                .where('slotId', '==', slotId)
-                .where('status', '==', 'upcoming')
-                .limit(1)
-                .get();
-
-            if (!blockedQuery1.empty || !blockedQuery2.empty) {
-                throw new functions.https.HttpsError('failed-precondition', 'This slot is already blocked by a scheduled match');
+            if (proposerBlocked.has(slotId) || opponentBlocked.has(slotId)) {
+                throw new functions.https.HttpsError('failed-precondition', 'This slot is blocked by a scheduled match (or its buffer)');
             }
 
             // Read ALL availability docs upfront (transaction requires reads before writes)

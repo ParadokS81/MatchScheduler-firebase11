@@ -15,7 +15,7 @@ const ScheduledMatchService = (function() {
      * @returns {Array} Array of match objects
      */
     function getMatchesFromCache() {
-        return Array.from(_matchCache.values());
+        return Array.from(_matchCache.values()).filter(m => !_isMatchPast(m));
     }
 
     /**
@@ -55,11 +55,37 @@ const ScheduledMatchService = (function() {
         _matchCache.clear();
     }
 
+    // ─── Time Helpers ─────────────────────────────────────────────────
+
+    /**
+     * Check if a scheduled match's time has passed.
+     * Uses scheduledDate (ISO date) + slotId (UTC time like "thu_2200").
+     * Match is considered past 90 minutes after slot start (match duration buffer).
+     */
+    function _isMatchPast(match) {
+        if (!match.scheduledDate || !match.slotId) return false;
+
+        const timePart = match.slotId.split('_')[1]; // "2200"
+        if (!timePart || timePart.length < 4) return false;
+
+        const hours = parseInt(timePart.slice(0, 2));
+        const minutes = parseInt(timePart.slice(2));
+
+        const matchDate = new Date(match.scheduledDate + 'T00:00:00Z');
+        matchDate.setUTCHours(hours, minutes, 0, 0);
+
+        // Add 90 min buffer — match lasts ~60 min, give extra margin
+        const expiryTime = matchDate.getTime() + 90 * 60 * 1000;
+
+        return Date.now() > expiryTime;
+    }
+
     // ─── Blocked Slot Lookups ──────────────────────────────────────────
 
     /**
      * Get blocked slot IDs for a team in a specific week.
      * A slot is blocked when a scheduled match exists for that team + week + slot.
+     * Also blocks the next 30-min slot as buffer (matches last 1h+).
      *
      * @param {string} teamId
      * @param {string} weekId
@@ -73,10 +99,32 @@ const ScheduledMatchService = (function() {
                 match.status === 'upcoming' &&
                 match.blockedTeams?.includes(teamId)) {
                 blocked.add(match.blockedSlot);
+                const buffer = _nextSlot(match.blockedSlot);
+                if (buffer) blocked.add(buffer);
             }
         }
 
         return blocked;
+    }
+
+    /**
+     * Compute the next 30-min slot after a given slotId.
+     * e.g. "thu_2230" → "thu_2300", "thu_2330" → "fri_0000"
+     * Returns null if it would wrap past Sunday (end of week).
+     */
+    function _nextSlot(slotId) {
+        const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+        const [day, time] = slotId.split('_');
+        let h = parseInt(time.slice(0, 2));
+        let m = parseInt(time.slice(2));
+        let dayIdx = days.indexOf(day);
+
+        m += 30;
+        if (m >= 60) { m = 0; h++; }
+        if (h >= 24) { h = 0; dayIdx++; }
+        if (dayIdx >= days.length) return null; // past end of week
+
+        return `${days[dayIdx]}_${String(h).padStart(2, '0')}${String(m).padStart(2, '0')}`;
     }
 
     /**
@@ -87,6 +135,7 @@ const ScheduledMatchService = (function() {
     function getUpcomingMatchesForTeams(teamIds) {
         return Array.from(_matchCache.values()).filter(match =>
             match.status === 'upcoming' &&
+            !_isMatchPast(match) &&
             (teamIds.includes(match.teamAId) || teamIds.includes(match.teamBId))
         );
     }

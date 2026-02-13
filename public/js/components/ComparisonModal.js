@@ -418,6 +418,15 @@ const ComparisonModal = (function() {
                         : _renderRoster(availablePlayers, unavailablePlayers)}
                 </div>
 
+                ${isUserTeam && availablePlayers.length < 4 ? `
+                    <button class="find-standin-link flex items-center gap-1.5 mt-2 text-xs text-primary hover:underline transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        Find standin
+                    </button>
+                ` : ''}
+
                 ${contactSection}
             </div>
         `;
@@ -762,15 +771,15 @@ const ComparisonModal = (function() {
                         ToastService.showSuccess('Message copied! Paste in Discord');
                     }
 
-                    // 3. Open Discord DM (slight delay to ensure toast shows)
+                    // 3. Open Discord app (slight delay to ensure toast shows)
                     setTimeout(() => {
-                        window.open(`https://discord.com/users/${discordId}`, '_blank');
+                        window.location.href = `discord://discord.com/users/${discordId}`;
                     }, 100);
 
                 } catch (err) {
                     console.error('Failed to copy message:', err);
                     // Fallback: just open Discord
-                    window.open(`https://discord.com/users/${discordId}`, '_blank');
+                    window.location.href = `discord://discord.com/users/${discordId}`;
                     if (typeof ToastService !== 'undefined') {
                         ToastService.showInfo('Opening Discord... (copy failed)');
                     }
@@ -815,7 +824,7 @@ const ComparisonModal = (function() {
                 } catch (err) { /* silent */ }
                 if (_opponentDiscordUserId) {
                     setTimeout(() => {
-                        window.open(`https://discord.com/users/${_opponentDiscordUserId}`, '_blank');
+                        window.location.href = `discord://discord.com/users/${_opponentDiscordUserId}`;
                     }, 100);
                 }
             });
@@ -836,6 +845,22 @@ const ComparisonModal = (function() {
                 }
             });
         }
+
+        // Find standin link (user team roster, < 4 available)
+        document.querySelector('.find-standin-link')?.addEventListener('click', () => {
+            if (!_currentData) return;
+            const teamId = _currentData.userTeamInfo.teamId;
+            const team = TeamService.getTeamFromCache(teamId);
+            const divisions = team?.divisions || [];
+            const defaultDiv = divisions[0] || 'D1';
+            const weekId = _currentData.weekId;
+            const slotId = _currentData.slotId;
+
+            close();
+
+            StandinFinderService.activate(weekId, [slotId], defaultDiv);
+            BottomPanelController.switchTab('players', { force: true });
+        });
 
         // ESC key to close
         _keydownHandler = (e) => {
@@ -977,6 +1002,9 @@ const ComparisonModal = (function() {
      * Close the modal
      */
     function close() {
+        // Save proposal ID before clearing state — navigate after cleanup
+        const navigateToProposal = _createdProposalId;
+
         if (_container) _container.innerHTML = '';
         if (_keydownHandler) {
             document.removeEventListener('keydown', _keydownHandler);
@@ -991,6 +1019,11 @@ const ComparisonModal = (function() {
         _createdProposalId = null;
         _discordMessage = null;
         _opponentDiscordUserId = null;
+
+        // Deep-link to the created proposal so user can confirm timeslots
+        if (navigateToProposal) {
+            window.location.hash = `/matches/${navigateToProposal}`;
+        }
     }
 
     /**

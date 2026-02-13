@@ -46,8 +46,34 @@ const AvailabilityGrid = (function() {
     }
 
     // Player badge display constants
-    const MAX_VISIBLE_BADGES = 4;  // Show 4 badges, overflow at 5+
+    const CHAR_BUDGET = 15;        // 4×3-char initials + 3 gaps = 15 units max
+    const MAX_DOTS = 6;            // Dots are tiny, 6 fit easily
+    const MAX_AVATARS = 5;         // Avatars: 5 fit
     const TOOLTIP_THRESHOLD = 5;   // Show tooltip when 5+ players
+
+    /**
+     * Determine how many badges fit based on display mode and actual initials lengths.
+     * Uses a character budget for initials modes (12 chars + 3 gaps = 15 units).
+     * Returns the max that can be shown WITHOUT an overflow indicator.
+     */
+    function _getMaxBadges(displayMode, allPlayers) {
+        if (displayMode === 'coloredDots') return MAX_DOTS;
+        if (displayMode === 'avatars') return MAX_AVATARS;
+
+        // Initials modes: calculate how many fit within the character budget
+        // Each badge costs its initials length + 1 gap (except the first has no leading gap)
+        let budget = CHAR_BUDGET;
+        let count = 0;
+        for (const p of allPlayers) {
+            const len = (p.initials || '??').length;
+            const cost = count === 0 ? len : len + 1; // +1 for gap between badges
+            if (budget < cost) break;
+            budget -= cost;
+            count++;
+        }
+        // Floor: always fit at least 4 (4on4 scheduler). Cap: 6 max to avoid visual clutter.
+        return Math.min(Math.max(count, 4), 6);
+    }
 
     function formatTime(slot) {
         return `${slot.slice(0, 2)}:${slot.slice(2)}`;
@@ -121,8 +147,12 @@ const AvailabilityGrid = (function() {
 
         /**
          * Build the set of past cell IDs for the current week.
-         * A cell is past if its real-world UTC datetime is before now.
-         * Grid cell times are in CET base format — convert to UTC for comparison.
+         * A cell is past if its DISPLAYED local datetime is before now.
+         *
+         * The grid shows CET-based day columns with local display times.
+         * We check "column day + displayed local time" against the current
+         * local time so that earlier rows always go past before later ones,
+         * regardless of how CET maps to the user's timezone.
          */
         function _buildPastCells() {
             _pastCells.clear();
@@ -130,26 +160,29 @@ const AvailabilityGrid = (function() {
             const monday = DateUtils.getMondayOfWeek(_weekId);
             const now = Date.now();
 
-            // Get base timezone offset (CET) for this week's Monday
-            const baseOffsetMin = typeof TimezoneService !== 'undefined'
-                ? TimezoneService.getBaseOffsetMinutes(monday)
-                : 60; // Default CET = UTC+1
+            // Get the user's UTC offset so we can convert local display time → UTC
+            const userOffsetMin = typeof TimezoneService !== 'undefined'
+                ? TimezoneService.getOffsetMinutes(monday)
+                : 60;
 
             const timeSlots = _getTimeSlots();
 
             for (let d = 0; d < DAYS.length; d++) {
                 for (const time of timeSlots) {
-                    // Cell time is in CET base — convert to UTC
-                    const hour = parseInt(time.slice(0, 2));
-                    const min = parseInt(time.slice(2));
-                    const cetTotalMin = hour * 60 + min;
-                    const utcTotalMin = cetTotalMin - baseOffsetMin;
+                    // Get the LOCAL display time the user sees for this row
+                    const localDisplay = typeof TimezoneService !== 'undefined'
+                        ? TimezoneService.baseToLocalDisplay(time, monday)
+                        : `${time.slice(0, 2)}:${time.slice(2)}`;
 
-                    // Build UTC date for this cell
+                    const localHour = parseInt(localDisplay.split(':')[0]);
+                    const localMin = parseInt(localDisplay.split(':')[1]);
+                    const localTotalMin = localHour * 60 + localMin;
+
+                    // Convert "displayed day d + local time" to UTC for comparison
+                    const utcTotalMin = localTotalMin - userOffsetMin;
                     const cellDate = new Date(monday.getTime());
                     cellDate.setUTCDate(monday.getUTCDate() + d);
                     cellDate.setUTCHours(0, 0, 0, 0);
-                    // Add UTC minutes (handles day wrap)
                     cellDate.setUTCMinutes(utcTotalMin);
 
                     if (cellDate.getTime() < now) {
@@ -855,8 +888,7 @@ const AvailabilityGrid = (function() {
 
         function getWeekId() {
             // Return full ISO week format (YYYY-WW) for compatibility with ComparisonEngine
-            const now = new Date();
-            const year = now.getUTCFullYear();
+            const year = DateUtils.getISOWeekYear(new Date());
             return `${year}-${String(_weekId).padStart(2, '0')}`;
         }
 
@@ -985,16 +1017,40 @@ const AvailabilityGrid = (function() {
 
             // Available players get priority for visible badge slots
             const totalVisible = players.length + unavailPlayers.length;
-            const hasOverflow = totalVisible > MAX_VISIBLE_BADGES;
+            const allOrdered = [...players, ...unavailPlayers];
+            const maxDirect = _getMaxBadges(displayMode, allOrdered);
+
+            // Overflow logic (two hard rules, in priority order):
+            //   Rule 1: ALWAYS show at least 4 badges (4on4 scheduler, non-negotiable)
+            //   Rule 2: Never show "+1" — IF there's room to squeeze the extra player in
+            // When rule 2 conflicts with rule 1 (can't squeeze, can't drop below 4), "+1" is OK.
+            let needsOverflow = false;
+            let badgeSlots = totalVisible;
+
+            if (totalVisible > maxDirect) {
+                // Check if the +1 player is compact enough to squeeze in
+                const extraPlayer = allOrdered[maxDirect];
+                const isCompact = displayMode === 'coloredDots' ||
+                    (extraPlayer && (extraPlayer.initials || '??').length <= 1);
+
+                if (totalVisible === maxDirect + 1 && isCompact) {
+                    // Squeeze the 1 extra in directly — cheaper than showing a "+1" badge
+                    badgeSlots = totalVisible;
+                } else {
+                    // Overflow: use maxDirect-1 for badges, but never fewer than 4
+                    needsOverflow = true;
+                    badgeSlots = Math.max(maxDirect - 1, 4);
+                }
+            }
 
             // Calculate how many of each to show
             let visibleAvail, visibleUnavail, overflowCount;
-            if (hasOverflow) {
+            if (needsOverflow) {
                 // Prioritize available badges
-                visibleAvail = players.slice(0, MAX_VISIBLE_BADGES);
-                const remainingSlots = MAX_VISIBLE_BADGES - visibleAvail.length;
+                visibleAvail = players.slice(0, badgeSlots);
+                const remainingSlots = badgeSlots - visibleAvail.length;
                 visibleUnavail = unavailPlayers.slice(0, Math.max(0, remainingSlots));
-                overflowCount = totalVisible - MAX_VISIBLE_BADGES;
+                overflowCount = totalVisible - badgeSlots;
             } else {
                 visibleAvail = players;
                 visibleUnavail = unavailPlayers;
@@ -1080,10 +1136,10 @@ const AvailabilityGrid = (function() {
                 });
             }
 
-            if (hasOverflow) {
+            if (needsOverflow) {
                 badgesHtml += `
                     <button class="player-badge overflow" data-overflow-count="${overflowCount}">
-                        +${overflowCount}
+                        ${overflowCount}
                     </button>
                 `;
             }
