@@ -9,7 +9,7 @@ const { processLogoUpload } = require('./logo-processing');
 const { processAvatarUpload } = require('./avatar-processing');
 const { googleSignIn, createProfile, updateProfile, getProfile, deleteAccount } = require('./user-profile');
 const { discordOAuthExchange } = require('./discord-auth');
-const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings, kickPlayer, transferLeadership } = require('./team-operations');
+const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings, kickPlayer, transferLeadership, updateTeamTags } = require('./team-operations');
 const { updateAvailability } = require('./availability');
 const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 const { updateFavorites } = require('./favorites');
@@ -35,6 +35,7 @@ exports.leaveTeam = leaveTeam;
 exports.updateTeamSettings = updateTeamSettings;
 exports.kickPlayer = kickPlayer;
 exports.transferLeadership = transferLeadership;
+exports.updateTeamTags = updateTeamTags;
 
 // Availability functions
 exports.updateAvailability = updateAvailability;

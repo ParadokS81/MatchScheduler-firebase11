@@ -17,6 +17,29 @@ function generateJoinCode() {
     return result;
 }
 
+/**
+ * Check if any of the given tags (lowercased) are already used by another team.
+ * @param {string[]} tagsLower - Lowercased tags to check
+ * @param {string} excludeTeamId - Skip this team (our own)
+ * @returns {{ conflict: string, ownerName: string } | null}
+ */
+async function checkTagUniqueness(tagsLower, excludeTeamId) {
+    const allTeamsSnap = await db.collection('teams').get();
+    for (const otherDoc of allTeamsSnap.docs) {
+        if (otherDoc.id === excludeTeamId) continue;
+        const other = otherDoc.data();
+        const otherTags = (other.teamTags && Array.isArray(other.teamTags) && other.teamTags.length > 0)
+            ? other.teamTags.map(t => t.tag.toLowerCase())
+            : (other.teamTag ? [other.teamTag.toLowerCase()] : []);
+        for (const ot of otherTags) {
+            if (tagsLower.includes(ot)) {
+                return { conflict: ot, ownerName: other.teamName };
+            }
+        }
+    }
+    return null;
+}
+
 // Validate team data
 function validateTeamData(teamData) {
     const errors = [];
@@ -61,7 +84,7 @@ function validateTeamData(teamData) {
         if (teamData.divisions.length === 0) {
             errors.push('At least one division must be selected');
         }
-        const validDivisions = ['1', '2', '3'];
+        const validDivisions = ['D1', 'D2', 'D3'];
         for (const division of teamData.divisions) {
             if (!validDivisions.includes(division)) {
                 errors.push('Invalid division selected');
@@ -129,6 +152,17 @@ exports.createTeam = functions
             throw new functions.https.HttpsError('already-exists', `A team named "${teamData.teamName.trim()}" already exists. Please choose a different name.`);
         }
 
+        // Check if team tag already exists (case-insensitive)
+        if (teamData.teamTag) {
+            const dup = await checkTagUniqueness([teamData.teamTag.trim().toLowerCase()], '');
+            if (dup) {
+                throw new functions.https.HttpsError(
+                    'already-exists',
+                    `Tag "${teamData.teamTag.trim()}" is already used by ${dup.ownerName}. Please choose a different tag.`
+                );
+            }
+        }
+
         // Generate unique join code
         let joinCode;
         let isUnique = false;
@@ -160,6 +194,7 @@ exports.createTeam = functions
             teamName: teamData.teamName.trim(),
             teamNameLower: teamData.teamName.trim().toLowerCase(), // For case-insensitive uniqueness
             teamTag: teamData.teamTag.trim(),
+            teamTags: [{ tag: teamData.teamTag.trim(), isPrimary: true }],
             leaderId: userId,
             divisions: teamData.divisions,
             maxPlayers: teamData.maxPlayers,
@@ -998,7 +1033,7 @@ exports.updateTeamSettings = functions
         }
 
         const userId = context.auth.uid;
-        const { teamId, teamTag, maxPlayers, hideRosterNames, hideFromComparison } = data;
+        const { teamId, teamTag, maxPlayers, divisions, hideRosterNames, hideFromComparison } = data;
 
         // Validate input
         if (!teamId || typeof teamId !== 'string') {
@@ -1009,9 +1044,10 @@ exports.updateTeamSettings = functions
         const hasTeamTag = teamTag !== undefined;
         const hasMaxPlayers = maxPlayers !== undefined;
         const hasHideRosterNames = hideRosterNames !== undefined;
+        const hasDivisions = divisions !== undefined;
         const hasHideFromComparison = hideFromComparison !== undefined;
 
-        if (!hasTeamTag && !hasMaxPlayers && !hasHideRosterNames && !hasHideFromComparison) {
+        if (!hasTeamTag && !hasMaxPlayers && !hasDivisions && !hasHideRosterNames && !hasHideFromComparison) {
             throw new functions.https.HttpsError('invalid-argument', 'At least one setting must be provided');
         }
 
@@ -1029,6 +1065,17 @@ exports.updateTeamSettings = functions
         }
         if (hasMaxPlayers && (typeof maxPlayers !== 'number' || maxPlayers < 4 || maxPlayers > 20)) {
             throw new functions.https.HttpsError('invalid-argument', 'maxPlayers must be between 4 and 20');
+        }
+        if (hasDivisions) {
+            if (!Array.isArray(divisions) || divisions.length === 0) {
+                throw new functions.https.HttpsError('invalid-argument', 'At least one division must be selected');
+            }
+            const validDivisions = ['D1', 'D2', 'D3'];
+            for (const d of divisions) {
+                if (!validDivisions.includes(d)) {
+                    throw new functions.https.HttpsError('invalid-argument', 'Invalid division: ' + d);
+                }
+            }
         }
         if (hasHideRosterNames && typeof hideRosterNames !== 'boolean') {
             throw new functions.https.HttpsError('invalid-argument', 'hideRosterNames must be a boolean');
@@ -1060,6 +1107,7 @@ exports.updateTeamSettings = functions
         const updateData = { lastActivityAt: FieldValue.serverTimestamp() };
         if (hasTeamTag) updateData.teamTag = trimmedTag;
         if (hasMaxPlayers) updateData.maxPlayers = maxPlayers;
+        if (hasDivisions) updateData.divisions = divisions;
         if (hasHideRosterNames) updateData.hideRosterNames = hideRosterNames;
         if (hasHideFromComparison) updateData.hideFromComparison = hideFromComparison;
 
@@ -1086,6 +1134,10 @@ exports.updateTeamSettings = functions
         if (hasMaxPlayers) {
             details.oldMaxPlayers = team.maxPlayers;
             details.newMaxPlayers = maxPlayers;
+        }
+        if (hasDivisions) {
+            details.oldDivisions = team.divisions || [];
+            details.newDivisions = divisions;
         }
         if (hasHideRosterNames) {
             details.oldHideRosterNames = team.hideRosterNames || false;
@@ -1182,3 +1234,138 @@ async function _propagateTeamTagChange(teamId, newTag) {
         console.log(`📋 Propagated tag change to ${updateCount} proposals/matches for team ${teamId}`);
     }
 }
+
+// ─── Update Team Tags (Slice 5.3) ─────────────────────────────────────────────
+
+const TAG_REGEX = /^[a-zA-Z0-9\[\]\(\)\{\}\-_.,!]+$/;
+const MAX_TAGS = 6;
+
+exports.updateTeamTags = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    try {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+        }
+
+        const userId = context.auth.uid;
+        const { teamId, teamTags } = data;
+
+        // Validate input structure
+        if (!teamId || typeof teamId !== 'string') {
+            throw new functions.https.HttpsError('invalid-argument', 'teamId is required');
+        }
+        if (!Array.isArray(teamTags) || teamTags.length === 0) {
+            throw new functions.https.HttpsError('invalid-argument', 'At least one tag is required');
+        }
+        if (teamTags.length > MAX_TAGS) {
+            throw new functions.https.HttpsError('invalid-argument', `Maximum ${MAX_TAGS} tags allowed`);
+        }
+
+        // Validate each tag entry
+        let primaryCount = 0;
+        for (const entry of teamTags) {
+            if (!entry || typeof entry.tag !== 'string') {
+                throw new functions.https.HttpsError('invalid-argument', 'Each tag entry must have a "tag" string');
+            }
+            const trimmed = entry.tag.trim();
+            if (trimmed.length < 1 || trimmed.length > 4) {
+                throw new functions.https.HttpsError('invalid-argument', `Tag "${trimmed}" must be 1-4 characters`);
+            }
+            if (!TAG_REGEX.test(trimmed)) {
+                throw new functions.https.HttpsError('invalid-argument', `Tag "${trimmed}" contains invalid characters`);
+            }
+            if (entry.isPrimary) primaryCount++;
+        }
+
+        if (primaryCount !== 1) {
+            throw new functions.https.HttpsError('invalid-argument', 'Exactly one tag must be marked as primary');
+        }
+
+        // Check for duplicate tags (case-insensitive)
+        const lowerTags = teamTags.map(e => e.tag.trim().toLowerCase());
+        if (new Set(lowerTags).size !== lowerTags.length) {
+            throw new functions.https.HttpsError('invalid-argument', 'Duplicate tags are not allowed');
+        }
+
+        // Get team document
+        const teamDoc = await db.collection('teams').doc(teamId).get();
+        if (!teamDoc.exists) {
+            throw new functions.https.HttpsError('not-found', 'Team not found');
+        }
+
+        const team = teamDoc.data();
+
+        // Authorization: leader only
+        if (team.leaderId !== userId) {
+            throw new functions.https.HttpsError('permission-denied', 'Only team leaders can update team tags');
+        }
+
+        // Normalize entries (trim whitespace)
+        const cleanTags = teamTags.map(e => ({
+            tag: e.tag.trim(),
+            isPrimary: !!e.isPrimary
+        }));
+
+        // Cross-team uniqueness check (case-insensitive)
+        const newLowerTags = cleanTags.map(e => e.tag.toLowerCase());
+        const dup = await checkTagUniqueness(newLowerTags, teamId);
+        if (dup) {
+            const originalCase = cleanTags.find(e => e.tag.toLowerCase() === dup.conflict)?.tag || dup.conflict;
+            throw new functions.https.HttpsError(
+                'already-exists',
+                `Tag "${originalCase}" is already used by ${dup.ownerName}`
+            );
+        }
+
+        const primaryTag = cleanTags.find(e => e.isPrimary).tag;
+        const oldPrimaryTag = team.teamTag;
+
+        // Update team document: both teamTags array and teamTag (primary)
+        await db.collection('teams').doc(teamId).update({
+            teamTags: cleanTags,
+            teamTag: primaryTag,
+            lastActivityAt: FieldValue.serverTimestamp()
+        });
+
+        // Propagate primary tag change to proposals/matches if changed
+        if (primaryTag !== oldPrimaryTag) {
+            await _propagateTeamTagChange(teamId, primaryTag);
+        }
+
+        // Event log
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+        const teamNameClean = team.teamName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+        const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
+        const eventId = `${dateStr}-${timeStr}-${teamNameClean}-tags_updated_${randomSuffix}`;
+
+        await db.collection('eventLog').doc(eventId).set({
+            eventId,
+            teamId,
+            teamName: team.teamName,
+            type: 'TEAM_TAGS_UPDATED',
+            category: 'TEAM_MANAGEMENT',
+            timestamp: FieldValue.serverTimestamp(),
+            userId,
+            player: {
+                displayName: team.playerRoster.find(p => p.userId === userId)?.displayName || 'Unknown',
+                initials: team.playerRoster.find(p => p.userId === userId)?.initials || 'UN'
+            },
+            details: {
+                oldTags: team.teamTags || [{ tag: oldPrimaryTag, isPrimary: true }],
+                newTags: cleanTags,
+                primaryChanged: primaryTag !== oldPrimaryTag
+            }
+        });
+
+        console.log('✅ Team tags updated:', { teamId, tags: cleanTags.map(t => t.tag), primary: primaryTag });
+        return { success: true };
+
+    } catch (error) {
+        console.error('❌ updateTeamTags error:', error);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to update team tags: ' + error.message);
+    }
+});

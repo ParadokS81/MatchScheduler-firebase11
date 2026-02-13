@@ -122,18 +122,7 @@ const TeamManagementModal = (function() {
             .map(num => `<option value="${num}" ${num === _teamData.maxPlayers ? 'selected' : ''}>${num}</option>`)
             .join('');
 
-        const tagRow = _isLeader ? `
-            <div class="flex items-center gap-2">
-                <label class="text-sm font-medium text-foreground whitespace-nowrap w-12">Tag</label>
-                <input type="text" id="team-tag-input" value="${_escapeHtml(_teamData.teamTag)}"
-                       maxlength="4" class="w-16 px-2 py-1 bg-muted border border-border rounded-lg text-sm font-mono text-foreground text-center"/>
-                <button id="save-team-tag-btn"
-                        class="px-2 py-1 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-medium rounded-lg transition-colors hidden">
-                    Save
-                </button>
-                <span id="team-tag-feedback" class="text-xs"></span>
-            </div>
-        ` : `
+        const tagRow = _isLeader ? _renderTagChips() : `
             <div class="flex items-center gap-2">
                 <label class="text-sm font-medium text-foreground whitespace-nowrap w-12">Tag</label>
                 <div class="px-2 py-1 bg-muted border border-border rounded-lg text-sm font-mono text-foreground">
@@ -155,6 +144,31 @@ const TeamManagementModal = (function() {
                 <label class="text-sm font-medium text-foreground whitespace-nowrap w-12">Max</label>
                 <div class="px-2 py-1 bg-muted border border-border rounded-lg text-sm text-foreground">
                     ${_teamData.maxPlayers}
+                </div>
+            </div>
+        `;
+
+        const currentDivisions = _teamData.divisions || [];
+        const divisionRow = _isLeader ? `
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-foreground whitespace-nowrap w-12">Div</label>
+                <div class="flex gap-1" id="division-pills">
+                    ${['D1', 'D2', 'D3'].map(div => {
+                        const isActive = currentDivisions.includes(div);
+                        return `<button type="button"
+                            class="division-pill-btn px-2 py-1 text-xs font-medium rounded-lg transition-colors ${isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}"
+                            data-division="${div}"
+                            data-active="${isActive}"
+                        >${div}</button>`;
+                    }).join('')}
+                </div>
+                <span id="division-feedback" class="text-xs"></span>
+            </div>
+        ` : `
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-foreground whitespace-nowrap w-12">Div</label>
+                <div class="px-2 py-1 bg-muted border border-border rounded-lg text-sm text-foreground">
+                    ${(currentDivisions).join(', ') || 'None'}
                 </div>
             </div>
         `;
@@ -195,7 +209,52 @@ const TeamManagementModal = (function() {
                 <div class="flex-1 min-w-0 space-y-2">
                     ${tagRow}
                     ${maxRow}
+                    ${divisionRow}
                     ${joinCodeRow}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render tag chips row with add/remove/primary for leaders (Slice 5.3)
+     */
+    function _renderTagChips() {
+        const tags = _teamData.teamTags && Array.isArray(_teamData.teamTags) && _teamData.teamTags.length > 0
+            ? _teamData.teamTags
+            : [{ tag: _teamData.teamTag, isPrimary: true }];
+
+        const chips = tags.map((entry, i) => {
+            const isPrimary = !!entry.isPrimary;
+            const starClass = isPrimary
+                ? 'text-amber-400'
+                : 'text-muted-foreground/40 hover:text-amber-400/70 cursor-pointer';
+            const starTitle = isPrimary ? 'Primary tag' : 'Set as primary';
+            const canRemove = tags.length > 1;
+
+            return `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-muted border border-border rounded text-sm font-mono text-foreground">
+                <button type="button" class="tag-star-btn ${starClass}" data-tag-index="${i}" title="${starTitle}">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                </button>
+                ${_escapeHtml(entry.tag)}
+                ${canRemove ? `<button type="button" class="tag-remove-btn text-muted-foreground/50 hover:text-destructive ml-0.5" data-tag-index="${i}" title="Remove">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>` : ''}
+            </span>`;
+        }).join('');
+
+        return `
+            <div class="flex items-start gap-2">
+                <label class="text-sm font-medium text-foreground whitespace-nowrap w-12 mt-1">Tag</label>
+                <div class="flex-1 min-w-0">
+                    <div id="tag-chips-container" class="flex flex-wrap gap-1 items-center">
+                        ${chips}
+                        <span class="inline-flex items-center gap-0.5">
+                            <input type="text" id="add-tag-input" maxlength="4" placeholder="+"
+                                   class="w-10 px-1 py-0.5 bg-muted border border-border/50 rounded text-sm font-mono text-foreground text-center placeholder:text-muted-foreground/40 focus:border-primary focus:w-14 transition-all"/>
+                        </span>
+                    </div>
+                    <span id="tag-chips-feedback" class="text-xs mt-0.5 block"></span>
                 </div>
             </div>
         `;
@@ -410,70 +469,150 @@ const TeamManagementModal = (function() {
         }
     }
 
-    /**
-     * Handle team tag input changes — show/hide Save button
-     */
-    function _handleTeamTagInput() {
-        const input = document.getElementById('team-tag-input');
-        const saveBtn = document.getElementById('save-team-tag-btn');
-        const feedback = document.getElementById('team-tag-feedback');
-        const newTag = input.value.trim();
+    // ─── Tag Chip Handlers (Slice 5.3) ───────────────────────────────────
 
-        // Show Save button only when value differs from current
-        if (newTag !== _teamData.teamTag) {
-            saveBtn.classList.remove('hidden');
-        } else {
-            saveBtn.classList.add('hidden');
+    let _tagsLoading = false;
+
+    function _getTeamTags() {
+        if (_teamData.teamTags && Array.isArray(_teamData.teamTags) && _teamData.teamTags.length > 0) {
+            return _teamData.teamTags;
         }
-        // Clear any previous feedback
-        feedback.textContent = '';
-        feedback.className = 'text-xs';
+        return [{ tag: _teamData.teamTag, isPrimary: true }];
     }
 
-    /**
-     * Handle saving team tag
-     */
-    async function _handleSaveTeamTag() {
-        const input = document.getElementById('team-tag-input');
-        const saveBtn = document.getElementById('save-team-tag-btn');
-        const feedback = document.getElementById('team-tag-feedback');
-        const newTag = input.value.trim();
+    function _showTagFeedback(msg, isError) {
+        const fb = document.getElementById('tag-chips-feedback');
+        if (!fb) return;
+        fb.textContent = msg;
+        fb.className = `text-xs mt-0.5 block ${isError ? 'text-destructive' : 'text-green-500'}`;
+        if (!isError) setTimeout(() => { fb.textContent = ''; }, 2000);
+    }
 
-        // Client-side validation
+    async function _saveTeamTags(newTags) {
+        if (_tagsLoading) return;
+        _tagsLoading = true;
+        _setTagChipsDisabled(true);
+        try {
+            const result = await TeamService.callFunction('updateTeamTags', {
+                teamId: _teamId,
+                teamTags: newTags
+            });
+            if (result.success) {
+                _teamData.teamTags = newTags;
+                _teamData.teamTag = newTags.find(t => t.isPrimary).tag;
+                _rerenderTagChips();
+                _showTagFeedback('Saved!', false);
+            } else {
+                _showTagFeedback(result.error || 'Failed to save', true);
+            }
+        } catch (err) {
+            console.error('Error saving team tags:', err);
+            _showTagFeedback('Network error — try again', true);
+        } finally {
+            _tagsLoading = false;
+            _setTagChipsDisabled(false);
+        }
+    }
+
+    function _setTagChipsDisabled(disabled) {
+        const container = document.getElementById('tag-chips-container');
+        if (!container) return;
+        container.querySelectorAll('button').forEach(btn => btn.disabled = disabled);
+        const input = document.getElementById('add-tag-input');
+        if (input) input.disabled = disabled;
+        container.style.opacity = disabled ? '0.5' : '1';
+    }
+
+    function _rerenderTagChips() {
+        const container = document.getElementById('tag-chips-container');
+        if (!container) return;
+        // Re-render just the tag chips section
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = _renderTagChips();
+        const newContainer = tempDiv.querySelector('#tag-chips-container');
+        const feedback = tempDiv.querySelector('#tag-chips-feedback');
+        if (newContainer) container.replaceWith(newContainer);
+        // Re-attach event listeners
+        const nc = document.getElementById('tag-chips-container');
+        nc?.addEventListener('click', _handleTagChipClick);
+        const addInput = document.getElementById('add-tag-input');
+        addInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); _handleAddTag(); }
+        });
+    }
+
+    function _handleTagChipClick(e) {
+        const starBtn = e.target.closest('.tag-star-btn');
+        const removeBtn = e.target.closest('.tag-remove-btn');
+
+        if (starBtn) {
+            const index = parseInt(starBtn.dataset.tagIndex);
+            _handleSetPrimary(index);
+        } else if (removeBtn) {
+            const index = parseInt(removeBtn.dataset.tagIndex);
+            _handleRemoveTag(index);
+        }
+    }
+
+    async function _handleAddTag() {
+        const input = document.getElementById('add-tag-input');
+        if (!input) return;
+        const newTag = input.value.trim();
+        if (!newTag) return;
+
         const error = TeamService.validateTeamTag(newTag);
         if (error) {
-            feedback.textContent = error;
-            feedback.className = 'text-xs text-destructive';
+            _showTagFeedback(error, true);
             return;
         }
 
-        // Loading state
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Saving...';
-
-        try {
-            const result = await TeamService.callFunction('updateTeamSettings', {
-                teamId: _teamId,
-                teamTag: newTag
-            });
-
-            if (result.success) {
-                _teamData.teamTag = newTag;
-                saveBtn.classList.add('hidden');
-                feedback.textContent = 'Saved!';
-                feedback.className = 'text-xs text-green-500';
-            } else {
-                feedback.textContent = result.error || 'Failed to save. Please try again.';
-                feedback.className = 'text-xs text-destructive';
-            }
-        } catch (error) {
-            console.error('Error saving team tag:', error);
-            feedback.textContent = 'Failed to save. Please try again.';
-            feedback.className = 'text-xs text-destructive';
-        } finally {
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'Save';
+        const currentTags = _getTeamTags();
+        if (currentTags.some(t => t.tag.toLowerCase() === newTag.toLowerCase())) {
+            _showTagFeedback('Tag already exists on this team', true);
+            return;
         }
+        if (currentTags.length >= 6) {
+            _showTagFeedback('Maximum 6 tags allowed', true);
+            return;
+        }
+
+        // Cross-team uniqueness check (client-side, from cache)
+        const allTeams = TeamService.getAllTeams();
+        for (const other of allTeams) {
+            if (other.id === _teamId) continue;
+            const otherTags = (other.teamTags && Array.isArray(other.teamTags) && other.teamTags.length > 0)
+                ? other.teamTags.map(t => t.tag.toLowerCase())
+                : (other.teamTag ? [other.teamTag.toLowerCase()] : []);
+            if (otherTags.includes(newTag.toLowerCase())) {
+                _showTagFeedback(`Tag "${newTag}" is already used by ${other.teamName}`, true);
+                return;
+            }
+        }
+
+        input.value = '';
+        const updatedTags = [...currentTags, { tag: newTag, isPrimary: false }];
+        await _saveTeamTags(updatedTags);
+    }
+
+    async function _handleRemoveTag(index) {
+        const currentTags = _getTeamTags();
+        if (currentTags.length <= 1) return; // Can't remove last tag
+        if (currentTags[index].isPrimary) {
+            _showTagFeedback('Can\'t remove primary tag — change primary first', true);
+            return;
+        }
+        const updatedTags = currentTags.filter((_, i) => i !== index);
+        await _saveTeamTags(updatedTags);
+    }
+
+    async function _handleSetPrimary(index) {
+        const currentTags = _getTeamTags();
+        if (currentTags[index].isPrimary) return; // Already primary
+        const updatedTags = currentTags.map((t, i) => ({
+            tag: t.tag,
+            isPrimary: i === index
+        }));
+        await _saveTeamTags(updatedTags);
     }
 
     /**
@@ -554,15 +693,24 @@ const TeamManagementModal = (function() {
         const regenerateBtn = document.getElementById('regenerate-join-code-btn');
         regenerateBtn?.addEventListener('click', _handleRegenerateJoinCode);
 
-        // Team tag edit (leader only)
-        const teamTagInput = document.getElementById('team-tag-input');
-        teamTagInput?.addEventListener('input', _handleTeamTagInput);
-        const saveTeamTagBtn = document.getElementById('save-team-tag-btn');
-        saveTeamTagBtn?.addEventListener('click', _handleSaveTeamTag);
+        // Tag chips (leader only) — Slice 5.3
+        const tagChipsContainer = document.getElementById('tag-chips-container');
+        tagChipsContainer?.addEventListener('click', _handleTagChipClick);
+        const addTagInput = document.getElementById('add-tag-input');
+        addTagInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                _handleAddTag();
+            }
+        });
 
         // Max players select (leader only)
         const maxPlayersSelect = document.getElementById('max-players-select');
         maxPlayersSelect?.addEventListener('change', _handleMaxPlayersChange);
+
+        // Division pills (leader only) — delegate to container
+        const divisionPills = document.getElementById('division-pills');
+        divisionPills?.addEventListener('click', _handleDivisionToggle);
 
         // Scheduler expand/collapse (leader only)
         const schedulerExpandBtn = document.getElementById('scheduler-expand-btn');
@@ -878,6 +1026,81 @@ const TeamManagementModal = (function() {
             // Revert on error
             event.target.value = oldValue;
             _teamData.maxPlayers = oldValue;
+        }
+    }
+
+    /**
+     * Handle division pill toggle
+     */
+    async function _handleDivisionToggle(event) {
+        const btn = event.target.closest('.division-pill-btn');
+        if (!btn) return;
+
+        const division = btn.dataset.division;
+        const wasActive = btn.dataset.active === 'true';
+        const feedback = document.getElementById('division-feedback');
+
+        // Calculate new divisions
+        const currentDivisions = (_teamData.divisions || []).slice();
+        let newDivisions;
+        if (wasActive) {
+            newDivisions = currentDivisions.filter(d => d !== division);
+        } else {
+            newDivisions = [...currentDivisions, division];
+        }
+
+        // Must have at least one division
+        if (newDivisions.length === 0) {
+            feedback.textContent = 'Need at least 1';
+            feedback.className = 'text-xs text-destructive';
+            return;
+        }
+
+        // Clear feedback
+        feedback.textContent = '';
+        feedback.className = 'text-xs';
+
+        // Optimistic UI update
+        const newActive = !wasActive;
+        btn.dataset.active = String(newActive);
+        btn.classList.toggle('bg-primary', newActive);
+        btn.classList.toggle('text-primary-foreground', newActive);
+        btn.classList.toggle('bg-muted', !newActive);
+        btn.classList.toggle('text-muted-foreground', !newActive);
+
+        const oldDivisions = _teamData.divisions;
+        _teamData.divisions = newDivisions;
+
+        try {
+            const result = await TeamService.callFunction('updateTeamSettings', {
+                teamId: _teamId,
+                divisions: newDivisions
+            });
+
+            if (result.success) {
+                // No toast - the pill change is visible
+            } else {
+                // Revert
+                _teamData.divisions = oldDivisions;
+                btn.dataset.active = String(wasActive);
+                btn.classList.toggle('bg-primary', wasActive);
+                btn.classList.toggle('text-primary-foreground', wasActive);
+                btn.classList.toggle('bg-muted', !wasActive);
+                btn.classList.toggle('text-muted-foreground', !wasActive);
+                feedback.textContent = result.error || 'Failed';
+                feedback.className = 'text-xs text-destructive';
+            }
+        } catch (error) {
+            console.error('Error updating divisions:', error);
+            // Revert
+            _teamData.divisions = oldDivisions;
+            btn.dataset.active = String(wasActive);
+            btn.classList.toggle('bg-primary', wasActive);
+            btn.classList.toggle('text-primary-foreground', wasActive);
+            btn.classList.toggle('bg-muted', !wasActive);
+            btn.classList.toggle('text-muted-foreground', !wasActive);
+            feedback.textContent = 'Network error';
+            feedback.className = 'text-xs text-destructive';
         }
     }
 

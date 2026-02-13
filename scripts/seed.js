@@ -22,7 +22,7 @@
 
 const { QW_TEAMS, CAPTAIN_DISCORD } = require('./seed-data/teams');
 const CONFIG = require('./seed-data/config');
-const { getCurrentWeekNumber } = require('../functions/week-utils');
+const { getCurrentWeekNumber, getISOWeekYear } = require('../functions/week-utils');
 
 // ============================================
 // Parse flags
@@ -158,7 +158,7 @@ async function cleanAll() {
 // ============================================
 
 function getWeekId(weekNumber) {
-    const year = new Date().getUTCFullYear();
+    const year = getISOWeekYear(new Date());
     return `${year}-${String(weekNumber).padStart(2, '0')}`;
 }
 
@@ -450,7 +450,11 @@ async function seed() {
         const teamDoc = {
             teamName: team.teamName,
             teamNameLower: team.teamName.toLowerCase(),
-            teamTag: team.teamTag,
+            teamTag: team.teamTag || null,
+            teamTags: team.teamTag
+                ? [{ tag: team.teamTag, isPrimary: true },
+                   ...(team.extraTags || []).map(t => ({ tag: t, isPrimary: false }))]
+                : [],
             leaderId,
             schedulers: [],
             divisions: team.divisions,

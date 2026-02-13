@@ -138,7 +138,7 @@ const TeamsBrowserPanel = (function() {
         // Load map stats if team was pre-selected
         if (_selectedTeamId) {
             const team = _allTeams.find(t => t.id === _selectedTeamId);
-            if (team?.teamTag) _loadMapStats(team.teamTag);
+            if (team?.teamTag) _loadMapStats(TeamService.getTeamAllTags(team.id));
         }
 
         // Set up real-time listener for team updates
@@ -312,14 +312,14 @@ const TeamsBrowserPanel = (function() {
         if (_currentView === 'teams' && _selectedTeamId && _activeTab === 'details') {
             const team = _allTeams.find(t => t.id === _selectedTeamId);
             if (team?.teamTag) {
-                _loadMapStats(team.teamTag);
+                _loadMapStats(TeamService.getTeamAllTags(team.id));
             }
         }
         // If teams view with History tab and a team with teamTag is selected, load match history
         if (_currentView === 'teams' && _selectedTeamId && _activeTab === 'history') {
             const team = _allTeams.find(t => t.id === _selectedTeamId);
             if (team?.teamTag) {
-                _loadMatchHistory(team.teamTag);
+                _loadMatchHistory(TeamService.getTeamAllTags(team.id));
             }
         }
         // If teams view with H2H tab and opponent selected, lazy-load H2H data
@@ -586,7 +586,7 @@ const TeamsBrowserPanel = (function() {
                     </div>
                     <div id="map-stats-content" data-team-tag="${team.teamTag || ''}">
                         ${hasTag
-                            ? (_mapStatsRenderedHtml[team.teamTag] || '<div class="text-xs text-muted-foreground">Loading activity...</div>')
+                            ? (_mapStatsRenderedHtml[(team.teamTag || '').toLowerCase()] || '<div class="text-xs text-muted-foreground">Loading activity...</div>')
                             : `<div class="text-xs text-muted-foreground">
                                 <p>Match history not available</p>
                                 <p class="mt-1">Team leader can set QW Hub tag in Team Settings</p>
@@ -595,7 +595,7 @@ const TeamsBrowserPanel = (function() {
                     </div>
                     ${hasTag ? `
                         <div class="team-details-activity-footer">
-                            <span class="team-details-activity-total" id="map-stats-total">${_mapStatsTotalText[team.teamTag] || ''}</span>
+                            <span class="team-details-activity-total" id="map-stats-total">${_mapStatsTotalText[(team.teamTag || '').toLowerCase()] || ''}</span>
                             <button class="team-details-h2h-btn"
                                     onclick="TeamsBrowserPanel.switchTab('h2h')">
                                 Compare H2H &rarr;
@@ -615,15 +615,19 @@ const TeamsBrowserPanel = (function() {
     // Map Stats (Slice 5.2a)
     // ========================================
 
-    async function _loadMapStats(teamTag) {
+    async function _loadMapStats(teamTags) {
+        // teamTags: string[] (all tags, lowercased) or string (single tag, backward compat)
+        const tags = Array.isArray(teamTags) ? teamTags : [teamTags];
+        const primaryTag = (tags[0] || '').toLowerCase();
+
         let container = document.getElementById('map-stats-content');
         let label = document.getElementById('map-stats-label');
-        if (!container || container.dataset.teamTag !== teamTag) return;
+        if (!container || (container.dataset.teamTag || '').toLowerCase() !== primaryTag) return;
 
         const gen = ++_mapStatsGeneration;
 
         try {
-            const stats = await QWHubService.getTeamMapStats(teamTag, 6);
+            const stats = await QWHubService.getTeamMapStats(tags, 6);
 
             // Bail if a newer call was started while we were awaiting
             if (gen !== _mapStatsGeneration) return;
@@ -631,7 +635,7 @@ const TeamsBrowserPanel = (function() {
             // Re-query DOM after async (original elements may have been replaced by re-render)
             container = document.getElementById('map-stats-content');
             label = document.getElementById('map-stats-label');
-            if (!container || container.dataset.teamTag !== teamTag) return;
+            if (!container || (container.dataset.teamTag || '').toLowerCase() !== primaryTag) return;
 
             if (!stats || stats.totalMatches === 0) {
                 container.innerHTML = '<p class="text-xs text-muted-foreground">No matches found in the last 6 months</p>';
@@ -644,10 +648,10 @@ const TeamsBrowserPanel = (function() {
             }
 
             // Update footer total
-            _mapStatsTotalText[teamTag] = `${stats.totalMatches} matches`;
+            _mapStatsTotalText[primaryTag] = `${stats.totalMatches} matches`;
             const totalEl = document.getElementById('map-stats-total');
             if (totalEl) {
-                totalEl.textContent = _mapStatsTotalText[teamTag];
+                totalEl.textContent = _mapStatsTotalText[primaryTag];
             }
 
             const statsHtml = `
@@ -674,18 +678,18 @@ const TeamsBrowserPanel = (function() {
                     }).join('')}
                 </div>
             `;
-            _mapStatsRenderedHtml[teamTag] = statsHtml;
+            _mapStatsRenderedHtml[primaryTag] = statsHtml;
             container.innerHTML = statsHtml;
         } catch (error) {
             console.error('Failed to load map stats:', error);
             container = document.getElementById('map-stats-content');
-            if (!container || container.dataset.teamTag !== teamTag) return;
+            if (!container || (container.dataset.teamTag || '').toLowerCase() !== primaryTag) return;
 
             container.innerHTML = `
                 <div class="text-xs text-muted-foreground">
                     <p>Couldn't load activity data</p>
                     <button class="text-xs mt-1 text-primary hover:underline cursor-pointer"
-                            onclick="TeamsBrowserPanel.retryMapStats('${_escapeHtml(teamTag)}')">
+                            onclick="TeamsBrowserPanel.retryMapStats('${_escapeHtml(primaryTag)}')">
                         Retry
                     </button>
                 </div>
@@ -698,7 +702,9 @@ const TeamsBrowserPanel = (function() {
      */
     function retryMapStats(teamTag) {
         QWHubService.clearCache();
-        _loadMapStats(teamTag);
+        // Retry with full tag set — find team by primary tag
+        const team = _allTeams.find(t => t.teamTag === teamTag);
+        _loadMapStats(team ? TeamService.getTeamAllTags(team.id) : teamTag);
     }
 
     // ========================================
@@ -917,6 +923,11 @@ const TeamsBrowserPanel = (function() {
                         <button class="mh-action-link" onclick="TeamsBrowserPanel.openFullStats('${match.id}')">
                             Full Stats &#x29C9;
                         </button>
+                        ${match.demoHash ? `
+                        <button class="mh-action-link" onclick="TeamsBrowserPanel.openVoiceReplay('${match.id}')">
+                            &#127911; Watch with Voice
+                        </button>
+                        ` : ''}
                     </div>
                 </div>
             </div>
@@ -1802,6 +1813,10 @@ const TeamsBrowserPanel = (function() {
         const teamTag = splitPanel.dataset.teamTag;
         if (!teamTag) return;
 
+        // Look up full tag set for the selected team
+        const team = _selectedTeamId ? _allTeams.find(t => t.id === _selectedTeamId) : null;
+        const tags = team ? TeamService.getTeamAllTags(team.id) : [teamTag];
+
         // Show loading state
         const listEl = document.getElementById('mh-match-list');
         if (listEl) {
@@ -1812,7 +1827,7 @@ const TeamsBrowserPanel = (function() {
             panel.innerHTML = '<div class="mh-preview-empty"><p class="text-xs text-muted-foreground">Loading...</p></div>';
         }
 
-        await _loadMatchHistory(teamTag);
+        await _loadMatchHistory(tags);
     }
 
     /**
@@ -1847,21 +1862,38 @@ const TeamsBrowserPanel = (function() {
     }
 
     /**
-     * Load match history for a team tag. Fetches 20 matches and populates state.
+     * Open Voice Replay in a new tab for the given match.
+     * Launches replay.html with the demo SHA256 hash and match title.
      */
-    async function _loadMatchHistory(teamTag) {
+    function openVoiceReplay(matchId) {
+        const match = _matchDataById.get(String(matchId));
+        if (!match || !match.demoHash) return;
+
+        const title = `${match.ourTag} ${match.ourScore}-${match.opponentScore} ${match.opponentTag} on ${match.map}`;
+        const url = `replay.html?demo=${match.demoHash}&title=${encodeURIComponent(title)}`;
+        window.open(url, '_blank');
+    }
+
+    /**
+     * Load match history for a team's tags. Fetches matches and populates state.
+     * @param {string|string[]} teamTags - All tags for the team
+     */
+    async function _loadMatchHistory(teamTags) {
+        const tags = Array.isArray(teamTags) ? teamTags : [teamTags];
+        const primaryTag = tags[0] || '';
+
         const splitPanel = document.querySelector('.match-history-split');
-        if (!splitPanel || splitPanel.dataset.teamTag !== teamTag) return;
+        if (!splitPanel || (splitPanel.dataset.teamTag || '').toLowerCase() !== primaryTag) return;
 
         const listEl = document.getElementById('mh-match-list');
         if (!listEl) return;
 
         try {
-            const matches = await QWHubService.getMatchHistory(teamTag, _historyPeriod);
+            const matches = await QWHubService.getMatchHistory(tags, _historyPeriod);
 
             // Guard against stale render (user switched teams during fetch)
             const currentPanel = document.querySelector('.match-history-split');
-            if (!currentPanel || currentPanel.dataset.teamTag !== teamTag) return;
+            if (!currentPanel || (currentPanel.dataset.teamTag || '').toLowerCase() !== primaryTag) return;
 
             // Populate state
             _historyMatches = matches;
@@ -1896,13 +1928,13 @@ const TeamsBrowserPanel = (function() {
         } catch (error) {
             console.error('Failed to load match history:', error);
             const currentPanel = document.querySelector('.match-history-split');
-            if (!currentPanel || currentPanel.dataset.teamTag !== teamTag) return;
+            if (!currentPanel || (currentPanel.dataset.teamTag || '').toLowerCase() !== primaryTag) return;
 
             listEl.innerHTML = `
                 <div class="text-xs text-muted-foreground p-2">
                     <p>Couldn't load match history</p>
                     <button class="text-xs mt-1 text-primary hover:underline cursor-pointer"
-                            onclick="TeamsBrowserPanel.retryMatchHistory('${_escapeHtml(teamTag)}')">
+                            onclick="TeamsBrowserPanel.retryMatchHistory('${_escapeHtml(primaryTag)}')">
                         Retry
                     </button>
                 </div>
@@ -2219,7 +2251,9 @@ const TeamsBrowserPanel = (function() {
      */
     function retryMatchHistory(teamTag) {
         QWHubService.clearCache();
-        _loadMatchHistory(teamTag);
+        // Retry with full tag set — find team by primary tag
+        const team = _allTeams.find(t => t.teamTag === teamTag);
+        _loadMatchHistory(team ? TeamService.getTeamAllTags(team.id) : teamTag);
     }
 
     // ========================================
@@ -2791,6 +2825,9 @@ const TeamsBrowserPanel = (function() {
 
         if (!teamA?.teamTag || !teamB?.teamTag) return;
 
+        const tagsA = TeamService.getTeamAllTags(teamA.id);
+        const tagsB = TeamService.getTeamAllTags(teamB.id);
+
         _h2hLoading = true;
         _h2hResults = null;
         _h2hRosterA = null;
@@ -2803,12 +2840,12 @@ const TeamsBrowserPanel = (function() {
 
         try {
             const [h2hData, rosterA, rosterB] = await Promise.all([
-                QWStatsService.getH2H(teamA.teamTag, teamB.teamTag, {
+                QWStatsService.getH2H(tagsA, tagsB, {
                     months: _h2hPeriod,
                     limit: 10
                 }),
-                QWStatsService.getRoster(teamA.teamTag, { months: _h2hPeriod }),
-                QWStatsService.getRoster(teamB.teamTag, { months: _h2hPeriod })
+                QWStatsService.getRoster(tagsA, { months: _h2hPeriod }),
+                QWStatsService.getRoster(tagsB, { months: _h2hPeriod })
             ]);
 
             // Guard: still viewing same teams?
@@ -3063,6 +3100,9 @@ const TeamsBrowserPanel = (function() {
 
         if (!teamA?.teamTag || !teamB?.teamTag) return;
 
+        const tagsA = TeamService.getTeamAllTags(teamA.id);
+        const tagsB = TeamService.getTeamAllTags(teamB.id);
+
         _formLoading = true;
         _formResultsA = null;
         _formResultsB = null;
@@ -3077,8 +3117,8 @@ const TeamsBrowserPanel = (function() {
 
         try {
             const [formA, formB] = await Promise.all([
-                QWStatsService.getForm(teamA.teamTag, { months: _h2hPeriod, limit: 10 }),
-                QWStatsService.getForm(teamB.teamTag, { months: _h2hPeriod, limit: 10 })
+                QWStatsService.getForm(tagsA, { months: _h2hPeriod, limit: 10 }),
+                QWStatsService.getForm(tagsB, { months: _h2hPeriod, limit: 10 })
             ]);
 
             // Guard against stale response
@@ -3714,6 +3754,9 @@ const TeamsBrowserPanel = (function() {
 
         if (!teamA?.teamTag || !teamB?.teamTag) return;
 
+        const tagsA = TeamService.getTeamAllTags(teamA.id);
+        const tagsB = TeamService.getTeamAllTags(teamB.id);
+
         _mapsLoading = true;
         _mapsDataA = null;
         _mapsDataB = null;
@@ -3723,8 +3766,8 @@ const TeamsBrowserPanel = (function() {
 
         try {
             const [mapsA, mapsB] = await Promise.all([
-                QWStatsService.getMaps(teamA.teamTag, { months: _h2hPeriod }),
-                QWStatsService.getMaps(teamB.teamTag, { months: _h2hPeriod })
+                QWStatsService.getMaps(tagsA, { months: _h2hPeriod }),
+                QWStatsService.getMaps(tagsB, { months: _h2hPeriod })
             ]);
 
             // Guard against stale response
@@ -3816,7 +3859,7 @@ const TeamsBrowserPanel = (function() {
         // Load map stats if team has tag (Details tab is default)
         const team = _allTeams.find(t => t.id === teamId);
         if (team?.teamTag) {
-            _loadMapStats(team.teamTag);
+            _loadMapStats(TeamService.getTeamAllTags(team.id));
         }
     }
 
@@ -4868,7 +4911,7 @@ const TeamsBrowserPanel = (function() {
         _render();
         const team = _allTeams.find(t => t.id === teamId);
         if (team?.teamTag) {
-            _loadMapStats(team.teamTag);
+            _loadMapStats(TeamService.getTeamAllTags(team.id));
         }
     }
 
@@ -4960,6 +5003,7 @@ const TeamsBrowserPanel = (function() {
         filterByOpponent,
         changePeriod,
         openFullStats,
+        openVoiceReplay,
         sortByColumn,
         switchStatsTab,
         // Slice 11.0a: H2H interactions

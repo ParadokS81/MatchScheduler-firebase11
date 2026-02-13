@@ -372,6 +372,7 @@ body {
   height: 100%;
   padding: 0.75rem;
   gap: 0.5rem;
+  overflow-y: auto;
 }
 
 .sidebar-section {
@@ -1099,9 +1100,9 @@ body {
   outline-offset: -2px;
 }
 
-/* Past timeslots — visually hidden, non-interactive */
+/* Past timeslots — dimmed, non-interactive */
 .grid-cell.past-slot {
-  visibility: hidden;
+  opacity: 0.15;
   pointer-events: none;
 }
 
@@ -1191,7 +1192,7 @@ body {
 /* Initials Badge - clean text only, no card effect */
 .player-badge.initials {
   text-transform: uppercase;
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
   background-color: transparent;
   border: none;
 }
@@ -4511,6 +4512,29 @@ body {
     margin-bottom: 0.5rem;
 }
 
+/* Week group headers in proposals column (Slice 8.3) */
+.week-group-header {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.5rem;
+}
+
+/* Current week: slightly brighter */
+.week-group-header.current {
+    color: var(--foreground);
+}
+
+/* Past weeks: dimmed */
+.week-group-header.past {
+    color: var(--muted-foreground);
+    opacity: 0.6;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    Slice 10.0a: Mobile Responsive CSS Foundation
    All mobile styles are additive — desktop layout is untouched.
@@ -4559,8 +4583,8 @@ body {
   position: fixed;
   top: 0;
   bottom: 0;
-  width: 70vw;
-  max-width: 20rem;
+  width: 52vw;
+  max-width: 15rem;
   background-color: var(--card);
   z-index: 45;
   overflow-y: auto;
@@ -4835,6 +4859,81 @@ body {
   font-size: 1.125rem;
 }
 
+/* Auth button in bottom bar (login / avatar) */
+.mobile-bb-auth-btn {
+  min-width: 2.25rem;
+  padding: 0.125rem;
+}
+
+.mobile-bb-avatar {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.mobile-bb-login-label {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--foreground);
+}
+
+/* Login popup (above auth button) */
+.mobile-login-popup {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  margin-top: -0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+  z-index: 50;
+  box-shadow: 0 -4px 12px oklch(0 0 0 / 0.3);
+  min-width: 10rem;
+}
+
+.mobile-login-popup-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-login-discord {
+  background-color: #5865F2;
+  color: white;
+}
+
+.mobile-login-discord:active {
+  background-color: #4752C4;
+}
+
+.mobile-login-google {
+  background-color: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+
+.mobile-login-google:active {
+  background-color: var(--muted);
+}
+
+.mobile-login-popup-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ─── Desktop: Hide all mobile elements ─────────────────────────── */
 
 .mobile-drawer,
@@ -4908,20 +5007,21 @@ body {
   .mobile-drawer-content #panel-left {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    height: auto;
+    min-height: 100%;
   }
 
-  /* Left drawer: sidebar-content fills full height */
+  /* Left drawer: sidebar-content grows with content so drawer scrolls */
   .mobile-drawer-content #panel-left > .sidebar-content {
-    height: 100%;
+    height: auto;
     padding-top: 0.5rem;
   }
 
-  /* Left drawer: shrink the team logo */
+  /* Left drawer: team logo — bigger now that roster is collapsed */
   .mobile-drawer-content .team-logo-clickable {
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: 0.25rem;
+    width: 4rem;
+    height: 4rem;
+    border-radius: 0.375rem;
     flex-shrink: 0;
   }
 
@@ -4936,8 +5036,9 @@ body {
     opacity: 1;
   }
 
-  /* Left drawer: hover popup always visible on mobile (no hover available) */
+  /* Left drawer: hover popup hidden by default, toggled by team name click */
   .mobile-drawer-content .team-hover-popup {
+    display: none;
     position: static;
     opacity: 1;
     pointer-events: auto;
@@ -4945,6 +5046,31 @@ body {
     border: none;
     background: transparent;
     padding: 0.5rem 0 0;
+  }
+
+  .mobile-drawer-content .team-hover-popup.mobile-open {
+    display: block;
+  }
+
+  /* Left drawer: team name acts as toggle — show caret hint */
+  .mobile-drawer-content .team-name-toggle {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-drawer-content .team-name-toggle::after {
+    content: ' ▾';
+    font-size: 0.75em;
+    opacity: 0.5;
+  }
+
+  .mobile-drawer-content .team-name-toggle.open::after {
+    content: ' ▴';
+  }
+
+  /* Left drawer: hide profile footer (accessible from bottom bar avatar now) */
+  .mobile-drawer-content .sidebar-footer {
+    display: none;
   }
 
   /* Left drawer: roster fills full width */
@@ -5065,7 +5191,8 @@ body {
   /* Drawer bottom padding for bottom bar clearance */
   .mobile-drawer-content {
     padding-bottom: 3.5rem;
-    height: 100%;
+    min-height: 100%;
+    flex-shrink: 0; /* Don't shrink inside flex drawer — let drawer scroll instead */
     overscroll-behavior: contain; /* Prevent scroll from bubbling to body */
   }
 
@@ -5074,11 +5201,10 @@ body {
     flex-direction: column-reverse;
   }
 
-  /* Merge search + filters into single row on mobile */
+  /* Stack search + filter rows vertically in narrow drawer */
   .mobile-drawer-content .browser-header {
     display: flex;
-    flex-direction: row;
-    align-items: center;
+    flex-direction: column;
     gap: 0.375rem;
     margin-bottom: 0;
     margin-top: 0.375rem;
@@ -5086,14 +5212,11 @@ body {
   }
 
   .mobile-drawer-content .browser-header > .relative {
-    flex: 1;
     min-width: 0;
     margin-bottom: 0;
   }
 
   .mobile-drawer-content .browser-header > .flex {
-    flex-shrink: 0;
-    flex-wrap: nowrap;
     gap: 0.25rem;
   }
 
@@ -5909,4 +6032,254 @@ body {
 .template-row .template-rename,
 .template-row .template-delete {
     transition: opacity 150ms ease;
+}
+
+/* ─── Voice Replay (replay.html) ─────────────────────────────────── */
+
+/* Full-height player layout */
+.vr-player {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-height: 0;
+}
+
+/* Loading state (shown during DemoInfo fetch) */
+.vr-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+}
+
+/* Header bar */
+.vr-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.vr-header-label {
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+}
+
+.vr-header-sep {
+    color: var(--muted-foreground);
+}
+
+.vr-header-title {
+    color: var(--foreground);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+/* Iframe wrapper — grows to fill available space */
+.vr-iframe-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    background: #000;
+}
+
+.vr-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+}
+
+/* Controls area below iframe */
+.vr-controls {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    background: var(--card);
+}
+
+/* Drop zone */
+.vr-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    margin: 1rem;
+    cursor: pointer;
+    transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.vr-dropzone-active {
+    border-color: var(--primary);
+    background: oklch(from var(--primary) l c h / 0.08);
+}
+
+.vr-dropzone-content {
+    text-align: center;
+}
+
+.vr-dropzone-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.vr-dropzone-text {
+    color: var(--foreground);
+    font-size: 0.9375rem;
+    margin-bottom: 0.25rem;
+}
+
+.vr-dropzone-subtext {
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+    margin-bottom: 0.5rem;
+}
+
+.vr-browse-btn {
+    display: inline-block;
+    padding: 0.375rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--foreground);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.vr-browse-btn:hover {
+    background: var(--muted);
+    border-color: var(--primary);
+}
+
+.vr-drop-status {
+    margin-top: 0.5rem;
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+}
+
+/* Loaded controls */
+.vr-controls-loaded {
+    padding: 0.75rem 1rem;
+}
+
+.vr-control-row {
+    display: grid;
+    grid-template-columns: 7rem 1fr 3.5rem;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+}
+
+.vr-control-label {
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+    white-space: nowrap;
+}
+
+.vr-control-value {
+    color: var(--foreground);
+    font-size: 0.8125rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Tracks section */
+.vr-tracks-section {
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.5rem;
+}
+
+.vr-tracks-header {
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+}
+
+.vr-track-row {
+    display: grid;
+    grid-template-columns: 7rem 1fr 3.5rem;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+}
+
+.vr-track-name {
+    color: var(--foreground);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vr-track-value {
+    color: var(--foreground);
+    font-size: 0.8125rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Add more files button */
+.vr-add-more {
+    margin-top: 0.5rem;
+    text-align: center;
+}
+
+.vr-add-more-btn {
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: color 150ms ease;
+}
+
+.vr-add-more-btn:hover {
+    color: var(--primary);
+}
+
+/* Range slider styling */
+.vr-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 0.375rem;
+    border-radius: 0.1875rem;
+    background: var(--muted);
+    outline: none;
+    cursor: pointer;
+}
+
+.vr-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: none;
+}
+
+.vr-slider::-moz-range-thumb {
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: none;
+}
+
+.vr-slider:hover::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px oklch(from var(--primary) l c h / 0.25);
+}
+
+.vr-slider:hover::-moz-range-thumb {
+    box-shadow: 0 0 0 3px oklch(from var(--primary) l c h / 0.25);
 }

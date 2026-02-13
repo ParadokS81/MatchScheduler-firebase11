@@ -347,6 +347,29 @@ const TeamService = (function() {
         }
     }
 
+    // Get all tags for a team (lowercased, for API queries)
+    // Falls back to [teamTag] if teamTags[] not yet populated
+    function getTeamAllTags(teamId) {
+        const team = getTeamFromCache(teamId);
+        if (!team) return [];
+        if (team.teamTags && Array.isArray(team.teamTags) && team.teamTags.length > 0) {
+            return team.teamTags.map(t => t.tag.toLowerCase());
+        }
+        // Backward compat: fall back to single teamTag
+        return team.teamTag ? [team.teamTag.toLowerCase()] : [];
+    }
+
+    // Get the primary (display) tag for a team
+    function getTeamPrimaryTag(teamId) {
+        const team = getTeamFromCache(teamId);
+        if (!team) return null;
+        if (team.teamTags && Array.isArray(team.teamTags)) {
+            const primary = team.teamTags.find(t => t.isPrimary);
+            if (primary) return primary.tag;
+        }
+        return team.teamTag || null;
+    }
+
     // Check if a user is a scheduler (or leader) for a team
     function isScheduler(teamId, userId) {
         const team = getTeamFromCache(teamId);
@@ -395,6 +418,8 @@ const TeamService = (function() {
         // Removed subscribe/unsubscribe - components handle their own listeners
         updateCachedTeam,
         updateTeamTag,
+        getTeamAllTags,
+        getTeamPrimaryTag,
         cleanup,
         generateJoinCode,
         validateTeamName,

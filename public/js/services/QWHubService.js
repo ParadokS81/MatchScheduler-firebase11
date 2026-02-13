@@ -1,5 +1,6 @@
 // QWHubService.js - Fetch match history from QW Hub API
 // Slice 5.1b: Team Match History
+// Slice 5.3: Multi-tag support — accepts string or string[] for team params
 // Read-only external API service with in-memory caching
 
 const QWHubService = (function() {
@@ -12,30 +13,29 @@ const QWHubService = (function() {
     const _pendingRequests = new Map(); // cacheKey -> Promise (in-flight dedup)
     const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+    // Normalize tag input: string or string[] → lowercase array
+    function _normalizeTags(input) {
+        if (!input) return [];
+        const arr = Array.isArray(input) ? input : [input];
+        return arr.map(t => t.toLowerCase());
+    }
+
     /**
-     * Fetch recent 4on4 matches for a team by tag.
-     * Returns transformed match objects from cache or API.
+     * Fetch a single tag's matches from QWHub API (no cache check).
+     * @param {string} apiTag - Lowercased tag
+     * @param {string} select - Supabase select fields
+     * @param {number} limit
+     * @param {string} [sinceStr] - Optional YYYY-MM-DD date filter
      */
-    async function getRecentMatches(teamTag, limit = 5) {
-        if (!teamTag) return [];
-
-        // QWHub stores team names in lowercase
-        const apiTag = teamTag.toLowerCase();
-
-        // Check cache (HOT PATH)
-        const cached = _matchCache.get(apiTag);
-        if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
-            return cached.data.slice(0, limit);
-        }
-
-        // Fetch from API (COLD PATH)
+    async function _fetchTagMatches(apiTag, select, limit, sinceStr) {
         const encodedTag = encodeURIComponent(`{${apiTag}}`);
-        const url = `${API_BASE}` +
-            `?select=id,timestamp,mode,map,teams,players,demo_sha256` +
+        let url = `${API_BASE}` +
+            `?select=${select}` +
             `&mode=eq.4on4` +
             `&team_names=cs.${encodedTag}` +
             `&order=timestamp.desc` +
             `&limit=${limit}`;
+        if (sinceStr) url += `&timestamp=gte.${sinceStr}`;
 
         const response = await fetch(url, {
             headers: { 'apikey': API_KEY }
@@ -45,26 +45,78 @@ const QWHubService = (function() {
             throw new Error(`QW Hub API error: ${response.status}`);
         }
 
-        const rawData = await response.json();
-        const matches = rawData.map(match => _transformMatch(match, apiTag));
+        return response.json();
+    }
 
-        _matchCache.set(apiTag, {
-            data: matches,
-            fetchedAt: Date.now()
+    /**
+     * Deduplicate matches by id, sort desc by timestamp, apply limit.
+     */
+    function _dedupeAndSort(matches, limit) {
+        const seen = new Set();
+        const deduped = matches.filter(m => {
+            if (seen.has(m.id)) return false;
+            seen.add(m.id);
+            return true;
         });
+        deduped.sort((a, b) => new Date(b.date) - new Date(a.date));
+        return limit ? deduped.slice(0, limit) : deduped;
+    }
 
-        return matches;
+    /**
+     * Fetch recent 4on4 matches for a team by tag(s).
+     * Accepts string or string[] — parallel queries per tag, dedup by match id.
+     * @param {string|string[]} teamTag
+     * @param {number} limit
+     */
+    async function getRecentMatches(teamTag, limit = 5) {
+        const tags = _normalizeTags(teamTag);
+        if (tags.length === 0) return [];
+
+        const results = [];
+        const uncached = [];
+
+        // Check per-tag cache (HOT PATH)
+        for (const tag of tags) {
+            const cached = _matchCache.get(tag);
+            if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
+                results.push(...cached.data);
+            } else {
+                uncached.push(tag);
+            }
+        }
+
+        // Parallel fetch uncached tags (COLD PATH)
+        if (uncached.length > 0) {
+            const SELECT = 'id,timestamp,mode,map,teams,players,demo_sha256';
+            const fetches = uncached.map(tag => _fetchTagMatches(tag, SELECT, limit));
+            const fetchResults = await Promise.all(fetches);
+
+            for (let i = 0; i < uncached.length; i++) {
+                const tag = uncached[i];
+                const matches = fetchResults[i].map(m => _transformMatch(m, tag));
+                _matchCache.set(tag, { data: matches, fetchedAt: Date.now() });
+                results.push(...matches);
+            }
+        }
+
+        return _dedupeAndSort(results, limit);
     }
 
     /**
      * Transform raw API match into our internal format.
+     * @param {object} apiMatch - Raw Supabase row
+     * @param {string|string[]} ourTeamTag - Single tag or array of tags (lowercased)
      */
     function _transformMatch(apiMatch, ourTeamTag) {
+        const ourTags = Array.isArray(ourTeamTag)
+            ? ourTeamTag.map(t => t.toLowerCase())
+            : [ourTeamTag.toLowerCase()];
+
         const ourTeam = apiMatch.teams.find(t =>
-            t.name.toLowerCase() === ourTeamTag.toLowerCase()
+            ourTags.includes(t.name.toLowerCase())
         );
         const opponent = apiMatch.teams.find(t =>
-            t.name.toLowerCase() !== ourTeamTag.toLowerCase()
+            !ourTags.includes(t.name.toLowerCase())
         );
 
         const won = ourTeam && opponent && ourTeam.frags > opponent.frags;
@@ -74,7 +126,7 @@ const QWHubService = (function() {
             id: apiMatch.id,
             date: new Date(apiMatch.timestamp),
             map: apiMatch.map,
-            ourTag: ourTeam?.name || ourTeamTag,
+            ourTag: ourTeam?.name || (Array.isArray(ourTeamTag) ? ourTeamTag[0] : ourTeamTag),
             ourScore: ourTeam?.frags || 0,
             opponentTag: opponent?.name || '???',
             opponentScore: opponent?.frags || 0,
@@ -88,9 +140,11 @@ const QWHubService = (function() {
 
     /**
      * Generate QW Hub URL filtered to a team's 4on4 matches.
+     * Accepts string or string[] — uses first tag for the URL.
      */
     function getHubUrl(teamTag) {
-        return `https://hub.quakeworld.nu/games/?mode=4on4&team=${encodeURIComponent(teamTag)}`;
+        const tag = Array.isArray(teamTag) ? teamTag[0] : teamTag;
+        return `https://hub.quakeworld.nu/games/?mode=4on4&team=${encodeURIComponent(tag || '')}`;
     }
 
     /**
@@ -249,68 +303,68 @@ const QWHubService = (function() {
 
     /**
      * Fetch match data for map activity summary.
+     * Accepts string or string[] — parallel queries per tag, dedup by match id.
      * Returns aggregated stats: { totalMatches, months, maps: [{ map, total, wins, losses, draws }] }
-     * Fetches up to 50 4on4 matches within the date range.
+     * @param {string|string[]} teamTag
+     * @param {number} months
      */
     async function getTeamMapStats(teamTag, months = 6) {
-        if (!teamTag) return null;
+        const tags = _normalizeTags(teamTag);
+        if (tags.length === 0) return null;
 
-        const apiTag = teamTag.toLowerCase();
-        const cacheKey = `mapstats_${apiTag}_${months}`;
+        // Combined cache key for the full tag set
+        const sortedKey = [...tags].sort().join(',');
+        const cacheKey = `mapstats_${sortedKey}_${months}`;
 
-        // Check cache (HOT PATH)
+        // Check combined result cache (HOT PATH)
         const cached = _matchCache.get(cacheKey);
         if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
             return cached.data;
         }
 
-        // Deduplicate: if this exact request is already in-flight, reuse it
+        // Deduplicate in-flight
         if (_pendingRequests.has(cacheKey)) {
             return _pendingRequests.get(cacheKey);
         }
 
-        const promise = _fetchTeamMapStats(apiTag, cacheKey, months);
+        const promise = _fetchTeamMapStats(tags, cacheKey, months);
         _pendingRequests.set(cacheKey, promise);
         promise.finally(() => _pendingRequests.delete(cacheKey));
         return promise;
     }
 
-    async function _fetchTeamMapStats(apiTag, cacheKey, months) {
-        // Calculate date range
+    async function _fetchTeamMapStats(tags, cacheKey, months) {
         const since = new Date();
         since.setMonth(since.getMonth() - months);
-        const sinceStr = since.toISOString().split('T')[0]; // YYYY-MM-DD
+        const sinceStr = since.toISOString().split('T')[0];
 
-        const encodedTag = encodeURIComponent(`{${apiTag}}`);
-        const url = `${API_BASE}` +
-            `?select=id,timestamp,map,teams` +
-            `&mode=eq.4on4` +
-            `&team_names=cs.${encodedTag}` +
-            `&timestamp=gte.${sinceStr}` +
-            `&order=timestamp.desc` +
-            `&limit=1000`;
+        const SELECT = 'id,timestamp,map,teams';
+        const fetches = tags.map(tag => _fetchTagMatches(tag, SELECT, 1000, sinceStr));
+        const fetchResults = await Promise.all(fetches);
 
-        const response = await fetch(url, {
-            headers: { 'apikey': API_KEY }
-        });
-
-        if (!response.ok) {
-            throw new Error(`QW Hub API error: ${response.status}`);
+        // Merge and dedup raw results by match id
+        const seen = new Set();
+        const allMatches = [];
+        for (const rawData of fetchResults) {
+            for (const match of rawData) {
+                if (!seen.has(match.id)) {
+                    seen.add(match.id);
+                    allMatches.push(match);
+                }
+            }
         }
-
-        const rawData = await response.json();
 
         // Aggregate by map
         const mapAgg = {};
-        rawData.forEach(match => {
+        allMatches.forEach(match => {
             const map = match.map;
             if (!mapAgg[map]) {
                 mapAgg[map] = { map, total: 0, wins: 0, losses: 0, draws: 0 };
             }
             mapAgg[map].total++;
 
-            const ourTeam = match.teams.find(t => t.name.toLowerCase() === apiTag);
-            const opponent = match.teams.find(t => t.name.toLowerCase() !== apiTag);
+            const ourTeam = match.teams.find(t => tags.includes(t.name.toLowerCase()));
+            const opponent = match.teams.find(t => !tags.includes(t.name.toLowerCase()));
             if (ourTeam && opponent) {
                 if (ourTeam.frags > opponent.frags) mapAgg[map].wins++;
                 else if (ourTeam.frags < opponent.frags) mapAgg[map].losses++;
@@ -318,11 +372,10 @@ const QWHubService = (function() {
             }
         });
 
-        // Sort by total matches descending
         const maps = Object.values(mapAgg).sort((a, b) => b.total - a.total);
 
         const result = {
-            totalMatches: rawData.length,
+            totalMatches: allMatches.length,
             months,
             maps
         };
@@ -337,59 +390,59 @@ const QWHubService = (function() {
 
     /**
      * Fetch full match history for a team within a time period.
-     * Returns transformed match objects with players data (for scoreboards).
+     * Accepts string or string[] — parallel queries per tag, dedup by match id.
      * Used by Match History tab's split-panel view.
-     * @param {string} teamTag
+     * @param {string|string[]} teamTag
      * @param {number} months - Time period in months (default 3)
      */
     async function getMatchHistory(teamTag, months = 3) {
-        if (!teamTag) return [];
+        const tags = _normalizeTags(teamTag);
+        if (tags.length === 0) return [];
 
-        const apiTag = teamTag.toLowerCase();
-        const cacheKey = `history_${apiTag}_${months}`;
+        // Combined cache key for the full tag set
+        const sortedKey = [...tags].sort().join(',');
+        const cacheKey = `history_${sortedKey}_${months}`;
 
-        // Check cache (HOT PATH)
+        // Check combined result cache (HOT PATH)
         const cached = _matchCache.get(cacheKey);
         if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
             return cached.data;
         }
 
-        // Deduplicate: if this exact request is already in-flight, reuse it
+        // Deduplicate in-flight
         if (_pendingRequests.has(cacheKey)) {
             return _pendingRequests.get(cacheKey);
         }
 
-        const promise = _fetchMatchHistory(apiTag, cacheKey, months);
+        const promise = _fetchMatchHistory(tags, cacheKey, months);
         _pendingRequests.set(cacheKey, promise);
         promise.finally(() => _pendingRequests.delete(cacheKey));
         return promise;
     }
 
-    async function _fetchMatchHistory(apiTag, cacheKey, months) {
-        // Calculate date range
+    async function _fetchMatchHistory(tags, cacheKey, months) {
         const since = new Date();
         since.setMonth(since.getMonth() - months);
         const sinceStr = since.toISOString().split('T')[0];
 
-        const encodedTag = encodeURIComponent(`{${apiTag}}`);
-        const url = `${API_BASE}` +
-            `?select=id,timestamp,mode,map,teams,players,demo_sha256` +
-            `&mode=eq.4on4` +
-            `&team_names=cs.${encodedTag}` +
-            `&timestamp=gte.${sinceStr}` +
-            `&order=timestamp.desc` +
-            `&limit=1000`;
+        const SELECT = 'id,timestamp,mode,map,teams,players,demo_sha256';
+        const fetches = tags.map(tag => _fetchTagMatches(tag, SELECT, 1000, sinceStr));
+        const fetchResults = await Promise.all(fetches);
 
-        const response = await fetch(url, {
-            headers: { 'apikey': API_KEY }
-        });
-
-        if (!response.ok) {
-            throw new Error(`QW Hub API error: ${response.status}`);
+        // Merge all raw results, then transform with full tag set for correct perspective
+        const seen = new Set();
+        const allRaw = [];
+        for (const rawData of fetchResults) {
+            for (const match of rawData) {
+                if (!seen.has(match.id)) {
+                    seen.add(match.id);
+                    allRaw.push(match);
+                }
+            }
         }
 
-        const rawData = await response.json();
-        const matches = rawData.map(match => _transformMatch(match, apiTag));
+        const matches = allRaw.map(m => _transformMatch(m, tags));
+        matches.sort((a, b) => new Date(b.date) - new Date(a.date));
 
         _matchCache.set(cacheKey, {
             data: matches,

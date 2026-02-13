@@ -129,9 +129,15 @@ Team information with embedded roster.
 interface TeamDocument {
   // Identity
   teamName: string;           // 3-30 chars
-  teamTag: string;            // 1-4 chars, case-sensitive, matches QW in-game tag
+  teamTag: string;            // 1-4 chars, case-sensitive, matches QW in-game tag (PRIMARY tag)
                                // Used for QW Hub API lookups (hub.quakeworld.nu)
                                // Special chars allowed: []()-_.,!
+                               // Always kept in sync with the isPrimary tag from teamTags[]
+
+  // Tag collection for stats aggregation (Slice 5.3)
+  teamTags?: TeamTagEntry[];   // All tags this team has played under
+                               // One must be isPrimary: true (synced to teamTag)
+                               // Used by QWHub + QWStats to aggregate match history
 
   // Leadership
   leaderId: string;           // userId of team leader
@@ -172,6 +178,11 @@ interface PlayerEntry {
   photoURL: string | null;    // Denormalized for avatar display (128px, CSS handles sizing)
   joinedAt: Date;             // When they joined the team
   role: 'leader' | 'member';
+}
+
+interface TeamTagEntry {
+  tag: string;                // 1-4 chars, QW in-game tag (case-sensitive)
+  isPrimary: boolean;         // Exactly one must be true; synced to teamTag field
 }
 ```
 
@@ -301,6 +312,7 @@ type EventType =
   | 'PLAYER_JOINED'
   | 'PLAYER_LEFT'
   | 'SETTINGS_UPDATED'
+  | 'TEAM_TAGS_UPDATED'
   | 'JOIN_CODE_REGENERATED'
   | 'PROPOSAL_CREATED'
   | 'SLOT_CONFIRMED'

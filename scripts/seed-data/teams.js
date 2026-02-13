@@ -170,6 +170,7 @@ const QW_TEAMS = [
         id: 'team-ving-001',
         teamName: 'Ving',
         teamTag: 'ving',
+        extraTags: ['0151'],
         divisions: ['D1'],
         logoUrl: 'https://www.thebig4.se/teams/ving.png',
         players: [
