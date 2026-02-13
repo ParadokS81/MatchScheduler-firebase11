@@ -168,20 +168,28 @@ const UpcomingMatchesPanel = (function() {
     }
 
     function _renderMatchCard(match) {
-        // Format slot — extract day abbreviation + time separately
-        let dayAbbr = '';
+        // Format slot — full day name + time
+        let dayFull = '';
         let timeOnly = '';
         if (typeof TimezoneService !== 'undefined' && TimezoneService.formatSlotForDisplay) {
             const formatted = TimezoneService.formatSlotForDisplay(match.slotId);
-            dayAbbr = (formatted.dayLabel || '').slice(0, 3);
+            dayFull = formatted.dayLabel || '';
             timeOnly = formatted.timeLabel || '';
         }
 
-        // Format date
-        let dateDisplay = '';
+        // Format day with ordinal (e.g., "12th") or "Today"
+        let dayOrdinal = '';
         if (match.scheduledDate) {
-            const d = new Date(match.scheduledDate + 'T00:00:00');
-            dateDisplay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const today = new Date();
+            const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            if (match.scheduledDate === todayStr) {
+                dayOrdinal = 'Today';
+                dayFull = '';
+            } else {
+                const d = new Date(match.scheduledDate + 'T00:00:00');
+                const dayNum = d.getDate();
+                dayOrdinal = dayNum + _getOrdinalSuffix(dayNum);
+            }
         }
 
         // Get team data from cache
@@ -192,25 +200,39 @@ const UpcomingMatchesPanel = (function() {
         const tagA = teamA?.teamTag || match.teamAName || '?';
         const tagB = teamB?.teamTag || match.teamBName || '?';
 
-        // Division from either team
-        const div = teamA?.divisions?.[0] || teamB?.divisions?.[0] || '';
+        // Game type badge
+        const gameType = match.gameType || 'official';
+        const gameTypeBadge = gameType === 'practice'
+            ? '<span class="text-[0.625rem] font-semibold text-amber-400">PRAC</span>'
+            : '<span class="text-[0.625rem] font-semibold text-green-400">OFFI</span>';
+
+        // Date line: "Thursday 12th. 22:00" or "Today 22:00"
+        const dateLine = dayOrdinal === 'Today'
+            ? `Today ${timeOnly}`.trim()
+            : `${dayFull} ${dayOrdinal}. ${timeOnly}`.trim();
 
         return `
-            <div class="match-card-compact py-1.5 cursor-pointer rounded hover:bg-muted/50 transition-colors"
+            <div class="match-card-compact py-2 px-2 cursor-pointer rounded border border-border/50 bg-muted/15 hover:bg-muted/40 transition-colors"
                  data-match-id="${match.id}" data-team-a="${match.teamAId}" data-team-b="${match.teamBId}"
                  data-week-id="${match.weekId || ''}" data-slot-id="${match.slotId || ''}">
                 <div class="flex items-center justify-center gap-2">
                     ${logoA ? `<img src="${logoA}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
                     <span class="text-sm font-semibold">${_escapeHtml(tagA)}</span>
-                    <span class="text-xs text-muted-foreground">vs</span>
+                    ${gameTypeBadge}
                     <span class="text-sm font-semibold">${_escapeHtml(tagB)}</span>
                     ${logoB ? `<img src="${logoB}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
                 </div>
-                <div class="flex items-center justify-center">
-                    <span class="text-xs text-muted-foreground">${dateDisplay} ${dayAbbr} ${timeOnly}${div ? ` (${div})` : ''}</span>
+                <div class="flex items-center justify-center mt-0.5">
+                    <span class="text-xs text-muted-foreground">${dateLine}</span>
                 </div>
             </div>
         `;
+    }
+
+    function _getOrdinalSuffix(n) {
+        const s = ['th', 'st', 'nd', 'rd'];
+        const v = n % 100;
+        return s[(v - 20) % 10] || s[v] || s[0];
     }
 
     function _renderEmpty(message) {

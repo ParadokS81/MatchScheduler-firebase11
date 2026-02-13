@@ -1,5 +1,5 @@
 // MatchesPanel.js - Matches tab content with proposal cards
-// Slice 8.2c: 2-column layout (this week | upcoming + scheduled) with Discord contact
+// Slice 8.3: Proposals by week (left) | Scheduled matches (right) with Discord contact
 // Follows Cache + Listener pattern: Component owns Firebase listeners, services manage cache
 
 const MatchesPanel = (function() {
@@ -172,8 +172,8 @@ const MatchesPanel = (function() {
      * Get the current week as an object with weekId, weekNumber, dateRange.
      */
     function _getCurrentWeek() {
-        const currentWeek = WeekNavigation.getCurrentWeekNumber();
-        const year = new Date().getUTCFullYear();
+        const currentWeek = DateUtils.getCurrentWeekNumber();
+        const year = DateUtils.getISOWeekYear(new Date());
         const weekId = `${year}-${String(currentWeek).padStart(2, '0')}`;
         const dateRange = _getWeekDateRange(currentWeek, year);
         return { weekId, weekNumber: currentWeek, dateRange };
@@ -225,7 +225,7 @@ const MatchesPanel = (function() {
     }
 
     /**
-     * Render 2-column layout: THIS WEEK (left ~60%) | UPCOMING (right ~40%) + archived
+     * Render 2-column layout: PROPOSALS BY WEEK (left ~60%) | SCHEDULED MATCHES (right ~40%) + archived
      */
     async function _renderAll() {
         if (!_container) return;
@@ -241,9 +241,10 @@ const MatchesPanel = (function() {
         const now = new Date();
         const currentWeek = _getCurrentWeek();
 
-        // Categorize proposals
-        const thisWeekProposals = [];
-        const futureProposalsByWeek = {};
+        // ─── Categorize proposals ───────────────────────────────
+        const currentWeekProposals = [];
+        const futureWeekGroups = {};   // weekId → proposals[]
+        const pastWeekGroups = {};     // weekId → proposals[]
         const archived = [];
 
         for (const p of proposals) {
@@ -251,66 +252,98 @@ const MatchesPanel = (function() {
                 if (p.expiresAt && p.expiresAt.toDate && p.expiresAt.toDate() < now) {
                     archived.push(p);
                 } else if (p.weekId === currentWeek.weekId) {
-                    thisWeekProposals.push(p);
+                    currentWeekProposals.push(p);
+                } else if (p.weekId > currentWeek.weekId) {
+                    if (!futureWeekGroups[p.weekId]) futureWeekGroups[p.weekId] = [];
+                    futureWeekGroups[p.weekId].push(p);
                 } else {
-                    // Future week — group by weekId
-                    if (!futureProposalsByWeek[p.weekId]) futureProposalsByWeek[p.weekId] = [];
-                    futureProposalsByWeek[p.weekId].push(p);
+                    // Past week — still active proposal but week has passed
+                    if (!pastWeekGroups[p.weekId]) pastWeekGroups[p.weekId] = [];
+                    pastWeekGroups[p.weekId].push(p);
                 }
             } else if (p.status === 'confirmed') {
-                // Confirmed proposals are no longer shown as cards — their matches appear in upcoming column
+                // Confirmed proposals are no longer shown as cards — their matches appear in right column
             } else {
                 archived.push(p);
             }
         }
 
-        // Sort future weeks chronologically
-        const futureWeekIds = Object.keys(futureProposalsByWeek).sort();
+        const futureWeekIds = Object.keys(futureWeekGroups).sort();
+        const pastWeekIds = Object.keys(pastWeekGroups).sort().reverse(); // Most recent past first
 
-        // Get upcoming scheduled matches for user's teams
+        // ─── Scheduled matches (right column) ───────────────────
         const scheduledMatches = ScheduledMatchService.getUpcomingMatchesForTeams(_userTeamIds);
         scheduledMatches.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
 
-        // Build future weeks HTML
-        const futureWeeksHtml = futureWeekIds.map(weekId => {
+        // ─── Build left column: proposals grouped by week ───────
+        let leftColumnHtml = '';
+
+        // Current week group
+        leftColumnHtml += `
+            <div class="week-group">
+                <div class="week-group-header current">
+                    This Week · W${String(currentWeek.weekNumber).padStart(2, '0')} · ${currentWeek.dateRange}
+                </div>
+                <div class="space-y-2">
+                    ${currentWeekProposals.length > 0
+                        ? currentWeekProposals.map(p => _renderProposalCard(p, 'active')).join('')
+                        : '<p class="text-xs text-muted-foreground/50 italic">No proposals this week</p>'}
+                </div>
+            </div>
+        `;
+
+        // Future week groups
+        for (const weekId of futureWeekIds) {
             const [yearStr, weekStr] = weekId.split('-');
             const weekNum = parseInt(weekStr);
             const year = parseInt(yearStr);
             const dateRange = _getWeekDateRange(weekNum, year);
-            return _renderFutureWeekGroup(weekNum, dateRange, futureProposalsByWeek[weekId]);
-        }).join('');
+            leftColumnHtml += `
+                <div class="week-group">
+                    <div class="week-group-header">
+                        W${String(weekNum).padStart(2, '0')} · ${dateRange}
+                    </div>
+                    <div class="space-y-2">
+                        ${futureWeekGroups[weekId].map(p => _renderProposalCard(p, 'active')).join('')}
+                    </div>
+                </div>
+            `;
+        }
 
-        const hasFutureContent = futureWeekIds.length > 0 || scheduledMatches.length > 0;
+        // Past week groups (dimmed)
+        for (const weekId of pastWeekIds) {
+            const [yearStr, weekStr] = weekId.split('-');
+            const weekNum = parseInt(weekStr);
+            const year = parseInt(yearStr);
+            const dateRange = _getWeekDateRange(weekNum, year);
+            leftColumnHtml += `
+                <div class="week-group">
+                    <div class="week-group-header past">
+                        W${String(weekNum).padStart(2, '0')} · ${dateRange}
+                    </div>
+                    <div class="space-y-2">
+                        ${pastWeekGroups[weekId].map(p => _renderProposalCard(p, 'active')).join('')}
+                    </div>
+                </div>
+            `;
+        }
 
+        // ─── Assemble layout ────────────────────────────────────
         _container.innerHTML = `
             <div class="matches-panel h-full flex flex-col">
                 <div class="flex-1 flex gap-4 p-3 overflow-hidden min-h-0">
-                    <!-- LEFT: THIS WEEK -->
-                    <div class="flex-[3] min-w-0 flex flex-col">
-                        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                            This Week · W${String(currentWeek.weekNumber).padStart(2, '0')} · ${currentWeek.dateRange}
-                        </h3>
-                        <div class="flex-1 overflow-y-auto space-y-2">
-                            ${thisWeekProposals.length > 0
-                                ? thisWeekProposals.map(p => _renderProposalCard(p, 'active')).join('')
-                                : '<p class="text-xs text-muted-foreground/50 italic">No proposals this week</p>'}
-                        </div>
+                    <!-- LEFT: ALL PROPOSALS BY WEEK -->
+                    <div class="flex-[3] min-w-0 flex flex-col overflow-y-auto space-y-4">
+                        ${leftColumnHtml}
                     </div>
 
-                    <!-- RIGHT: UPCOMING -->
+                    <!-- RIGHT: SCHEDULED MATCHES ONLY -->
                     <div class="flex-[2] min-w-0 flex flex-col border-l border-border pl-4">
                         <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                            Upcoming
+                            Scheduled Matches
                         </h3>
-                        <div class="flex-1 overflow-y-auto space-y-3">
-                            ${futureWeeksHtml}
-                            ${scheduledMatches.length > 0 ? `
-                                <div class="${futureWeekIds.length > 0 ? 'mt-3 pt-3 border-t border-border' : ''}">
-                                    <div class="future-week-header mb-2">Scheduled Matches</div>
-                                    ${scheduledMatches.map(m => _renderUpcomingMatchCompact(m)).join('')}
-                                </div>
-                            ` : ''}
-                            ${!hasFutureContent ? '<p class="text-xs text-muted-foreground/50 italic">No upcoming proposals or matches</p>' : ''}
+                        <div class="flex-1 overflow-y-auto space-y-1">
+                            ${scheduledMatches.map(m => _renderUpcomingMatchCompact(m)).join('')}
                         </div>
                     </div>
                 </div>
@@ -323,22 +356,6 @@ const MatchesPanel = (function() {
         window.dispatchEvent(new CustomEvent('matches-panel-rendered'));
     }
 
-    /**
-     * Render a group of proposals for a future week
-     */
-    function _renderFutureWeekGroup(weekNumber, dateRange, proposals) {
-        return `
-            <div>
-                <div class="future-week-header">
-                    W${String(weekNumber).padStart(2, '0')} · ${dateRange}
-                </div>
-                <div class="space-y-2">
-                    ${proposals.map(p => _renderProposalCard(p, 'active')).join('')}
-                </div>
-            </div>
-        `;
-    }
-
     // Discord SVG icon (reused in card and handlers)
     const DISCORD_ICON_SVG = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>`;
 
@@ -346,12 +363,17 @@ const MatchesPanel = (function() {
      * Get proposal status text and color for the card status line
      */
     function _getProposalStatus(proposal, isProposerSide) {
-        const myConfirmedCount = Object.keys(
+        const now = new Date();
+        const wk = proposal.weekId;
+        const mySlots = Object.keys(
             (isProposerSide ? proposal.proposerConfirmedSlots : proposal.opponentConfirmedSlots) || {}
-        ).length;
-        const theirConfirmedCount = Object.keys(
+        );
+        const theirSlots = Object.keys(
             (isProposerSide ? proposal.opponentConfirmedSlots : proposal.proposerConfirmedSlots) || {}
-        ).length;
+        );
+        // Only count future confirmed slots (past ones are no longer actionable)
+        const myConfirmedCount = mySlots.filter(s => !_isSlotPast(wk, s, now)).length;
+        const theirConfirmedCount = theirSlots.filter(s => !_isSlotPast(wk, s, now)).length;
 
         if (myConfirmedCount > 0 && theirConfirmedCount > 0) {
             return { text: `You confirmed ${myConfirmedCount}, they confirmed ${theirConfirmedCount}`, cls: 'text-green-400' };
@@ -460,13 +482,13 @@ const MatchesPanel = (function() {
                                 ${selectedType === 'official' ? 'border-green-500 text-green-400 bg-green-500/10' : hintType === 'official' ? 'border-green-500/50 text-green-400/60' : 'border-border text-muted-foreground'}
                                 hover:text-green-400 hover:border-green-500/50"
                                 data-action="card-game-type" data-proposal-id="${proposal.id}" data-type="official">
-                            OFF
+                            Official
                         </button>
                         <button class="game-type-btn px-1.5 py-0.5 rounded border transition-colors
                                 ${selectedType === 'practice' ? 'border-amber-500 text-amber-400 bg-amber-500/10' : hintType === 'practice' ? 'border-amber-500/50 text-amber-400/60' : 'border-border text-muted-foreground'}
                                 hover:text-amber-400 hover:border-amber-500/50"
                                 data-action="card-game-type" data-proposal-id="${proposal.id}" data-type="practice">
-                            PRAC
+                            Practice
                         </button>
                         ${isPrac ? `
                             <button class="px-1.5 py-0.5 rounded border text-xs transition-colors
@@ -538,9 +560,9 @@ const MatchesPanel = (function() {
 
             // Build status text with game type labels
             const myTypeLabel = iConfirmed && myConfirm.gameType
-                ? (myConfirm.gameType === 'practice' ? 'PRAC' : 'OFF') : '';
+                ? (myConfirm.gameType === 'practice' ? 'PRAC' : 'OFFI') : '';
             const theirTypeLabel = theyConfirmed && theirConfirm.gameType
-                ? (theirConfirm.gameType === 'practice' ? 'PRAC' : 'OFF') : '';
+                ? (theirConfirm.gameType === 'practice' ? 'PRAC' : 'OFFI') : '';
 
             let statusIcon = '';
             if (bothConfirmed) {
@@ -650,7 +672,7 @@ const MatchesPanel = (function() {
         const gameType = match.gameType || 'official';
         const gameTypeBadge = gameType === 'practice'
             ? '<span class="text-xs text-amber-400/80 font-medium">PRAC</span>'
-            : '<span class="text-xs text-green-400/80 font-medium">OFF</span>';
+            : '<span class="text-xs text-green-400/80 font-medium">OFFI</span>';
 
         const canCancel = _canUserCancelMatch(match);
 
@@ -1196,7 +1218,7 @@ const MatchesPanel = (function() {
                     const discordUserId = userDoc.data().discordUserId;
                     if (discordUserId) {
                         setTimeout(() => {
-                            window.open(`https://discord.com/users/${discordUserId}`, '_blank');
+                            window.location.href = `discord://discord.com/users/${discordUserId}`;
                         }, 100);
                         return;
                     }
@@ -1246,6 +1268,12 @@ const MatchesPanel = (function() {
     // ─── Roster Tooltip ────────────────────────────────────────────────
 
     function _handleMatchRowEnter(e) {
+        // Hide tooltip and bail when hovering over action buttons (right side of slot row)
+        if (e.target.closest('.slot-col-actions')) {
+            _hideRosterTooltip();
+            return;
+        }
+
         // Trigger on scheduled match rows OR any part of a slot row in expanded proposals
         const row = e.target.closest('.upcoming-match-row') || e.target.closest('.slot-row');
         if (!row) return;
