@@ -9,13 +9,14 @@ const { processLogoUpload } = require('./logo-processing');
 const { processAvatarUpload } = require('./avatar-processing');
 const { googleSignIn, createProfile, updateProfile, getProfile, deleteAccount } = require('./user-profile');
 const { discordOAuthExchange } = require('./discord-auth');
-const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings, kickPlayer, transferLeadership, updateTeamTags } = require('./team-operations');
+const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings, kickPlayer, transferLeadership, updateRosterInitials, updateTeamTags, updateRecordingVisibility, deleteRecording } = require('./team-operations');
 const { updateAvailability } = require('./availability');
 const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 const { updateFavorites } = require('./favorites');
-const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler, updateProposalSettings } = require('./match-proposals');
+const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler, updateProposalSettings, quickAddMatch } = require('./match-proposals');
 const { getScheduledGames } = require('./scheduled-games-api');
 const { submitFeedback, getFeedbackCount } = require('./feedback');
+const { manageBotRegistration } = require('./bot-registration');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
@@ -35,7 +36,10 @@ exports.leaveTeam = leaveTeam;
 exports.updateTeamSettings = updateTeamSettings;
 exports.kickPlayer = kickPlayer;
 exports.transferLeadership = transferLeadership;
+exports.updateRosterInitials = updateRosterInitials;
 exports.updateTeamTags = updateTeamTags;
+exports.updateRecordingVisibility = updateRecordingVisibility;
+exports.deleteRecording = deleteRecording;
 
 // Availability functions
 exports.updateAvailability = updateAvailability;
@@ -56,6 +60,7 @@ exports.cancelProposal = cancelProposal;
 exports.cancelScheduledMatch = cancelScheduledMatch;
 exports.toggleScheduler = toggleScheduler;
 exports.updateProposalSettings = updateProposalSettings;
+exports.quickAddMatch = quickAddMatch;
 
 // Public API (unauthenticated)
 exports.getScheduledGames = getScheduledGames;
@@ -63,6 +68,9 @@ exports.getScheduledGames = getScheduledGames;
 // Feedback functions
 exports.submitFeedback = submitFeedback;
 exports.getFeedbackCount = getFeedbackCount;
+
+// Bot registration functions (Phase 1a)
+exports.manageBotRegistration = manageBotRegistration;
 
 // Simple test function
 exports.helloWorld = functions.region('europe-west3').https.onRequest((request, response) => {

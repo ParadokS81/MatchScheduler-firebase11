@@ -157,7 +157,7 @@ const AuthService = (function() {
             await new Promise(resolve => setTimeout(resolve, 100));
 
             if (_currentUser) {
-                // Check if user has complete profile (with initials)
+                // Check if user has complete profile (with display name)
                 const profileCheck = await _checkUserProfile(_currentUser.uid);
                 return {
                     user: _currentUser,
@@ -184,8 +184,8 @@ const AuthService = (function() {
 
             console.log('✅ Backend user check complete, isNewUser:', backendResult.data.isNewUser);
 
-            // Check if user has completed profile setup (has initials)
-            const hasPlayerProfile = backendResult.data.profile?.initials;
+            // Check if user has completed profile setup (has display name)
+            const hasPlayerProfile = backendResult.data.profile?.displayName;
 
             return {
                 user: result.user,
@@ -569,7 +569,7 @@ const AuthService = (function() {
     
     // Check if user profile exists in Firestore
     /**
-     * Check if user has a complete player profile (with initials set)
+     * Check if user has a complete player profile (with display name set)
      * Returns { exists: boolean, hasProfile: boolean, profile: object|null }
      */
     async function _checkUserProfile(uid) {
@@ -583,8 +583,8 @@ const AuthService = (function() {
             }
 
             const profile = userDoc.data();
-            // User has a complete profile if initials are set
-            const hasProfile = !!profile.initials;
+            // User has a complete profile if display name is set
+            const hasProfile = !!profile.displayName;
             return { exists: true, hasProfile, profile };
         } catch (error) {
             console.error('❌ Error checking user profile:', error);

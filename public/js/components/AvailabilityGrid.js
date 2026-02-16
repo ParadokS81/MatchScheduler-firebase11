@@ -1106,9 +1106,8 @@ const AvailabilityGrid = (function() {
                         </span>`;
 
                     case 'coloredInitials': {
-                        const colorStyle = playerColor ? `color: ${playerColor}` : '';
                         return `<div class="player-badge initials colored ${classes}"
-                             style="${colorStyle}"
+                             style="color: ${colorOrDefault}"
                              data-player-name="${escapedName}">
                             ${escapedInitials}
                         </div>`;
@@ -1138,9 +1137,9 @@ const AvailabilityGrid = (function() {
 
             if (needsOverflow) {
                 badgesHtml += `
-                    <button class="player-badge overflow" data-overflow-count="${overflowCount}">
-                        ${overflowCount}
-                    </button>
+                    <span class="player-badge overflow" data-overflow-count="${overflowCount}">
+                        +
+                    </span>
                 `;
             }
 

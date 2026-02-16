@@ -50,23 +50,23 @@ const TeamInfo = (function() {
 
         // Event delegation for inline color picker in hover popup
         _identityContainer.addEventListener('click', (e) => {
-            // Mobile: team name toggles roster popup
+            // Team name: on mobile toggles roster popup, on desktop navigates
             const nameToggle = e.target.closest('.team-name-toggle');
             if (nameToggle) {
-                const popup = _identityContainer.querySelector('.team-hover-popup');
-                if (popup) {
-                    popup.classList.toggle('mobile-open');
-                    nameToggle.classList.toggle('open');
+                const isMobile = window.innerWidth < 768;
+                if (isMobile) {
+                    e.preventDefault();
+                    const popup = _identityContainer.querySelector('.team-hover-popup');
+                    if (popup) {
+                        popup.classList.toggle('mobile-open');
+                        nameToggle.classList.toggle('open');
+                    }
                 }
                 return;
             }
 
             const member = e.target.closest('.roster-member');
             if (!member) return;
-            const displayMode = typeof PlayerDisplayService !== 'undefined'
-                ? PlayerDisplayService.getDisplayMode()
-                : 'initials';
-            if (displayMode !== 'coloredInitials' && displayMode !== 'coloredDots') return;
             e.stopPropagation();
             const userId = member.dataset.userId;
             if (userId) {
@@ -244,20 +244,20 @@ const TeamInfo = (function() {
                         const teamData = { id: doc.id, ...doc.data() };
 
                         // Check if meaningful data changed (avoid Firestore timestamp comparison issues)
+                        const oldRosterSig = (_selectedTeam?.playerRoster || []).map(p => `${p.userId}:${p.initials}:${p.displayName}:${p.role}`).sort().join(',');
+                        const newRosterSig = (teamData.playerRoster || []).map(p => `${p.userId}:${p.initials}:${p.displayName}:${p.role}`).sort().join(',');
                         const hasChanged = !_selectedTeam ||
                             _selectedTeam.teamName !== teamData.teamName ||
                             _selectedTeam.teamTag !== teamData.teamTag ||
                             _selectedTeam.joinCode !== teamData.joinCode ||
                             _selectedTeam.maxPlayers !== teamData.maxPlayers ||
                             _selectedTeam.leaderId !== teamData.leaderId ||
-                            _selectedTeam.playerRoster?.length !== teamData.playerRoster?.length ||
+                            oldRosterSig !== newRosterSig ||
                             _selectedTeam.activeLogo?.logoId !== teamData.activeLogo?.logoId;
 
                         if (hasChanged) {
-                            // Check if roster membership changed (for grid re-render)
-                            const oldRosterIds = (_selectedTeam?.playerRoster || []).map(p => p.userId).sort().join(',');
-                            const newRosterIds = (teamData.playerRoster || []).map(p => p.userId).sort().join(',');
-                            const rosterMembershipChanged = oldRosterIds !== newRosterIds;
+                            // Check if roster data changed (reuse signatures from hasChanged check)
+                            const rosterChanged = oldRosterSig !== newRosterSig;
 
                             _selectedTeam = teamData;
 
@@ -274,12 +274,12 @@ const TeamInfo = (function() {
 
                             _render();
 
-                            // Notify grid to re-render with updated roster
-                            if (rosterMembershipChanged) {
+                            // Notify grid to re-render with updated roster data
+                            if (rosterChanged) {
                                 window.dispatchEvent(new CustomEvent('roster-changed', {
                                     detail: { team: teamData }
                                 }));
-                                console.log('👥 Roster membership changed, notifying grid');
+                                console.log('👥 Roster data changed, notifying grid');
                             }
 
                             console.log('🔄 Team data updated via direct listener:', teamData.teamName);
@@ -484,7 +484,7 @@ const TeamInfo = (function() {
                     ${inactiveLogoHTML}
                 </div>
                 <!-- Team name — on mobile acts as roster toggle -->
-                <span class="text-xl font-semibold text-primary team-name-toggle">${_selectedTeam.teamName}</span>
+                <a href="#/teams/${_selectedTeamId}" class="text-xl font-semibold text-primary team-name-toggle hover:underline">${_selectedTeam.teamName}</a>
 
                 <!-- Hover popup: tag + settings + roster + inline color picker -->
                 <div class="team-hover-popup">
@@ -569,6 +569,10 @@ const TeamInfo = (function() {
             m.classList.toggle('bg-muted', m.dataset.userId === userId);
         });
 
+        // Get current initials for this player from the roster
+        const targetPlayer = _selectedTeam?.playerRoster?.find(p => p.userId === userId);
+        const currentInitials = targetPlayer?.initials || '';
+
         // Get color data
         const currentColor = typeof PlayerColorService !== 'undefined'
             ? PlayerColorService.getPlayerColor(userId) : null;
@@ -578,6 +582,16 @@ const TeamInfo = (function() {
 
         pickerContainer.innerHTML = `
             <div class="pt-2 mt-2 border-t border-border">
+                <div class="flex items-center gap-2 mb-2">
+                    <label class="text-xs text-muted-foreground whitespace-nowrap">Initials</label>
+                    <input type="text"
+                           class="roster-initials-input px-2 py-1 text-xs bg-input border border-border rounded font-mono uppercase text-center"
+                           value="${currentInitials}" maxlength="3" placeholder="ABC"
+                           style="text-transform: uppercase; width: 3.5rem;">
+                    <button class="save-initials-btn text-xs text-primary hover:text-primary/80 px-2 py-1 rounded hover:bg-muted transition-colors hidden">
+                        Save
+                    </button>
+                </div>
                 <div class="grid grid-cols-3 gap-2 mb-2">
                     ${presetColors.map(color => `
                         <button class="color-swatch w-6 h-6 rounded-full border-2 transition-all hover:scale-110
@@ -598,7 +612,55 @@ const TeamInfo = (function() {
             </div>
         `;
 
-        // Color swatch clicks
+        // ── Initials editing ──
+        const initialsInput = pickerContainer.querySelector('.roster-initials-input');
+        const saveBtn = pickerContainer.querySelector('.save-initials-btn');
+
+        initialsInput?.addEventListener('input', () => {
+            initialsInput.value = initialsInput.value.toUpperCase().replace(/[^A-Z]/g, '');
+            const changed = initialsInput.value !== currentInitials;
+            saveBtn.classList.toggle('hidden', !changed);
+        });
+
+        async function _saveInitials() {
+            const newInitials = initialsInput.value.trim().toUpperCase();
+            if (!newInitials || !/^[A-Z]{1,3}$/.test(newInitials) || newInitials === currentInitials) return;
+
+            saveBtn.textContent = '...';
+            saveBtn.disabled = true;
+
+            try {
+                const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js');
+                const updateRosterInitials = httpsCallable(window.firebase.functions, 'updateRosterInitials');
+                await updateRosterInitials({
+                    teamId: _selectedTeamId,
+                    targetUserId: userId,
+                    initials: newInitials
+                });
+                saveBtn.classList.add('hidden');
+            } catch (error) {
+                console.error('Failed to update initials:', error);
+                saveBtn.textContent = 'Error';
+                setTimeout(() => { saveBtn.textContent = 'Save'; saveBtn.disabled = false; }, 1500);
+            }
+        }
+
+        saveBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _saveInitials();
+        });
+
+        initialsInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                _saveInitials();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                _hideInlineColorPicker();
+            }
+        });
+
+        // ── Color swatch clicks ──
         pickerContainer.querySelectorAll('.color-swatch').forEach(swatch => {
             swatch.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -750,8 +812,8 @@ const TeamInfo = (function() {
             return;
         }
 
-        // 2-step flow: Check if user has completed profile setup (has initials)
-        if (!_userProfile?.initials) {
+        // 2-step flow: Check if user has completed profile setup (has display name)
+        if (!_userProfile?.displayName) {
             // Step 1: Show profile setup modal first
             console.log('User needs to set up profile - showing profile setup modal first');
             if (typeof ProfileModal !== 'undefined') {

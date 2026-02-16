@@ -5,10 +5,21 @@ const { getAuth } = require('firebase-admin/auth');
 const db = getFirestore();
 
 /**
+ * Auto-generate 3-letter initials from a display name.
+ * - Name <= 3 chars: full name uppercased (e.g., "bps" -> "BPS")
+ * - Name > 3 chars: first 3 alphanumeric chars uppercased (e.g., "razor" -> "RAZ")
+ * - Fallback: "USR" if name is empty/null
+ */
+function generateInitials(name) {
+    if (!name || typeof name !== 'string') return 'USR';
+    const clean = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    return clean.length === 0 ? 'USR' : clean.substring(0, 3);
+}
+
+/**
  * Cloud Function: googleSignIn
  * Called after Google OAuth sign-in to ensure user document exists.
- * Creates minimal user doc for new users, updates lastLogin for existing users.
- * User doc is created WITHOUT displayName/initials - those are set via profile setup.
+ * Creates user doc with auto-generated initials for new users, updates lastLogin for existing.
  */
 exports.googleSignIn = functions
     .region('europe-west3')
@@ -35,15 +46,16 @@ exports.googleSignIn = functions
             };
         }
 
-        // New user - create minimal doc (no displayName/initials yet)
+        // New user - create doc with auto-generated initials from Google display name
         const userRecord = await getAuth().getUser(uid);
         const newProfile = {
             email: userRecord.email || null,
+            displayName: userRecord.displayName || null,
+            initials: generateInitials(userRecord.displayName),
             photoURL: userRecord.photoURL || null,
             authProvider: 'google',
             teams: {},
             favoriteTeams: [],
-            // displayName and initials intentionally NOT set - user sets via profile setup
             createdAt: FieldValue.serverTimestamp(),
             lastLogin: FieldValue.serverTimestamp()
         };

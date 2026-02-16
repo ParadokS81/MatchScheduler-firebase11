@@ -5,6 +5,15 @@ const { getAuth } = require('firebase-admin/auth');
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
 /**
+ * Auto-generate 3-letter initials from a display name.
+ */
+function generateInitials(name) {
+    if (!name || typeof name !== 'string') return 'USR';
+    const clean = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    return clean.length === 0 ? 'USR' : clean.substring(0, 3);
+}
+
+/**
  * Get Discord credentials from environment variables
  * Uses .env file (deployed with functions) or .env.emulator (local dev)
  */
@@ -256,10 +265,10 @@ exports.discordOAuthExchange = functions
             isNewUser = true;
             console.log(`Created new user: ${uid}`);
 
-            // Create user document (no displayName/initials - user must set them in ProfileModal)
+            // Create user document with auto-generated initials from Discord username
             await usersRef.doc(uid).set({
-                displayName: null,
-                initials: null,
+                displayName: discordUser.username,
+                initials: generateInitials(discordUser.username),
                 email: discordUser.email || null,
                 photoURL: getDiscordAvatarUrl(discordUser.id, discordUser.avatar),
 

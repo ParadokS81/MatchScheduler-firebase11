@@ -79,9 +79,9 @@ const UserProfile = (function() {
                 console.log('🎨 Rendering authenticated mode...');
                 _renderAuthenticatedMode();
 
-                // Force profile setup if user hasn't set nick/initials yet
-                if (!_userProfile?.initials) {
-                    console.log('🔒 No initials set - forcing profile setup modal');
+                // Force profile setup if user hasn't set their display name yet
+                if (!_userProfile?.displayName) {
+                    console.log('🔒 No display name set - forcing profile setup modal');
                     setTimeout(() => {
                         if (typeof ProfileModal !== 'undefined') {
                             ProfileModal.show(user, _userProfile);
@@ -131,13 +131,13 @@ const UserProfile = (function() {
             if (userDoc.exists()) {
                 _userProfile = userDoc.data();
 
-                // Check if user has completed their player profile (has initials)
-                const hasPlayerProfile = !!_userProfile.initials;
+                // Check if user has completed their player profile (has display name)
+                const hasPlayerProfile = !!_userProfile.displayName;
 
                 if (hasPlayerProfile) {
                     console.log('📊 User profile loaded:', _userProfile.displayName);
                 } else {
-                    console.log('📊 User exists but needs to set up player profile (no initials)');
+                    console.log('📊 User exists but needs to set up player profile (no display name)');
                 }
 
                 // Load user's templates (only if profile is complete)

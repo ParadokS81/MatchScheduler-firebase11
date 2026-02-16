@@ -4,6 +4,7 @@
 const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
+const { getStorage } = require('firebase-admin/storage');
 
 const db = getFirestore();
 
@@ -372,15 +373,6 @@ exports.joinTeam = functions
         // Check if team is full
         if (team.playerRoster.length >= team.maxPlayers) {
             throw new functions.https.HttpsError('failed-precondition', `Team is full (${team.playerRoster.length}/${team.maxPlayers} players)`);
-        }
-
-        // Check if initials are unique on this team (only if roster is not empty)
-        if (team.playerRoster.length > 0) {
-            const existingInitials = team.playerRoster.map(player => player.initials);
-            if (existingInitials.includes(userProfile.initials)) {
-                throw new functions.https.HttpsError('failed-precondition',
-                    `Initials "${userProfile.initials}" are already taken on this team. Please update your profile with different initials.`);
-            }
         }
 
         // Determine if this user should become leader
@@ -1022,6 +1014,78 @@ exports.transferLeadership = functions
     }
 });
 
+// Update a player's initials on a specific team's roster
+// Any team member can edit any teammate's initials (per-team, not global)
+exports.updateRosterInitials = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
+    }
+
+    const { teamId, targetUserId, initials } = data;
+    const callerId = context.auth.uid;
+
+    if (!teamId || typeof teamId !== 'string') {
+        throw new functions.https.HttpsError('invalid-argument', 'teamId is required');
+    }
+    if (!targetUserId || typeof targetUserId !== 'string') {
+        throw new functions.https.HttpsError('invalid-argument', 'targetUserId is required');
+    }
+    if (!initials || typeof initials !== 'string') {
+        throw new functions.https.HttpsError('invalid-argument', 'initials is required');
+    }
+
+    const trimmed = initials.trim().toUpperCase();
+    if (trimmed.length < 1 || trimmed.length > 3 || !/^[A-Z]{1,3}$/.test(trimmed)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Initials must be 1-3 uppercase letters');
+    }
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const teamRef = db.collection('teams').doc(teamId);
+            const teamDoc = await transaction.get(teamRef);
+
+            if (!teamDoc.exists) {
+                throw new Error('Team not found');
+            }
+
+            const team = teamDoc.data();
+            const playerRoster = team.playerRoster || [];
+
+            // Verify caller is a team member
+            if (!playerRoster.some(p => p.userId === callerId)) {
+                throw new Error('You are not a member of this team');
+            }
+
+            // Verify target is a team member
+            if (!playerRoster.some(p => p.userId === targetUserId)) {
+                throw new Error('Target player not found on team roster');
+            }
+
+            // Update the target player's initials
+            const updatedRoster = playerRoster.map(p => {
+                if (p.userId === targetUserId) {
+                    return { ...p, initials: trimmed };
+                }
+                return p;
+            });
+
+            transaction.update(teamRef, {
+                playerRoster: updatedRoster,
+                lastActivityAt: FieldValue.serverTimestamp()
+            });
+        });
+
+        console.log('✅ Roster initials updated:', { teamId, targetUserId, initials: trimmed, by: callerId });
+        return { success: true };
+    } catch (error) {
+        console.error('❌ updateRosterInitials error:', error);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to update initials: ' + error.message);
+    }
+});
+
 // Update team settings function
 exports.updateTeamSettings = functions
     .region('europe-west3')
@@ -1033,7 +1097,7 @@ exports.updateTeamSettings = functions
         }
 
         const userId = context.auth.uid;
-        const { teamId, teamTag, maxPlayers, divisions, hideRosterNames, hideFromComparison } = data;
+        const { teamId, teamTag, maxPlayers, divisions, hideRosterNames, hideFromComparison, voiceSettings } = data;
 
         // Validate input
         if (!teamId || typeof teamId !== 'string') {
@@ -1046,8 +1110,9 @@ exports.updateTeamSettings = functions
         const hasHideRosterNames = hideRosterNames !== undefined;
         const hasDivisions = divisions !== undefined;
         const hasHideFromComparison = hideFromComparison !== undefined;
+        const hasVoiceSettings = voiceSettings !== undefined;
 
-        if (!hasTeamTag && !hasMaxPlayers && !hasDivisions && !hasHideRosterNames && !hasHideFromComparison) {
+        if (!hasTeamTag && !hasMaxPlayers && !hasDivisions && !hasHideRosterNames && !hasHideFromComparison && !hasVoiceSettings) {
             throw new functions.https.HttpsError('invalid-argument', 'At least one setting must be provided');
         }
 
@@ -1083,6 +1148,14 @@ exports.updateTeamSettings = functions
         if (hasHideFromComparison && typeof hideFromComparison !== 'boolean') {
             throw new functions.https.HttpsError('invalid-argument', 'hideFromComparison must be a boolean');
         }
+        if (hasVoiceSettings) {
+            if (typeof voiceSettings !== 'object' || voiceSettings === null) {
+                throw new functions.https.HttpsError('invalid-argument', 'voiceSettings must be an object');
+            }
+            if (!['public', 'private'].includes(voiceSettings.defaultVisibility)) {
+                throw new functions.https.HttpsError('invalid-argument', 'defaultVisibility must be "public" or "private"');
+            }
+        }
 
         // Get team document
         const teamDoc = await db.collection('teams').doc(teamId).get();
@@ -1110,6 +1183,7 @@ exports.updateTeamSettings = functions
         if (hasDivisions) updateData.divisions = divisions;
         if (hasHideRosterNames) updateData.hideRosterNames = hideRosterNames;
         if (hasHideFromComparison) updateData.hideFromComparison = hideFromComparison;
+        if (hasVoiceSettings) updateData.voiceSettings = { defaultVisibility: voiceSettings.defaultVisibility };
 
         await db.collection('teams').doc(teamId).update(updateData);
 
@@ -1146,6 +1220,10 @@ exports.updateTeamSettings = functions
         if (hasHideFromComparison) {
             details.oldHideFromComparison = team.hideFromComparison || false;
             details.newHideFromComparison = hideFromComparison;
+        }
+        if (hasVoiceSettings) {
+            details.oldDefaultVisibility = team.voiceSettings?.defaultVisibility || 'private';
+            details.newDefaultVisibility = voiceSettings.defaultVisibility;
         }
 
         await db.collection('eventLog').doc(eventId).set({
@@ -1367,5 +1445,143 @@ exports.updateTeamTags = functions
         console.error('❌ updateTeamTags error:', error);
         if (error instanceof functions.https.HttpsError) throw error;
         throw new functions.https.HttpsError('internal', 'Failed to update team tags: ' + error.message);
+    }
+});
+
+/**
+ * Update voice recording visibility (public/private)
+ * Only team leaders can change visibility for their team's recordings
+ */
+exports.updateRecordingVisibility = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    try {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+        }
+
+        const { demoSha256, visibility } = data;
+        const userId = context.auth.uid;
+
+        // Validate inputs
+        if (!demoSha256 || typeof demoSha256 !== 'string') {
+            throw new functions.https.HttpsError('invalid-argument', 'demoSha256 required');
+        }
+        if (!['public', 'private'].includes(visibility)) {
+            throw new functions.https.HttpsError('invalid-argument', 'visibility must be public or private');
+        }
+
+        // Read the recording
+        const recDoc = await db.collection('voiceRecordings').doc(demoSha256).get();
+        if (!recDoc.exists) {
+            throw new functions.https.HttpsError('not-found', 'Recording not found');
+        }
+
+        const recording = recDoc.data();
+        const teamId = recording.teamId;
+
+        if (!teamId) {
+            throw new functions.https.HttpsError('failed-precondition', 'Recording has no team association');
+        }
+
+        // Verify caller is team leader
+        const teamDoc = await db.collection('teams').doc(teamId).get();
+        if (!teamDoc.exists) {
+            throw new functions.https.HttpsError('not-found', 'Team not found');
+        }
+
+        if (teamDoc.data().leaderId !== userId) {
+            throw new functions.https.HttpsError('permission-denied', 'Only team leaders can change recording visibility');
+        }
+
+        // Update visibility
+        await db.collection('voiceRecordings').doc(demoSha256).update({ visibility });
+
+        console.log('✅ Recording visibility updated:', { demoSha256, visibility, teamId, userId });
+        return { success: true };
+
+    } catch (error) {
+        if (error instanceof functions.https.HttpsError) throw error;
+        console.error('❌ updateRecordingVisibility error:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to update visibility');
+    }
+});
+
+/**
+ * Delete a voice recording:
+ * 1. Delete all audio files from Firebase Storage
+ * 2. Delete the Firestore voiceRecordings document
+ * 3. Create a deletionRequest for quad to clean up local files
+ */
+exports.deleteRecording = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    try {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+        }
+
+        const { demoSha256 } = data;
+        const userId = context.auth.uid;
+
+        if (!demoSha256 || typeof demoSha256 !== 'string') {
+            throw new functions.https.HttpsError('invalid-argument', 'demoSha256 required');
+        }
+
+        // Read the recording
+        const recDoc = await db.collection('voiceRecordings').doc(demoSha256).get();
+        if (!recDoc.exists) {
+            throw new functions.https.HttpsError('not-found', 'Recording not found');
+        }
+
+        const recording = recDoc.data();
+        const teamId = recording.teamId;
+
+        if (!teamId) {
+            throw new functions.https.HttpsError('failed-precondition', 'Recording has no team association');
+        }
+
+        // Verify caller is team leader
+        const teamDoc = await db.collection('teams').doc(teamId).get();
+        if (!teamDoc.exists) {
+            throw new functions.https.HttpsError('not-found', 'Team not found');
+        }
+
+        if (teamDoc.data().leaderId !== userId) {
+            throw new functions.https.HttpsError('permission-denied', 'Only team leaders can delete recordings');
+        }
+
+        // Delete Storage files
+        const bucket = getStorage().bucket();
+        const deletePromises = (recording.tracks || []).map(track => {
+            return bucket.file(track.storagePath).delete().catch(err => {
+                console.warn(`Storage file not found (may already be deleted): ${track.storagePath}`);
+            });
+        });
+        await Promise.all(deletePromises);
+
+        // Delete Firestore doc
+        await db.collection('voiceRecordings').doc(demoSha256).delete();
+
+        // Create deletion request for quad
+        await db.collection('deletionRequests').add({
+            demoSha256,
+            teamId,
+            sessionId: recording.sessionId || '',
+            mapName: recording.mapName || '',
+            requestedBy: userId,
+            requestedAt: FieldValue.serverTimestamp(),
+            status: 'pending',
+            completedAt: null,
+            error: null,
+        });
+
+        console.log('✅ Recording deleted:', { demoSha256, teamId, userId });
+        return { success: true };
+
+    } catch (error) {
+        if (error instanceof functions.https.HttpsError) throw error;
+        console.error('❌ deleteRecording error:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to delete recording');
     }
 });
