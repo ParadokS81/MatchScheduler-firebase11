@@ -1,0 +1,13 @@
+[
+  {
+    "origin": [
+      "https://scheduler.quake.world",
+      "https://matchscheduler.web.app",
+      "https://matchscheduler-dev.web.app",
+      "http://localhost:5000"
+    ],
+    "method": ["GET", "HEAD"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "Content-Length"]
+  }
+]

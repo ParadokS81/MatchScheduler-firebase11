@@ -707,6 +707,11 @@ const AuthService = (function() {
                 console.error('❌ Error in auth listener:', error);
             }
         });
+
+        // Slice A1: Dispatch window event so app.js can re-check admin claims
+        window.dispatchEvent(new CustomEvent('auth-state-changed', {
+            detail: { user }
+        }));
     }
     
     // Get user-friendly error message

@@ -200,29 +200,37 @@ const UpcomingMatchesPanel = (function() {
         const tagA = teamA?.teamTag || match.teamAName || '?';
         const tagB = teamB?.teamTag || match.teamBName || '?';
 
-        // Game type badge
+        // Game type label
         const gameType = match.gameType || 'official';
-        const gameTypeBadge = gameType === 'practice'
-            ? '<span class="text-[0.625rem] font-semibold text-amber-400">PRAC</span>'
-            : '<span class="text-[0.625rem] font-semibold text-green-400">OFFI</span>';
+        const gameTypeLabel = gameType === 'practice' ? 'PRAC' : 'OFFI';
 
         // Date line: "Thursday 12th. 22:00" or "Today 22:00"
         const dateLine = dayOrdinal === 'Today'
             ? `Today ${timeOnly}`.trim()
             : `${dayFull} ${dayOrdinal}. ${timeOnly}`.trim();
 
+        // Logo HTML or invisible spacer for alignment
+        const logoAHtml = logoA
+            ? `<img src="${logoA}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">`
+            : '<span class="w-5 h-5 shrink-0 inline-block"></span>';
+        const logoBHtml = logoB
+            ? `<img src="${logoB}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">`
+            : '<span class="w-5 h-5 shrink-0 inline-block"></span>';
+
         return `
             <div class="match-card-compact py-2 px-2 cursor-pointer rounded border border-border/50 bg-muted/15 hover:bg-muted/40 transition-colors"
                  data-match-id="${match.id}" data-team-a="${match.teamAId}" data-team-b="${match.teamBId}"
                  data-week-id="${match.weekId || ''}" data-slot-id="${match.slotId || ''}">
-                <div class="flex items-center justify-center gap-2">
-                    ${logoA ? `<img src="${logoA}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
-                    <span class="text-sm font-semibold">${_escapeHtml(tagA)}</span>
-                    ${gameTypeBadge}
-                    <span class="text-sm font-semibold">${_escapeHtml(tagB)}</span>
-                    ${logoB ? `<img src="${logoB}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
+                <div class="flex items-center justify-center gap-0">
+                    ${logoAHtml}
+                    <span class="text-sm font-semibold inline-block w-[4ch] text-right truncate">${_escapeHtml(tagA)}</span>
+                    <span class="text-muted-foreground/40 mx-3">·</span>
+                    <span class="text-sm font-semibold inline-block w-[4ch] text-left truncate">${_escapeHtml(tagB)}</span>
+                    ${logoBHtml}
                 </div>
-                <div class="flex items-center justify-center mt-0.5">
+                <div class="flex items-center justify-center gap-1 mt-0.5">
+                    <span class="text-[0.625rem] text-muted-foreground uppercase tracking-wide">${gameTypeLabel}</span>
+                    <span class="text-[0.625rem] text-muted-foreground">·</span>
                     <span class="text-xs text-muted-foreground">${dateLine}</span>
                 </div>
             </div>

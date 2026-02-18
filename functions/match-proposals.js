@@ -3,7 +3,7 @@
 
 const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const { getMondayOfWeek, isValidWeekRange, computeExpiresAt, computeScheduledDate } = require('./week-utils');
+const { getMondayOfWeek, isValidWeekRange, computeExpiresAt, computeScheduledDate, getISOWeekYear, getISOWeekNumber } = require('./week-utils');
 
 const db = getFirestore();
 
@@ -690,9 +690,13 @@ exports.cancelScheduledMatch = functions
                 throw new functions.https.HttpsError('permission-denied', 'Only leaders or schedulers can cancel matches');
             }
 
-            // Read parent proposal
-            const proposalRef = db.collection('matchProposals').doc(matchData.proposalId);
-            const proposalDoc = await transaction.get(proposalRef);
+            // Read parent proposal (skip for quick-add matches which have no proposal)
+            let proposalRef = null;
+            let proposalDoc = null;
+            if (matchData.proposalId) {
+                proposalRef = db.collection('matchProposals').doc(matchData.proposalId);
+                proposalDoc = await transaction.get(proposalRef);
+            }
 
             // WRITE PHASE
             const now = new Date();
@@ -704,8 +708,8 @@ exports.cancelScheduledMatch = functions
                 cancelledAt: now
             });
 
-            // 2. Revert proposal to active (if it still exists)
-            if (proposalDoc.exists) {
+            // 2. Revert proposal to active (if it still exists — not applicable for quick-add)
+            if (proposalDoc && proposalDoc.exists) {
                 const cancelledSlotId = matchData.slotId;
 
                 // Build update: revert status, clear confirmedSlotId/scheduledMatchId,
@@ -912,5 +916,165 @@ exports.updateProposalSettings = functions
         console.error('❌ Error updating proposal settings:', error);
         if (error instanceof functions.https.HttpsError) throw error;
         throw new functions.https.HttpsError('internal', 'Failed to update proposal settings: ' + error.message);
+    }
+});
+
+// ─── quickAddMatch ──────────────────────────────────────────────────────────
+
+/**
+ * Derive slotId (e.g., "sun_2030") from a Date object in UTC.
+ */
+function computeSlotId(date) {
+    const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const day = days[date.getUTCDay()];
+    const hours = String(date.getUTCHours()).padStart(2, '0');
+    const mins = String(date.getUTCMinutes()).padStart(2, '0');
+    return `${day}_${hours}${mins}`;
+}
+
+exports.quickAddMatch = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    try {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+        }
+
+        const userId = context.auth.uid;
+        const { teamId, opponentTeamId, dateTime, gameType } = data;
+
+        // ── Validation ──
+        if (!teamId || typeof teamId !== 'string') {
+            throw new functions.https.HttpsError('invalid-argument', 'teamId is required');
+        }
+        if (!opponentTeamId || typeof opponentTeamId !== 'string') {
+            throw new functions.https.HttpsError('invalid-argument', 'opponentTeamId is required');
+        }
+        if (teamId === opponentTeamId) {
+            throw new functions.https.HttpsError('invalid-argument', 'Cannot add a match against your own team');
+        }
+        if (!dateTime || isNaN(new Date(dateTime).getTime())) {
+            throw new functions.https.HttpsError('invalid-argument', 'dateTime must be a valid ISO 8601 string');
+        }
+        if (new Date(dateTime) <= new Date()) {
+            throw new functions.https.HttpsError('invalid-argument', 'Match must be in the future');
+        }
+        if (!['official', 'practice'].includes(gameType)) {
+            throw new functions.https.HttpsError('invalid-argument', 'gameType must be "official" or "practice"');
+        }
+
+        // ── Read teams ──
+        const [teamDoc, opponentDoc] = await Promise.all([
+            db.collection('teams').doc(teamId).get(),
+            db.collection('teams').doc(opponentTeamId).get()
+        ]);
+        if (!teamDoc.exists) {
+            throw new functions.https.HttpsError('not-found', 'Team not found');
+        }
+        if (!opponentDoc.exists) {
+            throw new functions.https.HttpsError('not-found', 'Opponent team not found');
+        }
+
+        const team = teamDoc.data();
+        const opponent = opponentDoc.data();
+
+        if (opponent.status !== 'active') {
+            throw new functions.https.HttpsError('failed-precondition', 'Opponent team is not active');
+        }
+
+        // ── Authorization ──
+        const isMember = team.playerRoster?.some(p => p.userId === userId);
+        if (!isMember) {
+            throw new functions.https.HttpsError('permission-denied', 'You must be on this team');
+        }
+        if (!isAuthorized(team, userId)) {
+            throw new functions.https.HttpsError('permission-denied', 'Only leaders or schedulers can add matches');
+        }
+
+        // ── Derive schedule fields from dateTime ──
+        const matchDate = new Date(dateTime);
+        const weekYear = getISOWeekYear(matchDate);
+        const weekNum = getISOWeekNumber(matchDate);
+        const weekId = `${weekYear}-${String(weekNum).padStart(2, '0')}`;
+        const slotId = computeSlotId(matchDate);
+        const scheduledDate = matchDate.toISOString().split('T')[0];
+
+        // ── Check for blocked slots ──
+        const [teamBlocked, opponentBlocked] = await Promise.all([
+            getBlockedSlotsForTeam(teamId, weekId),
+            getBlockedSlotsForTeam(opponentTeamId, weekId)
+        ]);
+        if (teamBlocked.has(slotId)) {
+            throw new functions.https.HttpsError('failed-precondition', 'Your team already has a match in this slot');
+        }
+        if (opponentBlocked.has(slotId)) {
+            throw new functions.https.HttpsError('failed-precondition', 'Opponent already has a match in this slot');
+        }
+
+        // ── Create scheduled match ──
+        const now = new Date();
+        const matchRef = db.collection('scheduledMatches').doc();
+
+        await matchRef.set({
+            teamAId: teamId,
+            teamAName: team.teamName,
+            teamATag: team.teamTag,
+            teamBId: opponentTeamId,
+            teamBName: opponent.teamName,
+            teamBTag: opponent.teamTag,
+            weekId,
+            slotId,
+            scheduledDate,
+            blockedSlot: slotId,
+            blockedTeams: [teamId, opponentTeamId],
+            teamARoster: [],
+            teamBRoster: [],
+            proposalId: null,
+            origin: 'quick_add',
+            addedBy: userId,
+            status: 'upcoming',
+            gameType,
+            gameTypeSetBy: userId,
+            confirmedAt: now,
+            confirmedByA: userId,
+            confirmedByB: null,
+            createdAt: now
+        });
+
+        // ── Event log ──
+        const player = team.playerRoster?.find(p => p.userId === userId);
+        const eventId = generateEventId(team.teamName, 'match_quick_added');
+        await db.collection('eventLog').doc(eventId).set({
+            eventId,
+            teamId,
+            teamName: team.teamName,
+            type: 'MATCH_QUICK_ADDED',
+            category: 'SCHEDULING',
+            timestamp: now,
+            userId,
+            player: {
+                displayName: player?.displayName || 'Unknown',
+                initials: player?.initials || '??'
+            },
+            details: {
+                matchId: matchRef.id,
+                slotId,
+                weekId,
+                gameType,
+                origin: 'quick_add',
+                teams: {
+                    a: { id: teamId, name: team.teamName },
+                    b: { id: opponentTeamId, name: opponent.teamName }
+                }
+            }
+        });
+
+        console.log('✅ Quick-add match created:', matchRef.id, team.teamName, 'vs', opponent.teamName);
+        return { success: true, matchId: matchRef.id };
+
+    } catch (error) {
+        console.error('❌ Error in quickAddMatch:', error);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to add match');
     }
 });

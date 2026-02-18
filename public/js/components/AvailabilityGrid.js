@@ -122,6 +122,12 @@ const AvailabilityGrid = (function() {
         // Comparison mode state (Slice 3.4)
         let _comparisonMode = false;
 
+        // Aggregated admin mode state (Slice A4)
+        let _aggregatedMode = false;
+        let _aggregatedData = null;  // { [utcSlotId]: count }
+        let _adminModeHandler = null;
+        let _filterChangeHandler = null;
+
         /**
          * Build UTC conversion maps for the current week.
          * Call on init/render and when week changes.
@@ -369,6 +375,7 @@ const AvailabilityGrid = (function() {
          * scroll, so no disambiguation needed.
          */
         function _handlePointerDown(e) {
+            if (_aggregatedMode) return;
             // Ignore secondary pointers (multi-touch)
             if (!e.isPrimary) return;
 
@@ -657,8 +664,8 @@ const AvailabilityGrid = (function() {
          * Handle cell hover for tooltip (cells with 4+ players)
          */
         function _handleCellMouseEnter(e) {
-            // Don't show player tooltip in comparison mode - match tooltip handles it
-            if (_comparisonMode) return;
+            // Don't show player tooltip in comparison or aggregated mode
+            if (_comparisonMode || _aggregatedMode) return;
 
             const cell = e.target.closest('.grid-cell');
             if (!cell || !cell.classList.contains('has-overflow')) return;
@@ -701,6 +708,9 @@ const AvailabilityGrid = (function() {
         function _attachEventListeners() {
             // Click handler for cells, day headers, time headers, and overflow badges
             _clickHandler = (e) => {
+                // Slice A4: No interaction in aggregated mode
+                if (_aggregatedMode) return;
+
                 // Check for overflow badge click first
                 if (e.target.closest('.player-badge.overflow')) {
                     _handleOverflowClick(e);
@@ -815,6 +825,18 @@ const AvailabilityGrid = (function() {
             _selectedCells.clear();
             _buildUtcMaps();
             _render();
+
+            // Slice A4: Listen for admin mode changes
+            _adminModeHandler = _handleAdminModeChanged;
+            window.addEventListener('admin-mode-changed', _adminModeHandler);
+
+            // Slice A4: Auto-enter aggregated mode if admin tab is already active
+            // (happens when grid is re-created during week navigation)
+            if (typeof BottomPanelController !== 'undefined' &&
+                BottomPanelController.getActiveTab() === 'admin') {
+                _enterAggregatedMode();
+            }
+
             return instance;
         }
 
@@ -882,6 +904,18 @@ const AvailabilityGrid = (function() {
             _onOverflowClickCallback = null;
             _comparisonMode = false;
 
+            // Slice A4: Clean up aggregated mode
+            if (_adminModeHandler) {
+                window.removeEventListener('admin-mode-changed', _adminModeHandler);
+                _adminModeHandler = null;
+            }
+            if (_filterChangeHandler) {
+                window.removeEventListener('team-browser-filter-changed', _filterChangeHandler);
+                _filterChangeHandler = null;
+            }
+            _aggregatedMode = false;
+            _aggregatedData = null;
+
             if (_container) _container.innerHTML = '';
             _container = null;
         }
@@ -919,6 +953,7 @@ const AvailabilityGrid = (function() {
          * @param {string} currentUserId - Current user's ID
          */
         function updateAvailabilityDisplay(availabilityData, currentUserId) {
+            if (_aggregatedMode) return;
             if (!_container || !availabilityData) return;
 
             // Clear all availability states first
@@ -1014,6 +1049,10 @@ const AvailabilityGrid = (function() {
 
             const players = hasAvailable ? PlayerDisplayService.getPlayersDisplay(playerIds, playerRoster, currentUserId) : [];
             const unavailPlayers = hasUnavailable ? PlayerDisplayService.getPlayersDisplay(unavailableIds, playerRoster, currentUserId) : [];
+
+            // Sort both groups alphabetically by display name
+            players.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+            unavailPlayers.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
 
             // Available players get priority for visible badge slots
             const totalVisible = players.length + unavailPlayers.length;
@@ -1154,6 +1193,7 @@ const AvailabilityGrid = (function() {
          * @param {string} currentUserId - Current user's ID
          */
         function updateTeamDisplay(availabilityData, playerRoster, currentUserId) {
+            if (_aggregatedMode) return;
             if (!_container || !availabilityData) return;
 
             // Store data for tooltip access
@@ -1247,6 +1287,7 @@ const AvailabilityGrid = (function() {
          * Refresh the display (e.g., when display mode changes)
          */
         function refreshDisplay() {
+            if (_aggregatedMode) return;
             if (_availabilitySlotsUtc && _playerRoster && _currentUserId) {
                 updateTeamDisplay(
                     { slots: _availabilitySlotsUtc, unavailable: _unavailabilitySlotsUtc || {} },
@@ -1264,6 +1305,7 @@ const AvailabilityGrid = (function() {
          * Enter comparison mode - adds visual styling to container
          */
         function enterComparisonMode() {
+            if (_aggregatedMode) return;
             _comparisonMode = true;
             const gridContainer = _container?.querySelector('.availability-grid-container');
             if (gridContainer) {
@@ -1399,6 +1441,7 @@ const AvailabilityGrid = (function() {
          * @param {Array} matches - Array of scheduled match objects for current week
          */
         function updateScheduledMatchHighlights(matches) {
+            if (_aggregatedMode) return;
             if (!_container) return;
 
             // Build lookup: UTC slotId → match
@@ -1855,6 +1898,149 @@ const AvailabilityGrid = (function() {
                 }
                 _hideMatchTooltip();
             }
+        }
+
+        // ========================================
+        // Slice A4: Aggregated Admin Mode
+        // ========================================
+
+        function _handleAdminModeChanged(e) {
+            if (e.detail.active) {
+                _enterAggregatedMode();
+            } else {
+                _exitAggregatedMode();
+            }
+        }
+
+        async function _enterAggregatedMode() {
+            _aggregatedMode = true;
+
+            // Disable drag selection
+            const gridContainer = _container?.querySelector('.availability-grid-container');
+            if (gridContainer) gridContainer.classList.add('aggregated-mode');
+
+            // Listen to filter changes via window event
+            _filterChangeHandler = () => _recomputeAggregated();
+            window.addEventListener('team-browser-filter-changed', _filterChangeHandler);
+
+            await _recomputeAggregated();
+        }
+
+        function _exitAggregatedMode() {
+            _aggregatedMode = false;
+
+            // Unsubscribe from filter changes
+            if (_filterChangeHandler) {
+                window.removeEventListener('team-browser-filter-changed', _filterChangeHandler);
+                _filterChangeHandler = null;
+            }
+
+            // Re-enable drag selection
+            const gridContainer = _container?.querySelector('.availability-grid-container');
+            if (gridContainer) gridContainer.classList.remove('aggregated-mode');
+
+            // Clear aggregated styling from all cells
+            if (_container) {
+                _container.querySelectorAll('.grid-cell.aggregated-cell').forEach(cell => {
+                    cell.innerHTML = '';
+                    cell.classList.remove('has-players', 'aggregated-cell');
+                    cell.style.removeProperty('--heat-intensity');
+                });
+            }
+
+            _aggregatedData = null;
+
+            // Restore normal display
+            refreshDisplay();
+        }
+
+        async function _recomputeAggregated() {
+            if (!_aggregatedMode || !_container) return;
+
+            const weekId = getWeekId();
+
+            // 1. Load all team availability for this week
+            await AvailabilityService.loadAllTeamAvailability(weekId);
+
+            // 2. Get all teams, apply filters
+            const allTeams = TeamService.getAllTeams();
+            const filteredTeams = _applyAggregatedFilters(allTeams);
+
+            // 3. Aggregate counts per UTC slot
+            const slotCounts = {};
+            for (const team of filteredTeams) {
+                const data = AvailabilityService.getCachedData(team.id, weekId);
+                if (!data?.slots) continue;
+
+                for (const [slotId, userIds] of Object.entries(data.slots)) {
+                    if (!slotCounts[slotId]) slotCounts[slotId] = 0;
+                    slotCounts[slotId] += userIds.length;
+                }
+            }
+
+            _aggregatedData = slotCounts;
+
+            // 4. Render
+            _renderAggregatedCells();
+        }
+
+        function _applyAggregatedFilters(teams) {
+            if (typeof TeamBrowserState === 'undefined') return teams;
+
+            const divisionFilters = TeamBrowserState.getDivisionFilters();
+            const favoritesActive = TeamBrowserState.isFavoritesFilterActive();
+            const favorites = favoritesActive && typeof FavoritesService !== 'undefined'
+                ? new Set(FavoritesService.getFavorites())
+                : null;
+            const searchQuery = TeamBrowserState.getSearchQuery();
+
+            return teams.filter(team => {
+                // Division filter
+                if (divisionFilters.size > 0) {
+                    const teamDivisions = team.divisions || [];
+                    const matchesDivision = teamDivisions.some(d => divisionFilters.has(d));
+                    if (!matchesDivision) return false;
+                }
+
+                // Favorites filter
+                if (favorites && !favorites.has(team.id)) return false;
+
+                // Search filter
+                if (searchQuery) {
+                    const nameMatch = (team.teamName || '').toLowerCase().includes(searchQuery);
+                    const tagMatch = (team.teamTag || '').toLowerCase().includes(searchQuery);
+                    if (!nameMatch && !tagMatch) return false;
+                }
+
+                // Privacy: skip teams that hide from comparison
+                if (team.hideFromComparison) return false;
+
+                return true;
+            });
+        }
+
+        function _renderAggregatedCells() {
+            if (!_container || !_aggregatedData) return;
+
+            const allCells = _container.querySelectorAll('.grid-cell');
+            const maxCount = Math.max(1, ...Object.values(_aggregatedData));
+
+            allCells.forEach(cell => {
+                const utcSlot = cell.dataset.utcSlot;
+                const count = _aggregatedData[utcSlot] || 0;
+
+                if (count > 0) {
+                    // Heatmap intensity: 0.2 (min) to 1.0 (max)
+                    const intensity = 0.2 + (count / maxCount) * 0.8;
+                    cell.innerHTML = `<span class="aggregated-count">${count}</span>`;
+                    cell.classList.add('has-players', 'aggregated-cell');
+                    cell.style.setProperty('--heat-intensity', intensity.toFixed(2));
+                } else {
+                    cell.innerHTML = '';
+                    cell.classList.remove('has-players', 'aggregated-cell');
+                    cell.style.removeProperty('--heat-intensity');
+                }
+            });
         }
 
         const instance = {

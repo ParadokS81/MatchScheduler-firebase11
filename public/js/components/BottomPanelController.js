@@ -57,11 +57,17 @@ const BottomPanelController = (function() {
             btn.classList.toggle('active', btn.dataset.tab === tabId);
         });
 
+        // Slice A1: Track admin mode transitions (read OLD value before overwrite)
+        const wasAdmin = _activeTab === 'admin';
+        const isAdmin = tabId === 'admin';
+
         // Cleanup previous tab's component
         if (_activeTab === 'teams' || _activeTab === 'players') {
             TeamsBrowserPanel.cleanup();
         } else if (_activeTab === 'matches') {
             MatchesPanel.cleanup();
+        } else if (_activeTab === 'admin') {
+            AdminPanel.cleanup();
         }
 
         // Handle content switching
@@ -81,6 +87,9 @@ const BottomPanelController = (function() {
             case 'matches':
                 _showMatchesPanel();
                 break;
+            case 'admin':
+                _showAdminPanel();
+                break;
         }
 
         _activeTab = tabId;
@@ -89,6 +98,13 @@ const BottomPanelController = (function() {
         window.dispatchEvent(new CustomEvent('bottom-tab-changed', {
             detail: { tab: tabId }
         }));
+
+        // Slice A1: Dispatch admin-mode-changed only on transitions
+        if (wasAdmin !== isAdmin) {
+            window.dispatchEvent(new CustomEvent('admin-mode-changed', {
+                detail: { active: isAdmin }
+            }));
+        }
     }
 
     /**
@@ -154,6 +170,22 @@ const BottomPanelController = (function() {
     }
 
     /**
+     * Slice A3: Show admin panel with Discord bot overview
+     */
+    function _showAdminPanel() {
+        if (!_bottomPanel) return;
+        _bottomPanel.innerHTML = '';
+        _placeholderContent = null;
+
+        const container = document.createElement('div');
+        container.id = 'admin-panel';
+        container.className = 'h-full';
+        _bottomPanel.appendChild(container);
+
+        AdminPanel.init('admin-panel');
+    }
+
+    /**
      * Show placeholder content for a tab
      * @param {string} tabId - Tab identifier
      * @param {string} title - Placeholder title
@@ -205,6 +237,8 @@ const BottomPanelController = (function() {
             TeamsBrowserPanel.cleanup();
         } else if (_activeTab === 'matches') {
             MatchesPanel.cleanup();
+        } else if (_activeTab === 'admin') {
+            AdminPanel.cleanup();
         }
         _weekDisplay2Ref = null;
         _bottomPanel = null;

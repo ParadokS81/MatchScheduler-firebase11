@@ -51,19 +51,31 @@ const ComparisonEngine = (function() {
         _userTeamCounts = {};
 
         const weeks = _getVisibleWeeks();
+        const validOpponents = _opponentTeamIds.filter(id => id !== _userTeamId);
 
         for (const weekId of weeks) {
-            // Load user team availability (cache-first)
-            const userAvail = await AvailabilityService.loadWeekAvailability(_userTeamId, weekId);
+            // Load user team + ALL opponent availability in parallel
+            const loadPromises = [
+                AvailabilityService.loadWeekAvailability(_userTeamId, weekId),
+                ...validOpponents.map(id => AvailabilityService.loadWeekAvailability(id, weekId))
+            ];
+            const [userAvail, ...opponentAvails] = await Promise.all(loadPromises);
+
             const userSlots = userAvail?.slots || {};
 
-            for (const opponentId of _opponentTeamIds) {
-                // Skip if this is somehow the user's team
-                if (opponentId === _userTeamId) continue;
+            // Get blocked slots for user team (matches already scheduled)
+            const userBlocked = typeof ScheduledMatchService !== 'undefined'
+                ? ScheduledMatchService.getBlockedSlotsForTeam(_userTeamId, weekId)
+                : new Set();
 
-                // Load opponent availability (cache-first)
-                const opponentAvail = await AvailabilityService.loadWeekAvailability(opponentId, weekId);
-                const opponentSlots = opponentAvail?.slots || {};
+            for (let i = 0; i < validOpponents.length; i++) {
+                const opponentId = validOpponents[i];
+                const opponentSlots = opponentAvails[i]?.slots || {};
+
+                // Get blocked slots for opponent team
+                const opponentBlocked = typeof ScheduledMatchService !== 'undefined'
+                    ? ScheduledMatchService.getBlockedSlotsForTeam(opponentId, weekId)
+                    : new Set();
 
                 // Get opponent team data from cache (synchronous)
                 const opponentTeam = TeamService.getTeamFromCache(opponentId);
@@ -73,13 +85,16 @@ const ComparisonEngine = (function() {
 
                 const opponentRoster = opponentTeam?.playerRoster || [];
 
-                // Check each slot where user team has availability
+                // Check each slot where either team has availability
                 const allSlotIds = new Set([
                     ...Object.keys(userSlots),
                     ...Object.keys(opponentSlots)
                 ]);
 
                 for (const slotId of allSlotIds) {
+                    // Skip slots blocked by either team's existing matches
+                    if (userBlocked.has(slotId) || opponentBlocked.has(slotId)) continue;
+
                     const userPlayers = userSlots[slotId] || [];
                     const opponentPlayers = opponentSlots[slotId] || [];
                     const userCount = userPlayers.length;
@@ -324,9 +339,9 @@ const ComparisonEngine = (function() {
     // Slice 17.0a: Always react to team selection — no autoMode gate
     window.addEventListener('team-selection-changed', (e) => {
         // Derive user team fresh each time
-        const userTeamId = typeof MatchSchedulerApp !== 'undefined'
-            ? MatchSchedulerApp.getSelectedTeam()?.id
-            : null;
+        const userTeamId = (typeof MatchSchedulerApp !== 'undefined' && MatchSchedulerApp.getSelectedTeam()?.id)
+            || (typeof MobileApp !== 'undefined' && MobileApp.getSelectedTeamId())
+            || null;
 
         if (!userTeamId) return; // No team selected in grid — can't compare
 

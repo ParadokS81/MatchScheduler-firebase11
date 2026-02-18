@@ -38,6 +38,12 @@ const TeamsBrowserPanel = (function() {
     let _selectedMatchId = null;      // Clicked/sticky match
     let _selectedMatchStats = null;   // ktxstats for selected match
     let _statsLoading = false;        // Loading indicator for ktxstats fetch
+    let _voiceAvailable = new Set();  // SHA256s of matches with voice recordings (P5.2)
+    let _voiceOnlyFilter = false;     // Filter to show only matches with voice recordings
+
+    // Slice P5.4: Inline WebQTV player state
+    let _playerActive = false;       // True when inline player is mounted
+    let _playerMatchId = null;       // Match ID currently playing
 
     // Sortable table state
     let _sortColumn = 'date';         // 'date' | 'map' | 'scoreUs' | 'scoreThem' | 'opponent' | 'result'
@@ -93,6 +99,11 @@ const TeamsBrowserPanel = (function() {
     let _mapsDataB = null;             // QWStatsService.getMaps() for Team B
     let _mapsLoading = false;          // Loading state
 
+    // Opponent dropdown: filtered list from QWStats
+    let _h2hOpponents = null;          // API response: { opponents: [{ tag, total, wins, losses }] }
+    let _h2hOpponentsLoading = false;  // Loading state
+    let _h2hOpponentsTeamAId = null;   // Which team A the opponents were fetched for
+
     // ========================================
     // Initialization
     // ========================================
@@ -110,14 +121,16 @@ const TeamsBrowserPanel = (function() {
         // Get initial data from cache (HOT PATH)
         _allTeams = TeamService.getAllTeams() || [];
 
-        // If cache wasn't ready yet, wait for it and re-render
+        // If cache wasn't ready yet, wait for it and update content
+        // Uses _renderCurrentView (not _render) to avoid full DOM replacement
+        // that could destroy in-flight async loads from onSnapshot
         if (_allTeams.length === 0 && !TeamService.isCacheReady()) {
             const checkCache = setInterval(() => {
                 if (TeamService.isCacheReady()) {
                     clearInterval(checkCache);
                     _allTeams = TeamService.getAllTeams() || [];
                     _allPlayers = _extractAllPlayers(_allTeams);
-                    _render();
+                    _renderCurrentView();
                 }
             }, 200);
             setTimeout(() => clearInterval(checkCache), 10000);
@@ -307,6 +320,14 @@ const TeamsBrowserPanel = (function() {
 
         content.innerHTML = _currentView === 'teams' ? _renderTeamsView() : _renderPlayersView();
         _attachViewListeners();
+
+        // Load Discord DM buttons for any leader icons in the rendered view
+        content.querySelectorAll('.tooltip-leader-discord[data-uid]').forEach(slot => {
+            _fetchDiscordInfo(slot.dataset.uid).then(info => {
+                if (!slot.isConnected || !info?.discordUserId) return;
+                _injectDiscordButton(slot, info);
+            });
+        });
 
         // If teams view with Details tab and a team with teamTag is selected, load map stats
         if (_currentView === 'teams' && _selectedTeamId && _activeTab === 'details') {
@@ -542,14 +563,18 @@ const TeamsBrowserPanel = (function() {
 
         const rosterHtml = sortedRoster.length > 0
             ? sortedRoster.map(player => {
+                const isLeader = player.role === 'leader';
                 const avatarHtml = player.photoURL
                     ? `<img class="roster-avatar" src="${player.photoURL}" alt="">`
-                    : `<div class="roster-avatar roster-avatar-fallback">${_escapeHtml(player.initials || (player.displayName || '?')[0].toUpperCase())}</div>`;
+                    : '';
+                const discordSlot = isLeader && player.userId
+                    ? `<span class="tooltip-leader-discord" data-uid="${player.userId}"></span>`
+                    : '';
                 return `
                     <div class="team-details-roster-item">
                         ${avatarHtml}
-                        <span>${_escapeHtml(player.displayName || 'Unknown')}</span>
-                        ${player.role === 'leader' ? '<span class="leader-badge">(L)</span>' : ''}
+                        <span class="${isLeader ? 'tooltip-leader-name' : ''}">${_escapeHtml(player.displayName || 'Unknown')}</span>
+                        ${discordSlot}
                     </div>
                 `;
             }).join('')
@@ -764,11 +789,19 @@ const TeamsBrowserPanel = (function() {
                 </select>
                 <select class="mh-filter-select" id="mh-opponent-filter"
                         onchange="TeamsBrowserPanel.filterByOpponent(this.value)">
-                    <option value="">All Opponents</option>
+                    <option value="">Teams</option>
                     ${uniqueOpponents.map(opp => `
                         <option value="${opp}" ${_historyOpponentFilter === opp ? 'selected' : ''}>${_escapeHtml(opp)}</option>
                     `).join('')}
                 </select>
+                <button class="mh-voice-filter-btn ${_voiceOnlyFilter ? 'active' : ''}"
+                        onclick="TeamsBrowserPanel.toggleVoiceFilter()"
+                        title="Show only matches with voice recordings">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+                        <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+                    </svg>
+                </button>
                 <select class="mh-filter-select mh-period-select" id="mh-period-filter"
                         onchange="TeamsBrowserPanel.changePeriod(Number(this.value))">
                     <option value="3" ${_historyPeriod === 3 ? 'selected' : ''}>3 months</option>
@@ -837,7 +870,7 @@ const TeamsBrowserPanel = (function() {
                 if (panel) panel.innerHTML = _renderH2HPreviewPanel(_h2hSelectedId);
             }
         } else {
-            if (_selectedMatchId && _selectedMatchStats) {
+            if (_selectedMatchId && _selectedMatchStats && !_playerActive) {
                 const panel = document.getElementById('mh-preview-panel');
                 if (panel) panel.innerHTML = _renderPreviewPanel(_selectedMatchId);
             }
@@ -871,16 +904,20 @@ const TeamsBrowserPanel = (function() {
                 <span class="mh-th mh-th-score" onclick="TeamsBrowserPanel.sortByColumn('scoreUs')">#${_sortIndicator('scoreUs')}</span>
                 <span class="mh-th mh-th-score" onclick="TeamsBrowserPanel.sortByColumn('scoreThem')">#${_sortIndicator('scoreThem')}</span>
                 <span class="mh-th mh-th-vs" onclick="TeamsBrowserPanel.sortByColumn('opponent')">vs${_sortIndicator('opponent')}</span>
-                <span class="mh-th mh-th-result" onclick="TeamsBrowserPanel.sortByColumn('result')">w/l${_sortIndicator('result')}</span>
+                <span class="mh-th mh-th-actions"></span>
             </div>
         `;
 
         const rowsHtml = sorted.map(m => {
             const dateStr = m.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            const resultClass = m.result === 'W' ? 'mh-result-win'
-                              : m.result === 'L' ? 'mh-result-loss'
-                              : 'mh-result-draw';
             const isSelected = String(m.id) === _selectedMatchId;
+
+            const isWin = m.result === 'W';
+            const isLoss = m.result === 'L';
+            const usScoreStyle = isWin ? 'color: rgb(34 197 94)' : isLoss ? 'color: rgb(239 68 68)' : '';
+            const themScoreStyle = isLoss ? 'color: rgb(34 197 94)' : isWin ? 'color: rgb(239 68 68)' : '';
+
+            const hasVoice = m.demoHash && _voiceAvailable.has(m.demoHash);
 
             return `
                 <div class="mh-table-row ${isSelected ? 'selected' : ''}"
@@ -892,10 +929,10 @@ const TeamsBrowserPanel = (function() {
                     <span></span>
                     <span class="mh-td mh-td-map">${m.map}</span>
                     <span class="mh-td mh-td-us">${_escapeHtml(m.ourTag)}</span>
-                    <span class="mh-td mh-td-score">${m.ourScore}</span>
-                    <span class="mh-td mh-td-score">${m.opponentScore}</span>
+                    <span class="mh-td mh-td-score" style="${usScoreStyle}">${m.ourScore}</span>
+                    <span class="mh-td mh-td-score" style="${themScoreStyle}">${m.opponentScore}</span>
                     <span class="mh-td mh-td-opponent">${_escapeHtml(m.opponentTag)}</span>
-                    <span class="mh-td mh-td-result ${resultClass}">${m.result}</span>
+                    <span class="mh-td mh-td-actions flex items-center gap-1">${m.demoHash ? `<button class="mh-icon-btn" onclick="event.stopPropagation(); TeamsBrowserPanel.openDemoPlayer('${m.demoHash}')" title="Watch demo"><svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>` : ''}${hasVoice ? `<button class="mh-icon-btn mh-icon-voice" onclick="event.stopPropagation(); TeamsBrowserPanel.openVoiceReplay('${m.id}')" title="Watch with voice"><svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg></button>` : ''}</span>
                 </div>
             `;
         }).join('');
@@ -912,6 +949,8 @@ const TeamsBrowserPanel = (function() {
         const hubUrl = `https://hub.quakeworld.nu/games/?gameId=${match.id}`;
         const tableHtml = _renderStatsTable(ktxstats, match);
 
+        const hasVoice = match.demoHash && _voiceAvailable.has(match.demoHash);
+
         return `
             <div class="mh-stats-view" style="background-image: url('${mapshotUrl}');">
                 <div class="mh-stats-overlay sb-text-outline">
@@ -920,12 +959,12 @@ const TeamsBrowserPanel = (function() {
                         <a href="${hubUrl}" target="_blank" class="mh-action-link">
                             View on QW Hub &rarr;
                         </a>
-                        <button class="mh-action-link" onclick="TeamsBrowserPanel.openFullStats('${match.id}')">
-                            Full Stats &#x29C9;
-                        </button>
                         ${match.demoHash ? `
-                        <button class="mh-action-link" onclick="TeamsBrowserPanel.openVoiceReplay('${match.id}')">
-                            &#127911; Watch with Voice
+                        <button class="mh-play-btn" onclick="TeamsBrowserPanel.playMatch('${match.id}', ${hasVoice})">
+                            <svg class="w-4 h-4 inline-block mr-1" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                            Watch${hasVoice ? ' with Voice' : ''}${hasVoice ? '<span class="mh-voice-badge">&#127911;</span>' : ''}
                         </button>
                         ` : ''}
                     </div>
@@ -1639,6 +1678,7 @@ const TeamsBrowserPanel = (function() {
      */
     function previewMatch(matchId) {
         if (_selectedMatchId) return; // Don't override sticky
+        if (_playerActive) return;    // Don't override inline player (P5.4)
 
         _hoveredMatchId = matchId;
         const panel = document.getElementById('mh-preview-panel');
@@ -1651,7 +1691,7 @@ const TeamsBrowserPanel = (function() {
         const match = _matchDataById.get(String(matchId));
         if (match?.demoHash && !QWHubService.getCachedGameStats(match.demoHash)) {
             QWHubService.getGameStats(match.demoHash).then(() => {
-                if (_hoveredMatchId === matchId && !_selectedMatchId && panel) {
+                if (_hoveredMatchId === matchId && !_selectedMatchId && !_playerActive && panel) {
                     panel.innerHTML = _renderPreviewPanel(matchId);
                 }
             }).catch(() => {}); // silent fail — summary is optional
@@ -1663,7 +1703,7 @@ const TeamsBrowserPanel = (function() {
      */
     function clearPreview() {
         _hoveredMatchId = null;
-        if (!_selectedMatchId) {
+        if (!_selectedMatchId && !_playerActive) {
             const panel = document.getElementById('mh-preview-panel');
             if (panel) {
                 panel.innerHTML = _renderSummaryPanel();
@@ -1677,6 +1717,13 @@ const TeamsBrowserPanel = (function() {
      * Clicking the same match again un-sticks it (toggle off).
      */
     async function selectMatch(matchId) {
+        // P5.4: If player is active, close it first
+        if (_playerActive) {
+            VoiceReplayPlayer.destroy();
+            _playerActive = false;
+            _playerMatchId = null;
+        }
+
         // Toggle off if clicking same match
         if (_selectedMatchId === String(matchId)) {
             _selectedMatchId = null;
@@ -1733,6 +1780,13 @@ const TeamsBrowserPanel = (function() {
      */
     function _applyFiltersAndUpdate() {
         const filtered = _getFilteredHistoryMatches();
+
+        // P5.4: Close inline player if active — filter change invalidates context
+        if (_playerActive) {
+            VoiceReplayPlayer.destroy();
+            _playerActive = false;
+            _playerMatchId = null;
+        }
 
         // Clear selection if selected match no longer in filtered list
         if (_selectedMatchId && !filtered.some(m => String(m.id) === _selectedMatchId)) {
@@ -1792,6 +1846,17 @@ const TeamsBrowserPanel = (function() {
     }
 
     /**
+     * Toggle voice-only filter on match history.
+     */
+    function toggleVoiceFilter() {
+        _voiceOnlyFilter = !_voiceOnlyFilter;
+        // Update button visual state directly
+        const btn = document.querySelector('.mh-voice-filter-btn');
+        if (btn) btn.classList.toggle('active', _voiceOnlyFilter);
+        _applyFiltersAndUpdate();
+    }
+
+    /**
      * Change the time period and re-fetch matches.
      */
     async function changePeriod(months) {
@@ -1841,6 +1906,9 @@ const TeamsBrowserPanel = (function() {
         if (_historyOpponentFilter) {
             matches = matches.filter(m => m.opponentTag === _historyOpponentFilter);
         }
+        if (_voiceOnlyFilter) {
+            matches = matches.filter(m => m.demoHash && _voiceAvailable.has(m.demoHash));
+        }
         return matches;
     }
 
@@ -1855,23 +1923,136 @@ const TeamsBrowserPanel = (function() {
     }
 
     /**
-     * Placeholder for Full Stats button (Slice 5.2c).
+     * Open demo player inline for a match (P5.4, replaces Slice 5.2c placeholder).
      */
     function openFullStats(matchId) {
-        console.log('Full Stats requested for match:', matchId, '(Slice 5.2c placeholder)');
+        playMatch(String(matchId), false);
     }
 
     /**
-     * Open Voice Replay in a new tab for the given match.
-     * Launches replay.html with the demo SHA256 hash and match title.
+     * Open demo player by demoHash (P5.3 — icon click handler).
+     * Finds the match by hash and delegates to playMatch.
+     */
+    function openDemoPlayer(demoHash) {
+        const match = [..._matchDataById.values()].find(m => m.demoHash === demoHash);
+        if (match) playMatch(String(match.id), false);
+    }
+
+    /**
+     * Open Voice Replay inline with voice auto-load (P5.4).
+     * Falls back to new tab if VoiceReplayPlayer is not available.
      */
     function openVoiceReplay(matchId) {
         const match = _matchDataById.get(String(matchId));
         if (!match || !match.demoHash) return;
 
+        if (typeof VoiceReplayPlayer !== 'undefined') {
+            playMatch(String(matchId), true);
+        } else {
+            // Fallback: open in new tab
+            const title = `${match.ourTag} ${match.ourScore}-${match.opponentScore} ${match.opponentTag} on ${match.map}`;
+            const url = `replay.html?demo=${match.demoHash}&title=${encodeURIComponent(title)}`;
+            window.open(url, '_blank');
+        }
+    }
+
+    /**
+     * Mount inline WebQTV player in the right panel (P5.4).
+     * @param {string} matchId - Match ID to play
+     * @param {boolean} autoVoice - If true, voice tracks auto-load from Firestore
+     */
+    async function playMatch(matchId, autoVoice = false) {
+        const match = _matchDataById.get(String(matchId));
+        if (!match || !match.demoHash) return;
+
+        if (typeof VoiceReplayPlayer === 'undefined') {
+            console.error('VoiceReplayPlayer not loaded');
+            if (typeof ToastService !== 'undefined') ToastService.show('Player not available', 'error');
+            return;
+        }
+
+        // Close existing player if open
+        if (_playerActive) {
+            VoiceReplayPlayer.destroy();
+        }
+
+        _playerActive = true;
+        _playerMatchId = String(matchId);
+        _selectedMatchId = String(matchId); // Keep row highlighted
+        _updateMatchListHighlights();
+
+        const panel = document.getElementById('mh-preview-panel');
+        if (!panel) return;
+
         const title = `${match.ourTag} ${match.ourScore}-${match.opponentScore} ${match.opponentTag} on ${match.map}`;
-        const url = `replay.html?demo=${match.demoHash}&title=${encodeURIComponent(title)}`;
-        window.open(url, '_blank');
+
+        panel.innerHTML = `
+            <div class="mh-player-wrapper">
+                <div class="flex items-center justify-between px-2 py-1.5 border-b border-border/50">
+                    <span class="text-xs text-muted-foreground truncate mr-2">${title}</span>
+                    <button class="mh-player-close" onclick="TeamsBrowserPanel.closePlayer()">
+                        ✕ Close
+                    </button>
+                </div>
+                <div id="mh-player-mount" class="relative flex-1 min-h-0"></div>
+            </div>
+        `;
+
+        const mountPoint = document.getElementById('mh-player-mount');
+        if (mountPoint) {
+            try {
+                await VoiceReplayPlayer.init(mountPoint, match.demoHash, title, autoVoice);
+            } catch (error) {
+                console.error('Failed to initialize player:', error);
+                if (typeof ToastService !== 'undefined') ToastService.show('Failed to load player', 'error');
+                _playerActive = false;
+                _playerMatchId = null;
+                panel.innerHTML = _renderPreviewPanel(_selectedMatchId);
+            }
+        }
+    }
+
+    /**
+     * Close inline player and return to stats view (P5.4).
+     */
+    function closePlayer() {
+        if (!_playerActive) return;
+        VoiceReplayPlayer.destroy();
+        _playerActive = false;
+        _playerMatchId = null;
+
+        // Re-render the stats view for the selected match
+        const panel = document.getElementById('mh-preview-panel');
+        if (panel) {
+            panel.innerHTML = _renderPreviewPanel(_selectedMatchId);
+        }
+    }
+
+    /**
+     * Fetch voice recording SHA256s for a team from Firestore (P5.2).
+     * Populates _voiceAvailable Set for use by match row rendering.
+     * @param {string} teamId - Firestore team ID
+     */
+    async function _fetchVoiceRecordings(teamId) {
+        if (!teamId) {
+            _voiceAvailable = new Set();
+            return;
+        }
+        try {
+            const { collection, query, where, getDocs } = await import(
+                'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js'
+            );
+            const q = query(
+                collection(window.firebase.db, 'voiceRecordings'),
+                where('teamId', '==', teamId)
+            );
+            const snapshot = await getDocs(q);
+            _voiceAvailable = new Set(snapshot.docs.map(doc => doc.id));
+            console.log('Voice recordings for', teamId, ':', _voiceAvailable.size, [..._voiceAvailable]);
+        } catch (err) {
+            console.warn('Failed to fetch voice recordings for', teamId, ':', err);
+            _voiceAvailable = new Set();
+        }
     }
 
     /**
@@ -1889,11 +2070,19 @@ const TeamsBrowserPanel = (function() {
         if (!listEl) return;
 
         try {
-            const matches = await QWHubService.getMatchHistory(tags, _historyPeriod);
+            // Fetch match history and voice recordings in parallel (P5.2)
+            const [matches] = await Promise.all([
+                QWHubService.getMatchHistory(tags, _historyPeriod),
+                _fetchVoiceRecordings(_selectedTeamId)
+            ]);
 
             // Guard against stale render (user switched teams during fetch)
             const currentPanel = document.querySelector('.match-history-split');
             if (!currentPanel || (currentPanel.dataset.teamTag || '').toLowerCase() !== primaryTag) return;
+
+            // Re-query DOM elements (may have been replaced by re-render during fetch)
+            const currentListEl = document.getElementById('mh-match-list');
+            if (!currentListEl) return;
 
             // Populate state
             _historyMatches = matches;
@@ -1901,7 +2090,7 @@ const TeamsBrowserPanel = (function() {
             matches.forEach(m => _matchDataById.set(String(m.id), m));
 
             if (matches.length === 0) {
-                listEl.innerHTML = '<p class="text-xs text-muted-foreground p-2">No recent 4on4 matches found</p>';
+                currentListEl.innerHTML = '<p class="text-xs text-muted-foreground p-2">No recent 4on4 matches found</p>';
                 // Show empty summary
                 const previewPanel = document.getElementById('mh-preview-panel');
                 if (previewPanel) {
@@ -1916,7 +2105,7 @@ const TeamsBrowserPanel = (function() {
 
             // Render match list
             const filtered = _getFilteredHistoryMatches();
-            listEl.innerHTML = _renderMatchList(filtered);
+            currentListEl.innerHTML = _renderMatchList(filtered);
 
             // Show summary panel in right side
             const previewPanel = document.getElementById('mh-preview-panel');
@@ -1930,7 +2119,10 @@ const TeamsBrowserPanel = (function() {
             const currentPanel = document.querySelector('.match-history-split');
             if (!currentPanel || (currentPanel.dataset.teamTag || '').toLowerCase() !== primaryTag) return;
 
-            listEl.innerHTML = `
+            const errorListEl = document.getElementById('mh-match-list');
+            if (!errorListEl) return;
+
+            errorListEl.innerHTML = `
                 <div class="text-xs text-muted-foreground p-2">
                     <p>Couldn't load match history</p>
                     <button class="text-xs mt-1 text-primary hover:underline cursor-pointer"
@@ -1962,7 +2154,7 @@ const TeamsBrowserPanel = (function() {
         const oppSelect = document.getElementById('mh-opponent-filter');
         if (oppSelect) {
             oppSelect.innerHTML = `
-                <option value="">All Opponents</option>
+                <option value="">Teams</option>
                 ${uniqueOpponents.map(opp => `
                     <option value="${opp}" ${_historyOpponentFilter === opp ? 'selected' : ''}>${opp}</option>
                 `).join('')}
@@ -2298,12 +2490,70 @@ const TeamsBrowserPanel = (function() {
     }
 
     /**
+     * Build opponent options for dropdowns. When opponent data is loaded,
+     * filters to only teams with match data and includes game counts.
+     * @param {string} excludeId - Team ID to exclude (the other side)
+     * @returns {Array<{ id, teamName, teamTag, gameCount }>}
+     */
+    function _getOpponentOptions(excludeId) {
+        const teamsWithTags = _allTeams.filter(t => t.teamTag && t.id !== excludeId);
+
+        if (!_h2hOpponents || !_h2hOpponents.opponents) {
+            // Opponents not loaded yet — show all teams alphabetically
+            return teamsWithTags
+                .map(t => ({ id: t.id, teamName: t.teamName, teamTag: t.teamTag, gameCount: null }))
+                .sort((a, b) => a.teamName.localeCompare(b.teamName));
+        }
+
+        // Build lookup: lowercased opponent tag → { total, wins, losses }
+        const oppMap = new Map();
+        for (const opp of _h2hOpponents.opponents) {
+            oppMap.set(opp.tag.toLowerCase(), opp);
+        }
+
+        // Match Firestore teams to API opponents via tag overlap
+        const matched = [];
+        for (const team of teamsWithTags) {
+            const allTags = TeamService.getTeamAllTags(team.id); // lowercased
+            let matchedOpp = null;
+            for (const tag of allTags) {
+                if (oppMap.has(tag)) {
+                    matchedOpp = oppMap.get(tag);
+                    break;
+                }
+            }
+            if (matchedOpp) {
+                matched.push({
+                    id: team.id,
+                    teamName: team.teamName,
+                    teamTag: team.teamTag,
+                    gameCount: matchedOpp.total,
+                });
+            }
+        }
+
+        // Sort by game count descending (most played = most interesting)
+        matched.sort((a, b) => b.gameCount - a.gameCount);
+        return matched;
+    }
+
+    /**
+     * Render <option> elements for opponent dropdown.
+     */
+    function _renderOpponentOptionHtml(options, selectedId) {
+        return options.map(t => {
+            const countLabel = t.gameCount != null ? ` \u2014 ${t.gameCount}` : '';
+            return `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>` +
+                `${_escapeHtml(t.teamName)} (${_escapeHtml(t.teamTag)})${countLabel}` +
+                `</option>`;
+        }).join('');
+    }
+
+    /**
      * Team A (fixed) + Team B (dropdown) + period buttons + map filter.
      */
     function _renderTeamSelector(teamA) {
-        const allTeams = _allTeams
-            .filter(t => t.id !== teamA.id && t.teamTag)
-            .sort((a, b) => a.teamName.localeCompare(b.teamName));
+        const opponentOptions = _getOpponentOptions(teamA.id);
 
         const periods = [1, 3, 6];
 
@@ -2320,11 +2570,7 @@ const TeamsBrowserPanel = (function() {
                     <div class="h2h-team h2h-team-b">
                         <select class="h2h-opponent-select" onchange="TeamsBrowserPanel.selectOpponent(this.value)">
                             <option value="">Select opponent...</option>
-                            ${allTeams.map(t => `
-                                <option value="${t.id}" ${t.id === _h2hOpponentId ? 'selected' : ''}>
-                                    ${_escapeHtml(t.teamName)} (${_escapeHtml(t.teamTag)})
-                                </option>
-                            `).join('')}
+                            ${_renderOpponentOptionHtml(opponentOptions, _h2hOpponentId)}
                         </select>
                     </div>
                 </div>
@@ -2413,6 +2659,11 @@ const TeamsBrowserPanel = (function() {
      * H2H direct matchup split panel: results left, roster/scoreboard right.
      */
     function _renderH2HDirectTab() {
+        // Kick off opponent list fetch if not yet loaded
+        if (!_h2hOpponents && !_h2hOpponentsLoading && _getH2HTeamAId()) {
+            _loadH2HOpponents();
+        }
+
         const games = _h2hOpponentId ? _getFilteredH2HResults() : [];
 
         // Left panel content depends on state
@@ -2602,11 +2853,20 @@ const TeamsBrowserPanel = (function() {
         const selectedId = side === 'A' ? _getH2HTeamAId() : _h2hOpponentId;
         const handler = side === 'A' ? 'selectH2HTeamA' : 'selectOpponent';
 
-        // Build team options (exclude the other side's selected team)
+        // Side A: all teams (unfiltered). Side B: filtered by opponent data.
         const otherId = side === 'A' ? _h2hOpponentId : _getH2HTeamAId();
-        const teamOptions = _allTeams
-            .filter(t => t.teamTag && t.id !== otherId)
-            .sort((a, b) => a.teamName.localeCompare(b.teamName));
+        let optionsHtml;
+        if (side === 'B') {
+            const opponentOptions = _getOpponentOptions(otherId);
+            optionsHtml = _renderOpponentOptionHtml(opponentOptions, selectedId);
+        } else {
+            const teamOptions = _allTeams
+                .filter(t => t.teamTag && t.id !== otherId)
+                .sort((a, b) => a.teamName.localeCompare(b.teamName));
+            optionsHtml = teamOptions.map(t =>
+                `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${_escapeHtml(t.teamName)}</option>`
+            ).join('');
+        }
 
         const hasRoster = rosterData && rosterData.players?.length > 0;
         const maxGames = hasRoster ? (rosterData.totalGames || rosterData.players[0]?.games || 1) : 1;
@@ -2620,11 +2880,7 @@ const TeamsBrowserPanel = (function() {
                     }
                     <select class="h2h-team-select" onchange="TeamsBrowserPanel.${handler}(this.value)">
                         <option value="">Select team...</option>
-                        ${teamOptions.map(t => `
-                            <option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>
-                                ${_escapeHtml(t.teamName)}
-                            </option>
-                        `).join('')}
+                        ${optionsHtml}
                     </select>
                 </div>
                 ${hasRoster ? `
@@ -2816,6 +3072,40 @@ const TeamsBrowserPanel = (function() {
     // ========================================
 
     /**
+     * Fetch opponent list for Team A's dropdown (which teams have match data).
+     * Lightweight aggregate query — only called when team A or period changes.
+     */
+    async function _loadH2HOpponents() {
+        const teamAId = _getH2HTeamAId();
+        if (!teamAId) return;
+
+        const teamA = _allTeams.find(t => t.id === teamAId);
+        if (!teamA?.teamTag) return;
+
+        // Skip if already loaded for same team + period
+        if (_h2hOpponents && _h2hOpponentsTeamAId === teamAId) return;
+
+        const tagsA = TeamService.getTeamAllTags(teamA.id);
+        _h2hOpponentsLoading = true;
+        _h2hOpponentsTeamAId = teamAId;
+
+        try {
+            const data = await QWStatsService.getOpponents(tagsA, { months: _h2hPeriod });
+
+            // Guard: still same team?
+            if (_getH2HTeamAId() !== teamAId) return;
+
+            _h2hOpponents = data;
+        } catch (error) {
+            console.error('Failed to load opponents:', error);
+            _h2hOpponents = null;
+        } finally {
+            _h2hOpponentsLoading = false;
+            _renderCurrentView();
+        }
+    }
+
+    /**
      * Fetch H2H results + both rosters in parallel.
      */
     async function _loadH2HData() {
@@ -2890,6 +3180,11 @@ const TeamsBrowserPanel = (function() {
         _resetMapsState();
         _resetFormState();
 
+        // Re-fetch opponents for new team A
+        _h2hOpponents = null;
+        _h2hOpponentsTeamAId = null;
+        _loadH2HOpponents();
+
         if (_getH2HTeamAId() && _h2hOpponentId) {
             _loadH2HData();
         } else {
@@ -2950,6 +3245,12 @@ const TeamsBrowserPanel = (function() {
     function changeH2HPeriod(months) {
         if (_h2hPeriod === months) return;
         _h2hPeriod = months;
+
+        // Re-fetch opponents for new period
+        _h2hOpponents = null;
+        _h2hOpponentsTeamAId = null;
+        _loadH2HOpponents();
+
         if (_h2hOpponentId) {
             _loadH2HData();
             // Re-fetch form data if form tab is active or was previously loaded
@@ -3813,6 +4114,12 @@ const TeamsBrowserPanel = (function() {
      * Reset all match history state (called when switching teams).
      */
     function _resetHistoryState() {
+        // P5.4: Destroy inline player if active
+        if (_playerActive) {
+            VoiceReplayPlayer.destroy();
+            _playerActive = false;
+            _playerMatchId = null;
+        }
         _historyMatches = [];
         _historyMapFilter = '';
         _historyOpponentFilter = '';
@@ -3821,6 +4128,7 @@ const TeamsBrowserPanel = (function() {
         _selectedMatchId = null;
         _selectedMatchStats = null;
         _statsLoading = false;
+        _voiceAvailable = new Set();
         _matchDataById.clear();
         _sortColumn = 'date';
         _sortDirection = 'desc';
@@ -4628,13 +4936,14 @@ const TeamsBrowserPanel = (function() {
         });
 
         const rosterHtml = sorted.map(player => {
-            const initials = (player.displayName || '??').substring(0, 2).toUpperCase();
-            const leaderBadge = player.role === 'leader' ? ' <span class="tooltip-you">(Leader)</span>' : '';
-            const leaderClass = player.role === 'leader' ? 'tooltip-current' : '';
+            const isLeader = player.role === 'leader';
+            const discordSlot = isLeader && player.userId
+                ? `<span class="tooltip-leader-discord" data-uid="${player.userId}"></span>`
+                : '';
             return `
-                <div class="tooltip-player ${leaderClass}">
-                    <span class="tooltip-initials">${initials}</span>
-                    <span class="tooltip-name">${_escapeHtml(player.displayName || 'Unknown')}${leaderBadge}</span>
+                <div class="tooltip-player${isLeader ? ' tooltip-current' : ''}">
+                    <span class="tooltip-name${isLeader ? ' tooltip-leader-name' : ''}">${_escapeHtml(player.displayName || 'Unknown')}</span>
+                    ${discordSlot}
                 </div>
             `;
         }).join('');
@@ -4642,6 +4951,17 @@ const TeamsBrowserPanel = (function() {
         _tooltip.innerHTML = `
             <div class="tooltip-list">${rosterHtml}</div>
         `;
+
+        // Async load Discord DM button for leader
+        const leader = sorted.find(p => p.role === 'leader');
+        if (leader?.userId) {
+            _fetchDiscordInfo(leader.userId).then(info => {
+                if (!_tooltip || _tooltip.style.display === 'none') return;
+                const slot = _tooltip.querySelector(`.tooltip-leader-discord[data-uid="${CSS.escape(leader.userId)}"]`);
+                if (!slot || !info?.discordUserId) return;
+                _injectDiscordButton(slot, info);
+            });
+        }
 
         // Position: right-aligned within the column, first player aligned with team name
         const rowRect = row.getBoundingClientRect();
@@ -4723,28 +5043,39 @@ const TeamsBrowserPanel = (function() {
             });
 
             const rosterHtml = sorted.map(p => {
-                const initials = (p.displayName || '??').substring(0, 2).toUpperCase();
                 const isHighlighted = (p.userId || p.displayName) === playerKey;
-                const leaderBadge = p.role === 'leader' ? ' <span class="tooltip-you">(Leader)</span>' : '';
+                const isLeader = p.role === 'leader';
                 const classes = [
                     'tooltip-player',
                     isHighlighted ? 'tooltip-current' : '',
                 ].filter(Boolean).join(' ');
+                const discordSlot = isLeader && p.userId
+                    ? `<span class="tooltip-leader-discord" data-uid="${p.userId}"></span>`
+                    : '';
                 return `
                     <div class="${classes}">
-                        <span class="tooltip-initials">${initials}</span>
-                        <span class="tooltip-name">${_escapeHtml(p.displayName || 'Unknown')}${leaderBadge}</span>
+                        <span class="tooltip-name${isLeader ? ' tooltip-leader-name' : ''}">${_escapeHtml(p.displayName || 'Unknown')}</span>
+                        ${discordSlot}
                     </div>
                 `;
             }).join('');
 
             return `
-                <div class="tooltip-header tooltip-team-link" data-team-id="${_escapeHtml(teamInfo.teamId)}" style="cursor:pointer" title="View ${_escapeHtml(teamInfo.teamName)}">${_escapeHtml(teamInfo.teamName)} (${teamInfo.division || '?'}) - ${roster.length} players</div>
+                <div class="tooltip-header tooltip-team-link" data-team-id="${_escapeHtml(teamInfo.teamId)}" style="cursor:pointer" title="View ${_escapeHtml(teamInfo.teamName)}">${_escapeHtml(teamInfo.teamName)} (${teamInfo.division || '?'})</div>
                 <div class="tooltip-list">${rosterHtml}</div>
             `;
         }).join('');
 
         _tooltip.innerHTML = sectionsHtml;
+
+        // Async load Discord DM buttons for leaders
+        _tooltip.querySelectorAll('.tooltip-leader-discord[data-uid]').forEach(slot => {
+            _fetchDiscordInfo(slot.dataset.uid).then(info => {
+                if (!_tooltip || _tooltip.style.display === 'none') return;
+                if (!slot.isConnected || !info?.discordUserId) return;
+                _injectDiscordButton(slot, info);
+            });
+        });
 
         // Position: to the right of the row, header aligned with the clicked row
         // so the user can slide their mouse horizontally into the tooltip
@@ -4894,6 +5225,16 @@ const TeamsBrowserPanel = (function() {
         return div.innerHTML;
     }
 
+    /** Inject Discord DM button into a .tooltip-leader-discord slot */
+    function _injectDiscordButton(slot, info) {
+        const username = _escapeHtml(info.discordUsername || '');
+        slot.innerHTML = `<button class="tooltip-discord-link" title="DM ${username} on Discord"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/></svg></button>`;
+        slot.querySelector('button').addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.location.href = `discord://discord.com/users/${info.discordUserId}`;
+        });
+    }
+
     // ========================================
     // Router Integration
     // ========================================
@@ -5002,8 +5343,13 @@ const TeamsBrowserPanel = (function() {
         filterByMap,
         filterByOpponent,
         changePeriod,
+        toggleVoiceFilter,
         openFullStats,
+        openDemoPlayer,
         openVoiceReplay,
+        // Slice P5.4: Inline WebQTV player
+        playMatch,
+        closePlayer,
         sortByColumn,
         switchStatsTab,
         // Slice 11.0a: H2H interactions

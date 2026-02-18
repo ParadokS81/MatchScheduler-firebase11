@@ -30,5 +30,21 @@ service firebase.storage {
       allow write: if request.auth != null && request.auth.uid == userId;
       allow read: if true; // Public read so download URL works for admin review
     }
+
+    // Voice recordings — uploaded by Quad bot via Admin SDK
+    // Public read: discovery requires knowing demoSha256 (not guessable)
+    // Privacy is enforced at Firestore discovery layer, not storage
+
+    // New multi-clan format (Phase 2+)
+    match /voice-recordings/{teamId}/{demoSha256}/{fileName} {
+      allow read: if true;
+      allow write: if false; // Only Admin SDK (Quad bot) can write
+    }
+
+    // Legacy PoC format (existing recordings)
+    match /voice-recordings/{demoSha256}/{fileName} {
+      allow read: if true;
+      allow write: if false; // Only Admin SDK (Quad bot) can write
+    }
   }
 }

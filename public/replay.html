@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Replay — QuakeWorld Match Scheduler</title>
+    <meta name="description" content="Watch QuakeWorld demos with synced team voice comms">
+    <meta name="theme-color" content="#0a0a0f">
+    <link href="css/main.css?v=20260215c" rel="stylesheet">
+
+    <!-- Firebase v11 SDK (Firestore + Storage + Auth) -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+        import { getFirestore, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+        import { getAuth, connectAuthEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+        import { getStorage, connectStorageEmulator } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAElazBT8eT13fT0wCO5K7z3-5D1z42ZBM",
+            authDomain: "matchscheduler-dev.firebaseapp.com",
+            projectId: "matchscheduler-dev",
+            storageBucket: "matchscheduler-dev.firebasestorage.app",
+            messagingSenderId: "340309534131",
+            appId: "1:340309534131:web:77155fb67f95ec2816d7c6"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const storage = getStorage(app);
+
+        const isLocalDev = window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1' ||
+            window.location.hostname.startsWith('172.') ||
+            window.location.hostname.startsWith('192.168.') ||
+            window.location.hostname.startsWith('100.');
+
+        if (isLocalDev) {
+            const emulatorHost = window.location.hostname;
+            try { connectFirestoreEmulator(db, emulatorHost, 8080); } catch (e) { /* already connected */ }
+            try { connectAuthEmulator(auth, `http://${emulatorHost}:9099`, { disableWarnings: true }); } catch (e) { /* already connected */ }
+            try { connectStorageEmulator(storage, emulatorHost, 9199); } catch (e) { /* already connected */ }
+        }
+
+        window.firebase = { app, db, auth, storage, isLocalDev };
+
+        window.APP_CONFIG = {
+            DISCORD_CLIENT_ID: '1465332663152808031',
+            DEV_MODE: isLocalDev
+        };
+    </script>
+</head>
+<body class="bg-background text-foreground min-h-screen flex flex-col overflow-hidden">
+
+    <div id="replay-root" class="flex flex-col flex-1 min-h-0">
+        <div class="vr-loading">
+            <p class="text-muted-foreground">Initializing replay&hellip;</p>
+        </div>
+    </div>
+
+    <!-- JSZip for zip file support -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+    <!-- Auth service (needed for sign-in flows on private recordings) -->
+    <script src="js/services/AuthService.js?v=20260214"></script>
+
+    <!-- Voice Replay modules -->
+    <script src="js/services/VoiceReplayService.js?v=20260215a"></script>
+    <script src="js/components/VoiceReplayPlayer.js?v=20260215b"></script>
+
+    <script>
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            const demoSha256 = params.get('demo');
+            const title = params.get('title') || '';
+
+            if (demoSha256) {
+                VoiceReplayPlayer.init(
+                    document.getElementById('replay-root'),
+                    demoSha256,
+                    title ? decodeURIComponent(title) : ''
+                );
+            } else {
+                document.getElementById('replay-root').innerHTML = [
+                    '<div class="p-8 text-center">',
+                    '  <p class="text-muted-foreground text-lg mb-4">No demo specified</p>',
+                    '  <p class="text-muted-foreground text-sm">',
+                    '    Add <code class="text-foreground">?demo={sha256}</code> to the URL,<br>',
+                    '    or use the "Watch with Voice" button from Match History.',
+                    '  </p>',
+                    '</div>'
+                ].join('\n');
+            }
+        })();
+    </script>
+
+</body>
+</html>

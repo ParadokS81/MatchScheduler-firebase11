@@ -139,6 +139,30 @@ const QWStatsService = (function() {
         return data;
     }
 
+    /**
+     * Unique opponents with match counts for a team.
+     * @param {string|string[]} team - Team tag(s) (will be lowercased)
+     * @param {object} opts - { months }
+     * @returns {Promise<{ team, opponents: Array<{ tag, total, wins, losses }> }>}
+     */
+    async function getOpponents(team, opts = {}) {
+        const t = _normalizeTags(team);
+        const months = opts.months || 3;
+
+        const key = _cacheKey('opponents', t, months);
+        const cached = _getCached(key);
+        if (cached) return cached;
+
+        const params = new URLSearchParams({ team: t, months });
+
+        const res = await fetch(`${API_BASE}/api/opponents?${params}`);
+        if (!res.ok) throw new Error(`QW Stats API error: ${res.status}`);
+        const data = await res.json();
+
+        _setCache(key, data);
+        return data;
+    }
+
     /** Clear all cached data */
     function clearCache() {
         _cache.clear();
@@ -149,6 +173,7 @@ const QWStatsService = (function() {
         getForm,
         getMaps,
         getRoster,
+        getOpponents,
         clearCache
     };
 })();

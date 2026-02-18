@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <!-- CSS -->
-    <link href="css/main.css?v=20260206b" rel="stylesheet">
+    <link href="css/main.css?v=20260218a" rel="stylesheet">
 
     <!-- Cropper.js for image cropping -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" integrity="sha384-AMJcAgMUmNt1Zo4ranquGLeT5m7yOrVbtNsNk0oZohvxqKk6RRzXHqlEaS9gFXR7" crossorigin="anonymous">
@@ -160,42 +160,45 @@
             <!-- Left Sidebar (spans all rows) - Slice 13.0f -->
             <div id="panel-left" class="panel sidebar-panel">
                 <div class="sidebar-content">
-                    <!-- Team Identity Section (Logo + Name + Tag) -->
-                    <div class="sidebar-section">
+                    <!-- Team Identity Section (Logo + Name + Tag) — fixed top -->
+                    <div class="sidebar-section sidebar-top">
                         <div id="team-identity-container">
                             <!-- TeamInfo renders logo + name + tag here -->
                         </div>
                     </div>
 
-                    <!-- Roster Section (collapsible) -->
-                    <div class="sidebar-section">
-                        <div id="roster-container">
-                            <!-- TeamInfo renders roster list here -->
+                    <!-- Scrollable middle zone -->
+                    <div class="sidebar-scrollable">
+                        <!-- Roster Section (collapsible) -->
+                        <div class="sidebar-section">
+                            <div id="roster-container">
+                                <!-- TeamInfo renders roster list here -->
+                            </div>
+                        </div>
+
+                        <!-- Match Proposals Section -->
+                        <div class="sidebar-section">
+                            <div id="sidebar-proposals-container">
+                                <!-- SidebarProposals renders compact proposal cards here -->
+                            </div>
+                        </div>
+
+                        <!-- Your Matches Section -->
+                        <div class="sidebar-section">
+                            <div id="your-matches-container">
+                                <!-- UpcomingMatchesPanel renders user's team matches here -->
+                            </div>
+                        </div>
+
+                        <!-- Upcoming Matches Section -->
+                        <div class="sidebar-section sidebar-list">
+                            <div id="upcoming-matches-container">
+                                <!-- UpcomingMatchesPanel renders community matches here -->
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Match Proposals Section -->
-                    <div class="sidebar-section">
-                        <div id="sidebar-proposals-container">
-                            <!-- SidebarProposals renders compact proposal cards here -->
-                        </div>
-                    </div>
-
-                    <!-- Your Matches Section -->
-                    <div class="sidebar-section">
-                        <div id="your-matches-container">
-                            <!-- UpcomingMatchesPanel renders user's team matches here -->
-                        </div>
-                    </div>
-
-                    <!-- Upcoming Matches Section (scrollable) -->
-                    <div class="sidebar-section sidebar-list">
-                        <div id="upcoming-matches-container">
-                            <!-- UpcomingMatchesPanel renders community matches here -->
-                        </div>
-                    </div>
-
-                    <!-- Profile Section (pinned bottom) -->
+                    <!-- Profile Section — pinned bottom -->
                     <div class="sidebar-section sidebar-footer">
                         <div id="profile-compact-container">
                             <!-- UserProfile.renderCompact() renders here -->
@@ -238,6 +241,7 @@
                         <button class="divider-tab" data-tab="teams"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Teams</button>
                         <button class="divider-tab" data-tab="players"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Players</button>
                         <button class="divider-tab" data-tab="tournament"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg> Tournament</button>
+                        <button class="divider-tab hidden" data-tab="admin" id="admin-tab-btn"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> Admin</button>
                     </div>
                 </div>
             </div>
@@ -249,40 +253,45 @@
         </main>
     </div>
 
-    <!-- Mobile Drawer Containers (empty — JS populates in 10.0b) -->
+    <!-- Mobile Layout Container (Slice M1.0: hidden on desktop, shown on mobile via CSS) -->
+    <div id="mobile-app" class="mobile-app">
 
-    <!-- Left Drawer: Team Info + Roster + Matches (Slice 13.0f: unified panel) -->
-    <div id="mobile-drawer-left" class="mobile-drawer mobile-drawer-left hidden"
-         aria-hidden="true" role="dialog" aria-label="Team information">
-      <div class="mobile-drawer-content">
-        <!-- panel-left moved here by JS on mobile -->
-      </div>
-    </div>
+        <!-- Header -->
+        <header class="mobile-header">
+            <button id="mobile-team-name" class="mobile-team-name">
+                Select team &#9662;
+            </button>
+            <div id="mobile-team-dropdown" class="mobile-team-dropdown hidden">
+                <!-- Populated by MobileApp.js -->
+            </div>
+            <button id="mobile-grid-tools-btn" class="mobile-gear-btn" aria-label="Grid tools">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+            </button>
+            <div class="mobile-week-nav">
+                <button id="mobile-week-prev" class="mobile-week-btn">&#9664;</button>
+                <span id="mobile-week-label" class="mobile-week-label">W8</span>
+                <button id="mobile-week-next" class="mobile-week-btn">&#9654;</button>
+            </div>
+        </header>
 
-    <!-- Right Drawer: Team Browser (Slice 13.0e: unified panel) -->
-    <div id="mobile-drawer-right" class="mobile-drawer mobile-drawer-right hidden"
-         aria-hidden="true" role="dialog" aria-label="Team browser">
-      <div class="mobile-drawer-content">
-        <!-- panel-right moved here by JS on mobile -->
-      </div>
-    </div>
+        <!-- Calendar grid -->
+        <div id="mobile-calendar" class="mobile-calendar">
+            <!-- MobileCalendarGrid renders here -->
+        </div>
 
-    <!-- Drawer Overlay -->
-    <div id="mobile-drawer-overlay" class="mobile-drawer-overlay hidden"></div>
+        <!-- Context panel -->
+        <div id="mobile-context" class="mobile-context">
+            <!-- MobileHomeContent renders here -->
+        </div>
 
-    <!-- Mobile Bottom Bar -->
-    <div id="mobile-bottom-bar" class="mobile-bottom-bar hidden">
-      <div class="mobile-bottom-bar-content">
-        <!-- Tab buttons + week nav added by JS in 10.0c -->
-      </div>
-    </div>
+        <!-- Bottom nav -->
+        <nav id="mobile-nav" class="mobile-nav">
+            <!-- MobileBottomNav renders here -->
+        </nav>
 
-    <!-- Portrait Orientation Overlay -->
-    <div id="portrait-overlay" class="portrait-overlay">
-      <div class="portrait-overlay-content">
-        <span class="portrait-icon">&#8635;</span>
-        <p>Please rotate your device to landscape mode</p>
-      </div>
     </div>
 
     <!-- Modal Container -->
@@ -355,6 +364,7 @@
     <script src="js/services/TimezoneService.js?v=20260203a"></script>
     <script src="js/services/AuthService.js?v=20260203a"></script>
     <script src="js/services/TeamService.js?v=20260203a"></script>
+    <script src="js/services/BotRegistrationService.js?v=20260214a"></script>
     <script src="js/services/AvailabilityService.js?v=20260203a"></script>
     <script src="js/services/StandinFinderService.js?v=20260209a"></script>
     <script src="js/services/TemplateService.js?v=20260203a"></script>
@@ -367,8 +377,12 @@
     <script src="js/components/OnboardingModal.js?v=20260203a"></script>
     <script src="js/components/TeamManagementDrawer.js?v=20260203a"></script>
     <script src="js/components/KickPlayerModal.js?v=20260203a"></script>
+    <script src="js/components/QuickAddMatchModal.js?v=20260214a"></script>
+    <script src="js/components/CancelMatchModal.js?v=20260214a"></script>
     <script src="js/components/TransferLeadershipModal.js?v=20260203a"></script>
     <script src="js/components/TeamManagementModal.js?v=20260203a"></script>
+    <script src="js/services/AdminStatsService.js?v=20260216i"></script>
+    <script src="js/components/AdminStatsDisplay.js?v=20260216i"></script>
     <script src="js/components/TeamInfo.js?v=20260203a"></script>
     <script src="js/components/TeamNameDisplay.js?v=20260205a"></script>
     <script src="js/components/AvailabilityGrid.js?v=20260203a"></script>
@@ -400,16 +414,34 @@
     <script src="https://cdn.jsdelivr.net/npm/apexcharts@5.3.6/dist/apexcharts.min.js" integrity="sha384-mrR3K8Jvv+o9bZ6Yu9HWI0M8tuzo5VWNi4fWcmmbFq3NbB+WvjW/tF/wnELivEnc" crossorigin="anonymous"></script>
     <script src="js/services/QWHubService.js?v=20260203a"></script>
     <script src="js/services/QWStatsService.js?v=20260203a"></script>
+    <!-- P5.4: Voice Replay for inline WebQTV player in Match History -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="js/services/RecordingDownloadService.js?v=20260215a"></script>
+    <script src="js/services/VoiceReplayService.js?v=20260215a"></script>
+    <script src="js/components/VoiceReplayPlayer.js?v=20260215b"></script>
     <script src="js/components/TeamsBrowserPanel.js?v=20260203a"></script>
     <script src="js/services/ProposalService.js?v=20260203a"></script>
     <script src="js/services/ScheduledMatchService.js?v=20260203a"></script>
     <script src="js/components/UpcomingMatchesPanel.js?v=20260203a"></script>
     <script src="js/components/MatchesPanel.js?v=20260203a"></script>
     <script src="js/components/SidebarProposals.js?v=20260210a"></script>
-    <script src="js/components/BottomPanelController.js?v=20260203a"></script>
+    <!-- A3: Admin Discord panel -->
+    <script src="js/services/RecordingSessionService.js?v=20260216i"></script>
+    <script src="js/components/AdminPanel.js?v=20260216i"></script>
+    <script src="js/components/BottomPanelController.js?v=20260216i"></script>
     <script src="js/Router.js?v=20260203a"></script>
-    <script src="js/MobileLayout.js?v=20260203a"></script>
-    <script src="js/MobileBottomBar.js?v=20260203a"></script>
-    <script src="js/app.js?v=20260203a" type="module"></script>
+    <!-- Mobile M1.0: New portrait-first mobile components -->
+    <script src="js/mobile/MobileBottomSheet.js?v=20260218a"></script>
+    <script src="js/mobile/MobileProposalDetail.js?v=20260218a"></script>
+    <script src="js/mobile/MobileCompareContent.js?v=20260218a"></script>
+    <script src="js/mobile/MobileCompareDetail.js?v=20260218a"></script>
+    <script src="js/mobile/MobileCalendarGrid.js?v=20260218a"></script>
+    <script src="js/mobile/MobileHomeContent.js?v=20260218a"></script>
+    <script src="js/mobile/MobileGridTools.js?v=20260218c"></script>
+    <script src="js/mobile/MobileTeamTab.js?v=20260218b"></script>
+    <script src="js/mobile/MobileProfileTab.js?v=20260218b"></script>
+    <script src="js/mobile/MobileBottomNav.js?v=20260218b"></script>
+    <script src="js/mobile/MobileApp.js?v=20260218b"></script>
+    <script src="js/app.js?v=20260216i" type="module"></script>
 </body>
 </html>

@@ -9,8 +9,14 @@ const TeamManagementModal = (function() {
     let _teamId = null;
     let _teamData = null;
     let _isLeader = false;
+    let _isScheduler = false;
     let _currentUserId = null;
     let _keydownHandler = null;
+    let _botRegUnsubscribe = null;
+    let _botRegistration = undefined; // undefined = not loaded, null = no doc
+    let _voiceBotInitialized = false;
+    let _recordingsInitialized = false;
+    let _recordings = [];
 
     /**
      * Escape HTML to prevent XSS
@@ -40,11 +46,15 @@ const TeamManagementModal = (function() {
             return;
         }
 
-        // Determine if current user is leader
+        // Determine if current user is leader or scheduler
         _isLeader = _teamData.playerRoster.some(
             p => p.userId === _currentUserId && p.role === 'leader'
         );
+        _isScheduler = (_teamData.schedulers || []).includes(_currentUserId);
 
+        _botRegistration = undefined; // Reset for fresh load
+        _voiceBotInitialized = false;
+        _recordingsInitialized = false;
         _renderModal();
         _attachListeners();
     }
@@ -58,13 +68,15 @@ const TeamManagementModal = (function() {
                  id="team-management-modal-backdrop">
                 <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-md overflow-hidden"
                      role="dialog" aria-modal="true" aria-labelledby="team-management-title">
-                    <!-- Header -->
-                    <div class="flex items-center justify-between p-4 border-b border-border">
-                        <h2 id="team-management-title" class="text-lg font-semibold text-foreground">
-                            Team Settings
-                        </h2>
+                    <!-- Header: tab bar with close button -->
+                    <div class="flex items-center border-b border-border">
+                        <div class="flex flex-1">
+                            <button class="tab-btn active" data-tab="settings">Settings</button>
+                            ${(_isLeader || _isScheduler) ? `<button class="tab-btn" data-tab="discord">Discord</button>` : ''}
+                            <button class="tab-btn" data-tab="recordings">Recordings</button>
+                        </div>
                         <button id="team-management-close"
-                                class="text-muted-foreground hover:text-foreground transition-colors p-1"
+                                class="text-muted-foreground hover:text-foreground transition-colors p-3 ml-auto"
                                 aria-label="Close">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -74,16 +86,25 @@ const TeamManagementModal = (function() {
 
                     <!-- Body -->
                     <div class="p-4 space-y-4 max-h-[70vh] overflow-y-auto scrollbar-thin">
-                        ${_renderLogoAndDetailsSection()}
 
-                        ${_isLeader ? _renderSchedulerSection() : ''}
+                        <div id="tab-content-settings" class="space-y-5">
+                            ${_renderLogoAndDetailsSection()}
+                            ${_isLeader ? _renderSchedulerSection() : ''}
+                            ${_isLeader ? _renderPrivacySection() : ''}
+                            <hr class="border-border">
+                            ${_isLeader ? _renderLeaderActions() : ''}
+                            ${_renderLeaveTeamSection()}
+                        </div>
 
-                        ${_isLeader ? _renderPrivacySection() : ''}
+                        ${(_isLeader || _isScheduler) ? `
+                        <div id="tab-content-discord" class="hidden">
+                            ${_renderVoiceBotSection()}
+                        </div>
+                        ` : ''}
 
-                        <hr class="border-border">
-
-                        ${_isLeader ? _renderLeaderActions() : ''}
-                        ${_renderLeaveTeamSection()}
+                        <div id="tab-content-recordings" class="hidden">
+                            <p class="text-sm text-muted-foreground">Loading recordings...</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -469,6 +490,61 @@ const TeamManagementModal = (function() {
         }
     }
 
+    // ─── Voice Visibility Toggle (Slice P4) ──────────────────────────────
+
+    async function _handleVisibilityToggle() {
+        const btn = document.querySelector('.voice-visibility-toggle');
+        if (!btn) return;
+
+        const currentlyPublic = btn.dataset.enabled === 'true';
+        const newIsPublic = !currentlyPublic;
+        const newVisibility = newIsPublic ? 'public' : 'private';
+
+        // Optimistic UI update
+        _applyVisibilityToggleState(btn, newIsPublic);
+
+        try {
+            const result = await TeamService.callFunction('updateTeamSettings', {
+                teamId: _teamId,
+                voiceSettings: { defaultVisibility: newVisibility }
+            });
+
+            if (result.success) {
+                // Update cached team data
+                if (!_teamData.voiceSettings) _teamData.voiceSettings = {};
+                _teamData.voiceSettings.defaultVisibility = newVisibility;
+                ToastService.showSuccess(
+                    newIsPublic
+                        ? 'New recordings will be public'
+                        : 'New recordings will be team-only'
+                );
+            } else {
+                _applyVisibilityToggleState(btn, currentlyPublic);
+                ToastService.showError(result.error || 'Failed to update visibility');
+            }
+        } catch (error) {
+            console.error('Error toggling visibility:', error);
+            _applyVisibilityToggleState(btn, currentlyPublic);
+            ToastService.showError('Network error - please try again');
+        }
+    }
+
+    function _applyVisibilityToggleState(button, isPublic) {
+        button.dataset.enabled = String(isPublic);
+        button.classList.toggle('bg-primary', isPublic);
+        button.classList.toggle('bg-muted-foreground/30', !isPublic);
+        const knob = button.querySelector('span');
+        if (knob) {
+            knob.style.left = isPublic ? '1.125rem' : '0.125rem';
+        }
+        const sublabel = document.querySelector('.voice-visibility-sublabel');
+        if (sublabel) {
+            sublabel.textContent = isPublic
+                ? 'New recordings visible to everyone'
+                : 'New recordings visible to team members only';
+        }
+    }
+
     // ─── Tag Chip Handlers (Slice 5.3) ───────────────────────────────────
 
     let _tagsLoading = false;
@@ -615,6 +691,231 @@ const TeamManagementModal = (function() {
         await _saveTeamTags(updatedTags);
     }
 
+    // ─── Voice Bot Section (Phase 1a) ──────────────────────────────────────
+
+    /**
+     * Render the Voice Bot section (leader only).
+     * Three states: not connected, pending, connected.
+     */
+    function _renderVoiceBotSection() {
+        // Show loading state until we know the registration status
+        if (_botRegistration === undefined) {
+            return `
+                <div id="voice-bot-section">
+                    <label class="text-sm font-medium text-foreground">Voice Bot</label>
+                    <p class="text-xs text-muted-foreground mt-1">Loading...</p>
+                </div>
+            `;
+        }
+
+        if (!_botRegistration) {
+            // State: Not Connected
+            return `
+                <div id="voice-bot-section">
+                    <label class="text-sm font-medium text-foreground">Voice Bot</label>
+                    <p class="text-xs text-muted-foreground mt-1 mb-2">
+                        Connect a Discord voice bot to automatically record and upload match audio for your team.
+                    </p>
+                    <button id="voice-bot-connect-btn"
+                            class="px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium rounded-lg transition-colors">
+                        Connect Voice Bot
+                    </button>
+                </div>
+            `;
+        }
+
+        if (_botRegistration.status === 'pending') {
+            // State: Pending
+            const inviteUrl = typeof BotRegistrationService !== 'undefined'
+                ? BotRegistrationService.getBotInviteUrl()
+                : '#';
+
+            return `
+                <div id="voice-bot-section">
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-medium text-foreground">Voice Bot</label>
+                        <span class="text-xs text-amber-500 font-medium">Pending</span>
+                    </div>
+                    <div class="mt-1 p-3 bg-muted/50 border border-border rounded-lg space-y-2">
+                        <p class="text-xs text-foreground">Complete setup in Discord:</p>
+                        <ol class="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
+                            <li>
+                                Add the bot to your server
+                                <a href="${inviteUrl}" target="_blank" rel="noopener noreferrer"
+                                   class="text-primary hover:underline ml-1">Invite Bot &rarr;</a>
+                            </li>
+                            <li>Run <code class="bg-muted px-1 py-0.5 rounded text-foreground">/register</code> in any channel</li>
+                        </ol>
+                    </div>
+                    <button id="voice-bot-cancel-btn"
+                            class="mt-2 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors">
+                        Cancel
+                    </button>
+                </div>
+            `;
+        }
+
+        // State: Connected (status === 'active')
+        const guildName = _botRegistration.guildName
+            ? _escapeHtml(_botRegistration.guildName)
+            : 'Discord server';
+
+        const defaultVisibility = _teamData?.voiceSettings?.defaultVisibility || 'private';
+        const isPublic = defaultVisibility === 'public';
+
+        return `
+            <div id="voice-bot-section">
+                <div class="flex items-center justify-between">
+                    <label class="text-sm font-medium text-foreground">Voice Bot</label>
+                    <span class="text-xs text-green-500 font-medium">Connected</span>
+                </div>
+                <div class="mt-1 p-3 bg-muted/50 border border-border rounded-lg">
+                    <p class="text-sm text-foreground">${guildName}</p>
+                    <p class="text-xs text-muted-foreground">Discord server</p>
+                </div>
+                <div class="mt-2 flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-sm text-foreground">Recording visibility</p>
+                        <p class="text-xs text-muted-foreground voice-visibility-sublabel">
+                            ${isPublic
+                                ? 'New recordings visible to everyone'
+                                : 'New recordings visible to team members only'}
+                        </p>
+                    </div>
+                    <button class="voice-visibility-toggle relative w-9 h-5 rounded-full transition-colors shrink-0
+                                ${isPublic ? 'bg-primary' : 'bg-muted-foreground/30'}"
+                            data-enabled="${isPublic}">
+                        <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                              style="left: ${isPublic ? '1.125rem' : '0.125rem'}"></span>
+                    </button>
+                </div>
+                <button id="voice-bot-disconnect-btn"
+                        class="mt-2 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors">
+                    Disconnect
+                </button>
+            </div>
+        `;
+    }
+
+    /**
+     * Load bot registration and set up real-time listener
+     */
+    async function _initVoiceBotSection() {
+        if (!_teamId || typeof BotRegistrationService === 'undefined') return;
+
+        // Load initial state
+        const reg = await BotRegistrationService.getRegistration(_teamId);
+        _botRegistration = reg; // null if no doc
+
+        // Re-render just the voice bot section
+        _rerenderVoiceBotSection();
+
+        // Set up real-time listener for status changes (pending → active)
+        _botRegUnsubscribe = BotRegistrationService.onRegistrationChange(_teamId, (data) => {
+            _botRegistration = data;
+            _rerenderVoiceBotSection();
+        });
+    }
+
+    /**
+     * Re-render only the voice bot section in place
+     */
+    function _rerenderVoiceBotSection() {
+        const section = document.getElementById('voice-bot-section');
+        if (!section) return;
+
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = _renderVoiceBotSection();
+        const newSection = tempDiv.querySelector('#voice-bot-section');
+        if (newSection) {
+            section.replaceWith(newSection);
+            _attachVoiceBotListeners();
+        }
+    }
+
+    /**
+     * Attach event listeners for the voice bot section buttons
+     */
+    function _attachVoiceBotListeners() {
+        const connectBtn = document.getElementById('voice-bot-connect-btn');
+        connectBtn?.addEventListener('click', _handleVoiceBotConnect);
+
+        const cancelBtn = document.getElementById('voice-bot-cancel-btn');
+        cancelBtn?.addEventListener('click', _handleVoiceBotDisconnect);
+
+        const disconnectBtn = document.getElementById('voice-bot-disconnect-btn');
+        disconnectBtn?.addEventListener('click', _handleVoiceBotDisconnect);
+
+        const visibilityToggle = document.querySelector('.voice-visibility-toggle');
+        visibilityToggle?.addEventListener('click', _handleVisibilityToggle);
+    }
+
+    /**
+     * Handle Connect Voice Bot click
+     */
+    async function _handleVoiceBotConnect() {
+        const btn = document.getElementById('voice-bot-connect-btn');
+        if (!btn) return;
+
+        btn.disabled = true;
+        btn.textContent = 'Connecting...';
+
+        try {
+            await BotRegistrationService.connectBot(_teamId);
+            // Listener will update the UI automatically
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showSuccess('Voice bot registration started!');
+            }
+        } catch (error) {
+            console.error('❌ Error connecting voice bot:', error);
+
+            // Extract user-friendly message
+            let message = 'Failed to connect voice bot';
+            if (error.message?.includes('Discord not linked')) {
+                message = 'Link your Discord in profile settings first';
+            } else if (error.message?.includes('already registered')) {
+                message = 'Bot is already registered for this team';
+            } else if (error.code === 'functions/failed-precondition') {
+                message = error.message || message;
+            }
+
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showError(message);
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Connect Voice Bot';
+        }
+    }
+
+    /**
+     * Handle Cancel / Disconnect click
+     */
+    async function _handleVoiceBotDisconnect() {
+        const btn = document.getElementById('voice-bot-cancel-btn')
+            || document.getElementById('voice-bot-disconnect-btn');
+        if (!btn) return;
+
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Disconnecting...';
+
+        try {
+            await BotRegistrationService.disconnectBot(_teamId);
+            // Listener will update the UI automatically
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showSuccess('Voice bot disconnected');
+            }
+        } catch (error) {
+            console.error('❌ Error disconnecting voice bot:', error);
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showError('Failed to disconnect voice bot');
+            }
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+
     /**
      * Render leader action buttons
      */
@@ -653,7 +954,7 @@ const TeamManagementModal = (function() {
             : '';
 
         return `
-            <div class="pt-2">
+            <div>
                 <button
                     id="leave-team-btn"
                     class="${leaveButtonClass}"
@@ -664,6 +965,34 @@ const TeamManagementModal = (function() {
                 </button>
             </div>
         `;
+    }
+
+    // ─── Tab Switching (Slice P5.1) ──────────────────────────────────────
+
+    /**
+     * Handle tab switching - show/hide tab content panels, lazy init on first switch
+     */
+    function _handleTabSwitch(tabName) {
+        // Hide all tab contents
+        document.querySelectorAll('[id^="tab-content-"]').forEach(el => el.classList.add('hidden'));
+        // Show target
+        const target = document.getElementById(`tab-content-${tabName}`);
+        if (target) target.classList.remove('hidden');
+        // Update active tab button
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+        });
+
+        // Lazy init: Voice Bot on first Discord tab switch
+        if (tabName === 'discord' && !_voiceBotInitialized) {
+            _voiceBotInitialized = true;
+            _initVoiceBotSection();
+        }
+        // Lazy init: Recordings on first switch
+        if (tabName === 'recordings' && !_recordingsInitialized) {
+            _recordingsInitialized = true;
+            _initRecordingsTab();
+        }
     }
 
     /**
@@ -684,6 +1013,11 @@ const TeamManagementModal = (function() {
             if (e.key === 'Escape') close();
         };
         document.addEventListener('keydown', _keydownHandler);
+
+        // Tab switching (leader only)
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => _handleTabSwitch(btn.dataset.tab));
+        });
 
         // Copy join code
         const copyBtn = document.getElementById('copy-join-code-btn');
@@ -741,6 +1075,8 @@ const TeamManagementModal = (function() {
         if (leaveTeamBtn && !leaveTeamBtn.disabled) {
             leaveTeamBtn.addEventListener('click', _handleLeaveTeam);
         }
+
+        // Voice bot buttons: attached lazily via _rerenderVoiceBotSection on Discord tab switch
     }
 
     /**
@@ -1203,6 +1539,633 @@ const TeamManagementModal = (function() {
         }
     }
 
+    // ─── Recordings Tab (R3+R4+R6) ─────────────────────────────────────
+
+    let _opponentLogoCache = {}; // tag -> { logoUrl, teamName } or null
+    let _expandedSeries = new Set();
+
+    /**
+     * Group recordings into series by sessionId + opponentTag
+     */
+    function _groupIntoSeries(recordings) {
+        const groups = {};
+
+        for (const rec of recordings) {
+            const key = rec.sessionId
+                ? `${rec.sessionId}_${rec.opponentTag || 'unknown'}`
+                : `legacy_${rec.id}`;
+
+            if (!groups[key]) groups[key] = { key, maps: [] };
+            groups[key].maps.push(rec);
+        }
+
+        // Sort maps within each series by mapOrder (or recordedAt fallback)
+        for (const series of Object.values(groups)) {
+            series.maps.sort((a, b) => (a.mapOrder ?? 0) - (b.mapOrder ?? 0));
+        }
+
+        // Sort series by date (newest first)
+        return Object.values(groups)
+            .sort((a, b) => {
+                const aTime = a.maps[0].recordedAt?.toMillis?.() || 0;
+                const bTime = b.maps[0].recordedAt?.toMillis?.() || 0;
+                return bTime - aTime;
+            });
+    }
+
+    /**
+     * Calculate series score (map wins for each side)
+     */
+    function _getSeriesScore(maps) {
+        let teamWins = 0, opponentWins = 0;
+        for (const map of maps) {
+            if ((map.teamFrags || 0) > (map.opponentFrags || 0)) teamWins++;
+            else if ((map.opponentFrags || 0) > (map.teamFrags || 0)) opponentWins++;
+        }
+        return { teamWins, opponentWins };
+    }
+
+    /**
+     * Try to look up opponent team logo from cache/Firestore
+     */
+    async function _getOpponentLogo(opponentTag) {
+        if (!opponentTag || opponentTag === 'unknown') return null;
+        const key = opponentTag.toLowerCase();
+        if (key in _opponentLogoCache) return _opponentLogoCache[key];
+
+        // Best-effort lookup from TeamService cache
+        const allTeams = typeof TeamService !== 'undefined' ? TeamService.getAllTeams() : [];
+        for (const team of allTeams) {
+            const tags = (team.teamTags && Array.isArray(team.teamTags) && team.teamTags.length > 0)
+                ? team.teamTags.map(t => t.tag.toLowerCase())
+                : (team.teamTag ? [team.teamTag.toLowerCase()] : []);
+            if (tags.includes(key)) {
+                _opponentLogoCache[key] = {
+                    logoUrl: team.activeLogo?.urls?.small || null,
+                    teamName: team.teamName
+                };
+                return _opponentLogoCache[key];
+            }
+        }
+        _opponentLogoCache[key] = null;
+        return null;
+    }
+
+    /**
+     * Load recordings from Firestore on first Recordings tab switch
+     */
+    async function _initRecordingsTab() {
+        const container = document.getElementById('tab-content-recordings');
+        if (!container) return;
+
+        container.innerHTML = '<p class="text-sm text-muted-foreground py-4">Loading recordings...</p>';
+
+        try {
+            const { collection, query, where, orderBy, getDocs } = await import(
+                'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js'
+            );
+            const q = query(
+                collection(window.firebase.db, 'voiceRecordings'),
+                where('teamId', '==', _teamId),
+                orderBy('recordedAt', 'desc')
+            );
+            const snapshot = await getDocs(q);
+            _recordings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            _renderRecordingsList();
+        } catch (err) {
+            console.error('Failed to load recordings:', err);
+            container.innerHTML = '<p class="text-sm text-red-400 py-4">Failed to load recordings.</p>';
+        }
+    }
+
+    /**
+     * Render series-grouped recording cards
+     */
+    function _renderRecordingsList() {
+        const container = document.getElementById('tab-content-recordings');
+        if (!container) return;
+
+        if (_recordings.length === 0) {
+            container.innerHTML = `
+                <p class="text-sm text-muted-foreground py-4">
+                    No voice recordings yet.${(_isLeader || _isScheduler) ? ' Connect a Voice Bot in the Discord tab to start recording.' : ''}
+                </p>`;
+            return;
+        }
+
+        const series = _groupIntoSeries(_recordings);
+        const teamLogoUrl = _teamData?.activeLogo?.urls?.small || null;
+        const teamTag = _teamData?.teamTag || '';
+
+        const cardsHtml = series.map(s => _renderSeriesCard(s, teamLogoUrl, teamTag)).join('');
+
+        container.innerHTML = `
+            <div>
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recordings</span>
+                    <span class="text-xs text-muted-foreground">${_recordings.length} recording${_recordings.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="space-y-2 max-h-[28rem] overflow-y-auto scrollbar-thin" id="recordings-list">
+                    ${cardsHtml}
+                </div>
+                <div id="download-progress" class="hidden text-xs text-primary mt-2"></div>
+            </div>
+        `;
+
+        _attachRecordingsListeners();
+        _loadOpponentLogos(series);
+    }
+
+    /**
+     * Render a single series card (collapsed or expanded)
+     */
+    function _renderSeriesCard(series, teamLogoUrl, teamTag) {
+        const firstMap = series.maps[0];
+        const isLegacy = !firstMap.sessionId;
+        const isExpanded = _expandedSeries.has(series.key);
+        const opponentTag = firstMap.opponentTag || '';
+        const date = firstMap.recordedAt?.toDate ? firstMap.recordedAt.toDate() : new Date(firstMap.recordedAt || 0);
+        const dateStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+
+        if (isLegacy) {
+            return _renderLegacyCard(firstMap, teamLogoUrl, teamTag, dateStr);
+        }
+
+        const { teamWins, opponentWins } = _getSeriesScore(series.maps);
+        const allPublic = series.maps.every(m => m.visibility === 'public');
+
+        // Series header
+        const teamLogoHtml = teamLogoUrl
+            ? `<img src="${teamLogoUrl}" class="w-5 h-5 rounded object-cover" alt="">`
+            : '';
+        const opponentLogoHtml = `<span class="opponent-logo" data-opponent="${_escapeHtml(opponentTag)}"></span>`;
+
+        const controlsHtml = `
+            <div class="flex items-center gap-1.5">
+                ${_isLeader ? `
+                <button class="series-visibility-toggle p-1 rounded hover:bg-surface-hover transition-colors"
+                        data-series-key="${_escapeHtml(series.key)}"
+                        title="${allPublic ? 'Set all to private' : 'Set all to public'}">
+                    <svg class="w-3.5 h-3.5 ${allPublic ? 'text-green-400' : 'text-muted-foreground'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        ${allPublic
+                            ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>'
+                            : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>'}
+                    </svg>
+                </button>
+                ` : ''}
+                <button class="series-download-btn p-1 rounded hover:bg-surface-hover transition-colors"
+                        data-series-key="${_escapeHtml(series.key)}" title="Download series">
+                    <svg class="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                </button>
+                ${_isLeader ? `
+                <button class="series-delete-btn p-1 rounded hover:bg-red-500/20 transition-colors"
+                        data-series-key="${_escapeHtml(series.key)}" title="Delete series">
+                    <svg class="w-3.5 h-3.5 text-muted-foreground hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                </button>
+                ` : ''}
+                <button class="series-expand-btn p-1 rounded hover:bg-surface-hover transition-colors"
+                        data-series-key="${_escapeHtml(series.key)}">
+                    <svg class="w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+            </div>
+        `;
+
+        const mapRowsHtml = isExpanded ? `
+            <div class="series-maps border-t border-border">
+                ${series.maps.map(map => _renderMapRow(map)).join('')}
+            </div>
+        ` : '';
+
+        return `
+            <div class="recording-series bg-surface rounded-lg border border-border" data-series-key="${_escapeHtml(series.key)}">
+                <div class="series-header flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-surface-hover rounded-t-lg"
+                     data-series-key="${_escapeHtml(series.key)}">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-xs text-muted-foreground shrink-0">${_escapeHtml(dateStr)}</span>
+                        ${teamLogoHtml}
+                        <span class="text-sm font-medium text-foreground">${_escapeHtml(teamTag)}</span>
+                        <span class="text-xs text-muted-foreground">vs</span>
+                        <span class="text-sm font-medium text-foreground">${_escapeHtml(opponentTag)}</span>
+                        ${opponentLogoHtml}
+                        <span class="text-xs text-muted-foreground">(${teamWins}-${opponentWins})</span>
+                    </div>
+                    ${controlsHtml}
+                </div>
+                ${mapRowsHtml}
+            </div>
+        `;
+    }
+
+    /**
+     * Render a legacy recording card (no sessionId — standalone single map)
+     */
+    function _renderLegacyCard(rec, teamLogoUrl, teamTag, dateStr) {
+        const trackCount = rec.trackCount || rec.tracks?.length || 0;
+        const isPublic = rec.visibility === 'public';
+
+        return `
+            <div class="recording-series bg-surface rounded-lg border border-border" data-series-key="legacy_${_escapeHtml(rec.id)}">
+                <div class="flex items-center justify-between px-3 py-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-xs text-muted-foreground shrink-0">${_escapeHtml(dateStr)}</span>
+                        <span class="text-sm font-medium text-foreground">${_escapeHtml(teamTag)}</span>
+                        <span class="text-sm font-mono text-foreground">${_escapeHtml(rec.mapName || '—')}</span>
+                        <span class="text-xs text-muted-foreground">${trackCount} tracks</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        ${_isLeader ? `
+                        <button class="rec-visibility-toggle p-1 rounded hover:bg-surface-hover transition-colors"
+                                data-sha="${_escapeHtml(rec.id)}" data-visibility="${rec.visibility}"
+                                title="${isPublic ? 'Set to private' : 'Set to public'}">
+                            <svg class="w-3.5 h-3.5 ${isPublic ? 'text-green-400' : 'text-muted-foreground'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                ${isPublic
+                                    ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>'
+                                    : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>'}
+                            </svg>
+                        </button>
+                        ` : ''}
+                        <button class="map-download-btn p-1 rounded hover:bg-surface-hover transition-colors"
+                                data-sha="${_escapeHtml(rec.id)}" title="Download">
+                            <svg class="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                        </button>
+                        ${_isLeader ? `
+                        <button class="map-delete-btn p-1 rounded hover:bg-red-500/20 transition-colors"
+                                data-sha="${_escapeHtml(rec.id)}" title="Delete">
+                            <svg class="w-3.5 h-3.5 text-muted-foreground hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </button>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render a per-map row inside an expanded series
+     */
+    function _renderMapRow(map) {
+        const trackCount = map.trackCount || map.tracks?.length || 0;
+        const isPublic = map.visibility === 'public';
+        const teamFrags = map.teamFrags || 0;
+        const opponentFrags = map.opponentFrags || 0;
+
+        return `
+            <div class="map-row flex items-center justify-between px-3 py-1.5 hover:bg-surface-hover border-b border-border/30 last:border-b-0">
+                <div class="flex items-center gap-3 min-w-0">
+                    <span class="text-sm font-mono font-medium text-foreground w-24 truncate">${_escapeHtml(map.mapName || '—')}</span>
+                    <span class="text-xs text-muted-foreground">${trackCount} tracks</span>
+                    ${teamFrags || opponentFrags ? `<span class="text-xs text-muted-foreground">${teamFrags}-${opponentFrags}</span>` : ''}
+                </div>
+                <div class="flex items-center gap-1.5">
+                    ${_isLeader ? `
+                    <button class="rec-visibility-toggle p-1 rounded hover:bg-surface-hover transition-colors"
+                            data-sha="${_escapeHtml(map.id)}" data-visibility="${map.visibility}"
+                            title="${isPublic ? 'Set to private' : 'Set to public'}">
+                        <svg class="w-3.5 h-3.5 ${isPublic ? 'text-green-400' : 'text-muted-foreground'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            ${isPublic
+                                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>'
+                                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>'}
+                        </svg>
+                    </button>
+                    ` : ''}
+                    <button class="map-download-btn p-1 rounded hover:bg-surface-hover transition-colors"
+                            data-sha="${_escapeHtml(map.id)}" title="Download map">
+                        <svg class="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                    </button>
+                    ${_isLeader ? `
+                    <button class="map-delete-btn p-1 rounded hover:bg-red-500/20 transition-colors"
+                            data-sha="${_escapeHtml(map.id)}" title="Delete map">
+                        <svg class="w-3.5 h-3.5 text-muted-foreground hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Attach event listeners for the recordings list
+     */
+    function _attachRecordingsListeners() {
+        const list = document.getElementById('recordings-list');
+        if (!list) return;
+
+        // Expand/collapse series
+        list.addEventListener('click', (e) => {
+            const expandBtn = e.target.closest('.series-expand-btn');
+            const headerClick = e.target.closest('.series-header');
+
+            if (expandBtn || (headerClick && !e.target.closest('button:not(.series-expand-btn)'))) {
+                const key = (expandBtn || headerClick).dataset.seriesKey;
+                if (_expandedSeries.has(key)) {
+                    _expandedSeries.delete(key);
+                } else {
+                    _expandedSeries.add(key);
+                }
+                _renderRecordingsList();
+                return;
+            }
+
+            // Per-map visibility toggle
+            const visToggle = e.target.closest('.rec-visibility-toggle');
+            if (visToggle) {
+                e.stopPropagation();
+                _handleRecordingVisibilityToggle(visToggle);
+                return;
+            }
+
+            // Series visibility toggle
+            const seriesVisToggle = e.target.closest('.series-visibility-toggle');
+            if (seriesVisToggle) {
+                e.stopPropagation();
+                _handleSeriesVisibilityToggle(seriesVisToggle.dataset.seriesKey);
+                return;
+            }
+
+            // Per-map download
+            const mapDlBtn = e.target.closest('.map-download-btn');
+            if (mapDlBtn) {
+                e.stopPropagation();
+                _handleMapDownload(mapDlBtn.dataset.sha);
+                return;
+            }
+
+            // Series download
+            const seriesDlBtn = e.target.closest('.series-download-btn');
+            if (seriesDlBtn) {
+                e.stopPropagation();
+                _handleSeriesDownload(seriesDlBtn.dataset.seriesKey);
+                return;
+            }
+
+            // Per-map delete
+            const mapDelBtn = e.target.closest('.map-delete-btn');
+            if (mapDelBtn) {
+                e.stopPropagation();
+                _handleMapDelete(mapDelBtn.dataset.sha);
+                return;
+            }
+
+            // Series delete
+            const seriesDelBtn = e.target.closest('.series-delete-btn');
+            if (seriesDelBtn) {
+                e.stopPropagation();
+                _handleSeriesDelete(seriesDelBtn.dataset.seriesKey);
+                return;
+            }
+        });
+
+        // Listen for download progress events
+        window.addEventListener('download-progress', _handleDownloadProgress);
+    }
+
+    /**
+     * Load opponent logos asynchronously and update the DOM
+     */
+    async function _loadOpponentLogos(seriesList) {
+        const tags = new Set();
+        for (const s of seriesList) {
+            const tag = s.maps[0].opponentTag;
+            if (tag && tag !== 'unknown') tags.add(tag);
+        }
+
+        for (const tag of tags) {
+            const info = await _getOpponentLogo(tag);
+            if (info?.logoUrl) {
+                document.querySelectorAll(`.opponent-logo[data-opponent="${tag}"]`).forEach(el => {
+                    el.innerHTML = `<img src="${info.logoUrl}" class="w-5 h-5 rounded object-cover inline-block" alt="">`;
+                });
+            }
+        }
+    }
+
+    /**
+     * Handle per-map visibility toggle with optimistic UI
+     */
+    async function _handleRecordingVisibilityToggle(btn) {
+        const demoSha256 = btn.dataset.sha;
+        const currentVisibility = btn.dataset.visibility;
+        const newVisibility = currentVisibility === 'public' ? 'private' : 'public';
+
+        // Update local cache
+        const rec = _recordings.find(r => r.id === demoSha256);
+        if (rec) rec.visibility = newVisibility;
+        _renderRecordingsList();
+
+        try {
+            const { httpsCallable } = await import(
+                'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js'
+            );
+            const fn = httpsCallable(window.firebase.functions, 'updateRecordingVisibility');
+            const result = await fn({ demoSha256, visibility: newVisibility });
+
+            if (!result.data.success) throw new Error('Failed');
+        } catch (err) {
+            console.error('Visibility toggle failed:', err);
+            if (rec) rec.visibility = currentVisibility;
+            _renderRecordingsList();
+            ToastService.showError('Failed to update visibility');
+        }
+    }
+
+    /**
+     * Handle series-level visibility toggle (batch update all maps)
+     */
+    async function _handleSeriesVisibilityToggle(seriesKey) {
+        const series = _groupIntoSeries(_recordings).find(s => s.key === seriesKey);
+        if (!series) return;
+
+        const allPublic = series.maps.every(m => m.visibility === 'public');
+        const newVisibility = allPublic ? 'private' : 'public';
+
+        // Optimistic update
+        series.maps.forEach(m => {
+            const rec = _recordings.find(r => r.id === m.id);
+            if (rec) rec.visibility = newVisibility;
+        });
+        _renderRecordingsList();
+
+        try {
+            const { httpsCallable } = await import(
+                'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js'
+            );
+            const fn = httpsCallable(window.firebase.functions, 'updateRecordingVisibility');
+
+            for (const map of series.maps) {
+                const result = await fn({ demoSha256: map.id, visibility: newVisibility });
+                if (!result.data.success) throw new Error('Failed for ' + map.id);
+            }
+
+            ToastService.showSuccess(`All maps set to ${newVisibility}`);
+        } catch (err) {
+            console.error('Series visibility toggle failed:', err);
+            ToastService.showError('Some visibility updates failed');
+            // Re-fetch to get accurate state
+            _recordingsInitialized = false;
+            _initRecordingsTab();
+        }
+    }
+
+    /**
+     * Handle per-map delete with confirmation
+     */
+    async function _handleMapDelete(demoSha256) {
+        const rec = _recordings.find(r => r.id === demoSha256);
+        if (!rec) return;
+
+        const date = rec.recordedAt?.toDate ? rec.recordedAt.toDate() : new Date(rec.recordedAt || 0);
+        const dateStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' });
+        const trackCount = rec.trackCount || rec.tracks?.length || 0;
+
+        const confirmed = await showConfirmModal({
+            title: 'Delete recording?',
+            message: `<strong>${_escapeHtml(rec.mapName || 'Unknown map')}</strong> — ${dateStr}<br>${trackCount} audio track${trackCount !== 1 ? 's' : ''} will be permanently deleted.<br><br>This cannot be undone.`,
+            confirmText: 'Delete',
+            confirmClass: 'bg-destructive hover:bg-destructive/90',
+            cancelText: 'Cancel'
+        });
+
+        if (!confirmed) return;
+
+        try {
+            const { httpsCallable } = await import(
+                'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js'
+            );
+            const fn = httpsCallable(window.firebase.functions, 'deleteRecording');
+            const result = await fn({ demoSha256 });
+
+            if (result.data.success) {
+                _recordings = _recordings.filter(r => r.id !== demoSha256);
+                _renderRecordingsList();
+                ToastService.showSuccess('Recording deleted');
+            }
+        } catch (err) {
+            console.error('Delete failed:', err);
+            ToastService.showError('Failed to delete recording');
+        }
+    }
+
+    /**
+     * Handle series delete with confirmation (all maps)
+     */
+    async function _handleSeriesDelete(seriesKey) {
+        const series = _groupIntoSeries(_recordings).find(s => s.key === seriesKey);
+        if (!series) return;
+
+        const firstMap = series.maps[0];
+        const date = firstMap.recordedAt?.toDate ? firstMap.recordedAt.toDate() : new Date(firstMap.recordedAt || 0);
+        const dateStr = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' });
+        const teamTag = _teamData?.teamTag || '';
+        const opponentTag = firstMap.opponentTag || '';
+
+        const mapList = series.maps.map(m => {
+            const tc = m.trackCount || m.tracks?.length || 0;
+            return `&bull; ${_escapeHtml(m.mapName || 'unknown')} (${tc} tracks)`;
+        }).join('<br>');
+
+        const confirmed = await showConfirmModal({
+            title: 'Delete all recordings in this series?',
+            message: `<strong>${_escapeHtml(teamTag)} vs ${_escapeHtml(opponentTag)}</strong> — ${dateStr}<br>${series.maps.length} map${series.maps.length !== 1 ? 's' : ''} will be permanently deleted:<br><br>${mapList}<br><br>This cannot be undone.`,
+            confirmText: 'Delete All',
+            confirmClass: 'bg-destructive hover:bg-destructive/90',
+            cancelText: 'Cancel'
+        });
+
+        if (!confirmed) return;
+
+        try {
+            const { httpsCallable } = await import(
+                'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js'
+            );
+            const fn = httpsCallable(window.firebase.functions, 'deleteRecording');
+
+            const idsToDelete = series.maps.map(m => m.id);
+            for (let i = 0; i < idsToDelete.length; i++) {
+                _showDownloadProgress(`Deleting ${i + 1}/${idsToDelete.length}...`);
+                const result = await fn({ demoSha256: idsToDelete[i] });
+                if (!result.data.success) throw new Error('Failed for ' + idsToDelete[i]);
+            }
+            _showDownloadProgress(null);
+
+            _recordings = _recordings.filter(r => !idsToDelete.includes(r.id));
+            _expandedSeries.delete(seriesKey);
+            _renderRecordingsList();
+            ToastService.showSuccess('Series deleted');
+        } catch (err) {
+            console.error('Series delete failed:', err);
+            _showDownloadProgress(null);
+            ToastService.showError('Some deletions failed');
+            _recordingsInitialized = false;
+            _initRecordingsTab();
+        }
+    }
+
+    /**
+     * Handle per-map download
+     */
+    async function _handleMapDownload(demoSha256) {
+        const rec = _recordings.find(r => r.id === demoSha256);
+        if (!rec) return;
+
+        try {
+            await RecordingDownloadService.downloadMap(rec, _teamData?.teamName || '');
+        } catch (err) {
+            console.error('Download failed:', err);
+            ToastService.showError('Download failed: ' + err.message);
+        }
+    }
+
+    /**
+     * Handle series download
+     */
+    async function _handleSeriesDownload(seriesKey) {
+        const series = _groupIntoSeries(_recordings).find(s => s.key === seriesKey);
+        if (!series) return;
+
+        try {
+            await RecordingDownloadService.downloadSeries(series.maps, _teamData?.teamName || '');
+        } catch (err) {
+            console.error('Series download failed:', err);
+            ToastService.showError('Download failed: ' + err.message);
+        }
+    }
+
+    /**
+     * Show/hide download progress indicator
+     */
+    function _showDownloadProgress(message) {
+        const el = document.getElementById('download-progress');
+        if (!el) return;
+        if (message) {
+            el.textContent = message;
+            el.classList.remove('hidden');
+        } else {
+            el.classList.add('hidden');
+            el.textContent = '';
+        }
+    }
+
+    /**
+     * Handle download-progress custom event from RecordingDownloadService
+     */
+    function _handleDownloadProgress(e) {
+        _showDownloadProgress(e.detail?.message || null);
+    }
+
     /**
      * Close the modal
      */
@@ -1215,7 +2178,22 @@ const TeamManagementModal = (function() {
         _teamId = null;
         _teamData = null;
         _isLeader = false;
+        _isScheduler = false;
         _currentUserId = null;
+        _botRegistration = undefined;
+        _voiceBotInitialized = false;
+        _recordingsInitialized = false;
+        _recordings = [];
+        _expandedSeries = new Set();
+        _opponentLogoCache = {};
+
+        // Remove download progress listener
+        window.removeEventListener('download-progress', _handleDownloadProgress);
+
+        if (_botRegUnsubscribe) {
+            _botRegUnsubscribe();
+            _botRegUnsubscribe = null;
+        }
 
         if (_keydownHandler) {
             document.removeEventListener('keydown', _keydownHandler);

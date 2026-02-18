@@ -372,11 +372,25 @@ body {
   height: 100%;
   padding: 0.75rem;
   gap: 0.5rem;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .sidebar-section {
   flex-shrink: 0;
+}
+
+.sidebar-section.sidebar-top {
+  flex-shrink: 0;
+}
+
+/* Scrollable middle zone: proposals, matches, upcoming */
+.sidebar-scrollable {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .sidebar-section.sidebar-header {
@@ -395,7 +409,7 @@ body {
 
 /* Slice 13.0f: Pinned footer section for profile */
 .sidebar-section.sidebar-footer {
-  margin-top: auto;
+  flex-shrink: 0;
   padding-top: 0.5rem;
   border-top: 1px solid var(--border);
 }
@@ -1165,7 +1179,8 @@ body {
 .player-badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 1px;
+  column-gap: 0.2rem;
+  row-gap: 1px;
   justify-content: center;
   align-items: center;
   padding: 1px;
@@ -1189,12 +1204,14 @@ body {
   flex-shrink: 0;
 }
 
-/* Initials Badge - clean text only, no card effect */
+/* Initials Badge - auto-width so gap between text is consistent */
 .player-badge.initials {
   text-transform: uppercase;
   letter-spacing: 0;
   background-color: transparent;
   border: none;
+  width: auto;
+  min-width: auto;
 }
 
 /* Avatar Badge - round with no backdrop for transparency support */
@@ -1217,21 +1234,17 @@ body {
   color: var(--primary);
 }
 
-/* Overflow Badge (+N) */
+/* Overflow Badge (+N) - subtle text hint, no backdrop */
 .player-badge.overflow {
-  background-color: var(--muted);
+  background-color: transparent;
   color: var(--muted-foreground);
-  font-size: 0.5rem;
+  font-size: 0.55rem;
   font-weight: 500;
-  cursor: pointer;
-  transition: all 100ms ease;
   border: none;
   padding: 0;
-}
-
-.player-badge.overflow:hover {
-  background-color: var(--accent);
-  color: var(--accent-foreground);
+  cursor: default;
+  width: auto;
+  min-width: auto;
 }
 
 /* Unavailable badge: greyscale + red prohibition overlay (Slice 15.0) */
@@ -1384,6 +1397,37 @@ body {
 .tooltip-you {
   color: var(--primary);
   font-weight: 500;
+}
+
+/* Leader name in roster popups — purple highlight */
+.tooltip-leader-name {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+/* Discord DM icon next to leader name */
+.tooltip-leader-discord {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.tooltip-discord-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted-foreground);
+  opacity: 0.6;
+  transition: opacity 0.15s, color 0.15s;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.tooltip-discord-link:hover {
+  opacity: 1;
+  color: var(--primary);
 }
 
 /* Tooltip divider between available and away sections (Slice 15.0) */
@@ -3626,6 +3670,27 @@ body {
     cursor: pointer;
 }
 
+.mh-voice-filter-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    border: 1px solid var(--border);
+    background: var(--muted);
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+}
+.mh-voice-filter-btn:hover {
+    color: var(--foreground);
+}
+.mh-voice-filter-btn.active {
+    color: rgb(245, 158, 11);
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgb(245, 158, 11);
+}
+
 /* Match list */
 .mh-match-list {
     flex: 1;
@@ -3703,6 +3768,14 @@ body {
 .mh-result-win { color: rgb(34, 197, 94); }
 .mh-result-loss { color: rgb(239, 68, 68); }
 .mh-result-draw { color: var(--muted-foreground); }
+
+/* P5.3: Action icon buttons in match rows */
+.mh-icon-btn {
+    @apply p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer;
+}
+.mh-icon-voice {
+    @apply text-amber-500/70 hover:text-amber-400;
+}
 
 /* Right panel: preview */
 .mh-preview-panel {
@@ -4001,6 +4074,52 @@ body {
     opacity: 0.8;
 }
 
+/* P5.4: Inline WebQTV player */
+.mh-player-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.mh-player-close {
+    @apply text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0;
+    background: none;
+    border: none;
+}
+
+.mh-play-btn {
+    @apply inline-flex items-center px-3 py-1.5 rounded text-sm font-medium
+           text-primary transition-colors cursor-pointer;
+    background: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+.mh-play-btn:hover {
+    background: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.mh-voice-badge {
+    @apply ml-1 text-amber-400;
+}
+
+#mh-player-mount {
+    overflow: hidden;
+}
+
+#mh-player-mount .vr-loading {
+    height: 100%;
+}
+
+/* Inline player: respect 16:9 aspect ratio instead of stretching to fill */
+#mh-player-mount .vr-player {
+    height: auto;
+}
+
+#mh-player-mount .vr-iframe-wrap {
+    flex: none;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: none;
+}
+
 /* Summary panel (right side default) */
 .mh-summary-panel {
     display: flex;
@@ -4256,7 +4375,7 @@ body {
 .mh-table-header,
 .mh-table-row {
     display: grid;
-    grid-template-columns: 3.25rem 1rem 4rem 2.75rem 2rem 2rem 3rem 1.5rem;
+    grid-template-columns: 3.25rem 1rem 4rem 2.75rem 2rem 2rem 3rem 2.5rem;
     column-gap: 0.25rem;
     align-items: center;
     font-size: 0.8125rem;
@@ -4345,7 +4464,6 @@ body {
 .mh-td-score {
     text-align: center;
     font-weight: 600;
-    color: var(--foreground);
     font-family: var(--font-mono);
 }
 
@@ -4536,811 +4654,1696 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Slice 10.0a: Mobile Responsive CSS Foundation
-   All mobile styles are additive — desktop layout is untouched.
+   Slice M1.0: Mobile Portrait-First Layout
+   Replaces old landscape-only mobile CSS (10.0a drawers/bottom bar).
+   Desktop layout completely untouched — all mobile styles scoped to
+   768px breakpoint and .mobile-* class names.
    ═══════════════════════════════════════════════════════════════════ */
 
-/* ─── Portrait Orientation Overlay ──────────────────────────────── */
+/* ─── Mobile Layout ────────────────────────────────────────────── */
 
-.portrait-overlay {
+/* Base: hidden on desktop */
+.mobile-app {
   display: none;
-  position: fixed;
-  inset: 0;
-  background-color: var(--background);
-  z-index: 100;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
 }
 
-.portrait-overlay-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-}
+/* Show on mobile viewports */
+@media (max-width: 768px) {
+  .app-container { display: none !important; }
 
-.portrait-icon {
-  font-size: 3rem;
-  animation: rotate-hint 2s ease-in-out infinite;
-}
-
-@keyframes rotate-hint {
-  0%, 100% { transform: rotate(0deg); }
-  50% { transform: rotate(90deg); }
-}
-
-@media (max-width: 1024px) and (orientation: portrait) {
-  .portrait-overlay {
-    display: flex;
+  .mobile-app {
+    display: flex !important;
+    flex-direction: column;
+    height: 100vh; /* fallback for older browsers */
+    height: 100dvh; /* modern: dynamic viewport height */
+    overflow: hidden;
+    background: var(--background);
+    color: var(--foreground);
   }
 }
 
-/* ─── Mobile Drawer Containers ──────────────────────────────────── */
-/* Hidden on desktop, styled for mobile (populated by JS in 10.0b) */
+/* ─── Mobile Header ────────────────────────────────────────────── */
 
-.mobile-drawer {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  width: 52vw;
-  max-width: 15rem;
-  background-color: var(--card);
-  z-index: 45;
-  overflow-y: auto;
-  transform: translateX(-100%);
-  transition: transform 200ms ease;
-}
-
-.mobile-drawer-left {
-  left: 0;
-}
-
-.mobile-drawer-right {
-  right: 0;
-  transform: translateX(100%);
-}
-
-.mobile-drawer.open {
-  transform: translateX(0);
-}
-
-.mobile-drawer-overlay {
-  position: fixed;
-  inset: 0;
-  background: oklch(0 0 0 / 0.5);
-  z-index: 44;
-}
-
-/* ─── Mobile Bottom Bar ─────────────────────────────────────────── */
-
-.mobile-bottom-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 3rem;
-  background-color: var(--muted);
-  border-top: 1px solid var(--border);
-  z-index: 46; /* Above overlay (44) and drawers (45) so buttons stay tappable */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Bottom bar content layout */
-.mobile-bottom-bar-content {
+.mobile-header {
+  height: 2.5rem;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
-  height: 100%;
-  padding: 0 0.25rem;
-  gap: 0.125rem;
+  padding: 0 0.5rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  position: relative; /* for dropdown positioning */
 }
 
-/* Base button style */
-.mobile-bb-btn {
+.mobile-team-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-gear-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  padding: 0.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 2.75rem;
-  min-height: 2.75rem;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s;
+}
+
+.mobile-gear-btn:active {
+  color: var(--primary);
+}
+
+.mobile-week-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.mobile-week-label {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.mobile-week-btn {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  background: var(--secondary);
+  border: none;
+  border-radius: var(--radius);
+  color: var(--foreground);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-week-btn:active {
+  opacity: 0.7;
+}
+
+/* ─── Mobile Calendar ──────────────────────────────────────────── */
+
+.mobile-calendar {
+  flex: 2;
+  overflow: hidden;
+  padding: 0.25rem;
+}
+
+/* ─── Scroll-Snap Grid Layout ─────────────────────────────────── */
+
+.mobile-grid-wrapper {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+/* Fixed time label column (outside scroll area) */
+.mobile-grid-time-col {
+  width: 2.25rem;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-grid-time-header {
+  height: 1.5rem;
+  flex-shrink: 0;
+}
+
+.mobile-grid-time-label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 0.6rem;
+  color: var(--muted-foreground);
+  padding-right: 0.25rem;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-grid-time-label:active {
+  opacity: 0.7;
+}
+
+.mobile-grid-time-label.mobile-row-selected {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+/* Scrollable area for day columns */
+.mobile-grid-scroll {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.mobile-grid-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Each day = vertical column strip, 4 visible at a time */
+.mobile-grid-day {
+  min-width: 25%;
+  max-width: 25%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  scroll-snap-align: start;
+}
+
+/* Day header inside each column */
+.mobile-grid-day-header {
+  height: 1.5rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  line-height: 1;
+}
+
+.mobile-grid-day-header:active {
+  opacity: 0.7;
+}
+
+.mobile-grid-day-header.mobile-col-selected {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-radius: 0.25rem 0.25rem 0 0;
+}
+
+.mobile-grid-day-header.mobile-day-today {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.mobile-grid-day-header.mobile-day-today .mobile-grid-day-date {
+  text-decoration: underline;
+  text-underline-offset: 0.125rem;
+}
+
+.mobile-grid-day-date {
+  font-size: 0.6rem;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+/* Cells fill remaining column height equally */
+.mobile-grid-cell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-size: 0.65rem;
+  margin: 0.0625rem;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mobile-grid-cell:active {
+  opacity: 0.7;
+}
+
+.mobile-cell-has-players {
+  background: color-mix(in srgb, var(--primary) 8%, var(--secondary));
+}
+
+.mobile-cell-selected {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--primary) 20%, var(--secondary));
+}
+
+.mobile-cell-match {
+  background: color-mix(in srgb, var(--chart-5) 25%, var(--secondary));
+}
+
+.mobile-cell-match-logo {
+  width: 1.5rem;
+  height: 1.5rem;
+  object-fit: contain;
+  border-radius: 0.125rem;
+}
+
+.mobile-cell-match-tag {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: var(--foreground);
+  opacity: 0.9;
+}
+
+.mobile-cell-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.125rem;
+  line-height: 1;
+}
+
+.mobile-cell-initial {
+  font-weight: 700;
+}
+
+.mobile-cell-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mobile-cell-avatar {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.mobile-cell-overflow {
+  font-size: 0.5rem;
+  color: var(--muted-foreground);
+}
+
+/* ─── Context Panel ────────────────────────────────────────────── */
+
+.mobile-context {
+  flex: 3;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+
+.mobile-section {
+  margin-bottom: 1rem;
+}
+
+.mobile-section-header {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  margin-bottom: 0.25rem;
+}
+
+.mobile-section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.mobile-section-header-row .mobile-section-header {
+  margin-bottom: 0;
+}
+
+/* Section headers that live inside the shared grid — span all columns */
+.mobile-grid-section-header {
+  grid-column: 1 / -1;
+  padding-top: 0.75rem;
+}
+
+.mobile-grid-section-header:first-child {
+  padding-top: 0;
+}
+
+.mobile-filter-group {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.mobile-filter-btn {
+  padding: 0.125rem 0.4rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.mobile-filter-btn.filter-official {
+  color: #fbbf24;
+}
+
+.mobile-filter-btn.filter-practice {
+  color: #4ade80;
+}
+
+.mobile-filter-btn.filter-active.filter-official {
+  background: rgba(251, 191, 36, 0.12);
+  border-color: #fbbf24;
+}
+
+.mobile-filter-btn.filter-active.filter-practice {
+  background: rgba(74, 222, 128, 0.12);
+  border-color: #4ade80;
+}
+
+/* Grid-table: proposals + matches — [name] [vs] [name] [meta] [meta] */
+.mobile-match-table {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto auto;
+  row-gap: 0.125rem;
+}
+
+.mobile-trow {
+  display: contents;
+}
+
+.mobile-trow-tap .mobile-tcell {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-trow-tap:active .mobile-tcell {
+  opacity: 0.7;
+}
+
+.mobile-tcell {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+
+.mobile-tcell:first-child {
+  padding-left: 0.25rem;
+}
+
+.mobile-tcell:last-child {
+  padding-right: 0.25rem;
+  text-align: right;
+  justify-content: flex-end;
+}
+
+.mobile-col-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* VS text colored by game type */
+.mobile-col-vs {
+  font-size: 0.65rem;
+  font-weight: 600;
+  margin: 0 0.25rem;
+}
+
+.mobile-col-vs.type-official {
+  color: #fbbf24;
+}
+
+.mobile-col-vs.type-practice {
+  color: #4ade80;
+}
+
+.mobile-col-meta {
+  color: var(--muted-foreground);
+  font-size: 0.65rem;
+}
+
+/* ─── Selection Actions ────────────────────────────────────────── */
+
+.mobile-selection-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.mobile-selection-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.mobile-selection-count {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.mobile-selection-slots {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+}
+
+/* Primary action row: +Me / -Me / Away side by side */
+.mobile-action-row {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.mobile-action-row .mobile-action-btn {
+  flex: 1;
+  padding: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.mobile-action-btn {
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s;
+}
+
+.mobile-action-btn:active {
+  opacity: 0.8;
+}
+
+.mobile-action-btn:disabled,
+.mobile-action-btn.loading {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mobile-action-available {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.mobile-action-unavailable {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+.mobile-action-away {
+  background: var(--secondary);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+
+.mobile-action-clear {
+  background: transparent;
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+}
+
+/* Secondary links: Save template / Find standin / Clear */
+.mobile-secondary-actions {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.125rem 0;
+}
+
+.mobile-link-btn {
+  background: none;
   border: none;
   color: var(--muted-foreground);
-  font-size: 1rem;
+  font-size: 0.7rem;
   cursor: pointer;
-  border-radius: 0.25rem;
   padding: 0;
   -webkit-tap-highlight-color: transparent;
 }
 
-.mobile-bb-btn:active {
-  background-color: var(--accent);
+.mobile-link-btn:active {
+  color: var(--foreground);
 }
 
-/* Tab icons inside mobile bottom bar */
-.mobile-bb-btn .tab-icon {
-  width: 1.25rem;
-  height: 1.25rem;
+/* Others (per-player management for schedulers) */
+.mobile-others-section {
+  border-top: 1px solid var(--border);
+  padding-top: 0.375rem;
+  padding-left: 1rem;
+  padding-right: 0.5rem;
+}
+
+.mobile-roster-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+}
+
+.mobile-roster-name {
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.mobile-roster-actions {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.mobile-icon-btn {
+  width: 2.25rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  color: var(--foreground);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-icon-btn:active {
+  opacity: 0.7;
+}
+
+.mobile-icon-btn:disabled {
+  opacity: 0.4;
+}
+
+.mobile-icon-add { color: var(--primary); }
+.mobile-icon-remove { color: var(--destructive); }
+.mobile-icon-away { color: var(--muted-foreground); }
+
+/* ─── Bottom Nav ───────────────────────────────────────────────── */
+
+.mobile-nav {
+  height: 3.5rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom); /* iPhone notch/home indicator */
+}
+
+.mobile-nav-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  background: none;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 0.25rem 0.75rem;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-nav-tab.active {
+  color: var(--primary);
+}
+
+.mobile-nav-tab:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.mobile-nav-icon {
+  font-size: 1.25rem;
+}
+
+.mobile-nav-label {
+  font-size: 0.6rem;
+  font-weight: 500;
+}
+
+/* ─── Team Switcher Dropdown ───────────────────────────────────── */
+
+.mobile-team-dropdown {
+  position: absolute;
+  top: 3rem;
+  left: 0.75rem;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.15);
+  z-index: 50;
+  min-width: 10rem;
+}
+
+.mobile-team-option {
+  display: block;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 0.85rem;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-team-option:active,
+.mobile-team-option.active {
+  background: var(--accent);
+}
+
+/* ─── Match Detail ─────────────────────────────────────────────── */
+
+.mobile-match-detail {
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.mobile-match-teams {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.mobile-match-vs {
+  color: var(--muted-foreground);
+  margin: 0 0.5rem;
+  font-weight: 400;
+  font-size: 0.8rem;
+}
+
+.mobile-match-info {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  margin-bottom: 1rem;
+}
+
+/* ─── Empty State ──────────────────────────────────────────────── */
+
+.mobile-empty-state {
+  text-align: center;
+  color: var(--muted-foreground);
+  padding: 2rem 0;
+  font-size: 0.85rem;
+}
+
+/* ─── Bottom Sheet (generic slide-up) ─────────────────────────── */
+
+.mobile-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 90;
+}
+
+.mobile-bottom-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 85vh;
+  background: var(--card);
+  border-radius: 0.75rem 0.75rem 0 0;
+  z-index: 91;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mobile-bottom-sheet.open {
+  transform: translateY(0);
+}
+
+.mobile-sheet-handle-area {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem 0 0.25rem;
+  cursor: grab;
   flex-shrink: 0;
 }
 
-/* Tab button group */
-.mobile-bb-tabs {
+.mobile-sheet-handle {
+  width: 2rem;
+  height: 0.2rem;
+  background: var(--muted-foreground);
+  border-radius: 999px;
+  opacity: 0.4;
+}
+
+.mobile-sheet-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 1rem 1rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── Bottom Sheet Layer 2 (stacked on top of layer 1) ────────── */
+
+.mobile-sheet-backdrop-l2 {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 92;
+}
+
+.mobile-bottom-sheet-l2 {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 85vh;
+  background: var(--card);
+  border-radius: 0.75rem 0.75rem 0 0;
+  z-index: 93;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
   display: flex;
-  align-items: center;
-  gap: 0.125rem;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mobile-bottom-sheet-l2.open {
+  transform: translateY(0);
+}
+
+/* ─── Proposal Detail (inside bottom sheet) ───────────────────── */
+
+.mobile-proposal-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 100%;
+}
+
+/* Header: team names row — VS floats between names */
+.mpd-names-row {
+  display: flex;
+  align-items: baseline;
   justify-content: center;
+  gap: 0.5rem;
 }
 
-/* Active tab indicator */
-.mobile-bb-tab.active {
-  color: var(--primary);
-  border-bottom: 2px solid var(--primary);
-}
-
-/* Week navigation group (left side) */
-.mobile-bb-week-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.125rem;
-}
-
-.mobile-bb-week-label {
-  font-size: 0.75rem;
-  color: var(--foreground);
+.mpd-name-left,
+.mpd-name-right {
+  flex: 1;
+  font-size: 0.95rem;
   font-weight: 600;
-  min-width: 1.75rem;
+  color: var(--foreground);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: center;
 }
 
-.mobile-bb-week-btn {
-  min-width: 1.75rem;
-  font-size: 0.7rem;
+.mpd-names-vs {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-weight: 400;
+  font-size: 0.8rem;
 }
 
-/* Compare + Filter group (right cluster) */
-.mobile-bb-compare-group {
+/* Roster row: two sides, each with logo + player list */
+.mpd-rosters-row {
+  display: flex;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.mpd-roster-side {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.mpd-roster-logo {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.375rem;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* Mirror the opponent side: logo on the right */
+.mpd-roster-side:last-child {
+  flex-direction: row-reverse;
+}
+
+.mpd-logo-fallback {
   display: flex;
   align-items: center;
-  gap: 0.125rem;
-}
-
-.mobile-bb-filter-num {
-  font-size: 0.75rem;
-  font-weight: 600;
-  min-width: 1.5rem;
-  color: var(--foreground);
-}
-
-.mobile-bb-vs-label {
-  font-size: 0.6rem;
+  justify-content: center;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  font-size: 0.65rem;
+  font-weight: 700;
   color: var(--muted-foreground);
 }
 
-/* Dimmed state for filter numbers when compare is off */
-.mobile-bb-filter-num.dimmed {
-  opacity: 0.35;
+.mpd-roster-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
 }
 
-/* Filter number popup picker */
-.mobile-filter-picker {
-  position: fixed;
-  transform: translate(-50%, -100%);
-  margin-top: -0.375rem;
+.mpd-roster-player {
+  font-size: 0.7rem;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   display: flex;
-  gap: 0.125rem;
-  background: var(--card);
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.mpd-roster-player::before {
+  content: '\25CF';
+  color: oklch(0.55 0.16 145);
+  font-size: 0.55rem;
+  flex-shrink: 0;
+}
+
+/* Game type toggle row */
+.mpd-game-type-row {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.mpd-type-btn {
+  flex: 1;
+  padding: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.25rem;
-  z-index: 50;
-  box-shadow: 0 -4px 12px oklch(0 0 0 / 0.3);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.mobile-filter-picker-opt {
-  width: 2rem;
-  height: 2rem;
+.mpd-type-active-official {
+  border-color: #4ade80;
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.mpd-type-active-practice {
+  border-color: #fbbf24;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.mpd-standin-btn {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: transparent;
-  color: var(--foreground);
-  font-size: 0.875rem;
-  font-weight: 600;
-  border: 1px solid transparent;
+  color: var(--muted-foreground);
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.mobile-filter-picker-opt:hover {
-  background: var(--muted);
+.mpd-standin-active {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
-.mobile-filter-picker-opt.active {
+.mpd-btn-contact {
+  background: #5865f2;
+  color: white;
+  border-color: #5865f2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+.mpd-discord-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+}
+
+.mpd-slots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+/* Header row: same 5-column grid as data rows for alignment */
+.mpd-slot-header {
+  display: grid;
+  grid-template-columns: 2.2rem 2.2rem 3rem 1fr auto;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6rem;
+  color: var(--muted-foreground);
+  gap: 0.25rem;
+}
+
+.mpd-slot-hdr-date {
+  white-space: nowrap;
+}
+
+.mpd-slot-hdr-avail {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+}
+
+.mpd-slot-hdr-action {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+  min-width: 4.5rem;
+}
+
+/* Slot item wrapper (row + expandable detail) */
+.mpd-slot-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.mpd-slot-row {
+  display: grid;
+  grid-template-columns: 2.2rem 2.2rem 3rem 1fr auto;
+  align-items: center;
+  padding: 0.4rem 0.5rem;
+  background: var(--secondary);
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  gap: 0.25rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mpd-slot-row:active {
+  opacity: 0.85;
+}
+
+.mpd-slot-matched {
+  background: color-mix(in srgb, var(--primary) 12%, var(--secondary));
+}
+
+.mpd-slot-short {
+  opacity: 0.75;
+}
+
+.mpd-slot-day {
+  font-weight: 600;
+}
+
+.mpd-slot-date {
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+}
+
+.mpd-slot-time {
+  color: var(--muted-foreground);
+}
+
+/* Count column: "4on3" inline */
+.mpd-slot-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.mpd-count-num {
+  color: var(--foreground);
+}
+
+.mpd-count-on {
+  font-size: 0.6rem;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+
+/* Orange highlight when a side has < 4 */
+.mpd-count-short {
+  color: #f59e0b;
+}
+
+.mpd-slot-action {
+  display: flex;
+  justify-content: center;
+  min-width: 4.5rem;
+}
+
+.mpd-slot-btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Request = outlined primary */
+.mpd-btn-request {
+  background: transparent;
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* Confirm = solid primary (they requested, you're accepting) */
+.mpd-btn-confirm {
   background: var(--primary);
   color: var(--primary-foreground);
   border-color: var(--primary);
 }
 
-/* Template button in bottom bar */
-.mobile-bb-template-btn {
-  font-size: 0.875rem;
-  min-width: 2rem;
+.mpd-btn-withdraw {
+  background: transparent;
+  color: var(--muted-foreground);
 }
 
-/* Template popup (above bottom bar) */
-.mobile-template-popup {
-  position: fixed;
-  transform: translate(-50%, -100%);
-  margin-top: -0.5rem;
+.mpd-btn-disabled {
+  background: transparent;
+  color: var(--muted-foreground);
+  border-color: var(--border);
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.mpd-slot-matched-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #4ade80;
+}
+
+/* Expandable roster detail */
+.mpd-slot-detail {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.5rem;
-  z-index: 50;
-  box-shadow: 0 -4px 12px oklch(0 0 0 / 0.3);
-  min-width: 12rem;
-  max-width: 16rem;
+  gap: 1rem;
+  padding: 0.35rem 0.5rem 0.5rem;
+  background: color-mix(in srgb, var(--secondary) 60%, transparent);
+  border-radius: 0 0 var(--radius) var(--radius);
+  margin-top: -0.125rem;
 }
 
-.mobile-template-row {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.25rem 0;
+.mpd-slot-detail.hidden {
+  display: none;
 }
 
-.mobile-template-name {
+.mpd-detail-side {
   flex: 1;
-  font-size: 0.8125rem;
-  color: var(--foreground);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mobile-template-week-btn {
-  padding: 0.125rem 0.375rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  border-radius: var(--radius);
-  background: var(--muted);
-  color: var(--muted-foreground);
-  border: none;
-  cursor: pointer;
-}
-
-.mobile-template-week-btn:active {
-  background: var(--accent);
-}
-
-.mobile-template-del-btn {
-  padding: 0.125rem 0.25rem;
-  font-size: 0.6875rem;
-  color: var(--muted-foreground);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-}
-
-.mobile-template-del-btn:active {
-  color: var(--destructive);
-}
-
-.mobile-template-empty {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-  text-align: center;
-  padding: 0.25rem 0;
-}
-
-.mobile-template-save-btn {
-  width: 100%;
-  padding: 0.375rem 0.5rem;
-  font-size: 0.75rem;
-  border-radius: var(--radius);
-  border: 1px dashed var(--border);
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  margin-top: 0.25rem;
-}
-
-.mobile-template-save-btn:active {
-  border-color: var(--primary);
-  color: var(--foreground);
-}
-
-/* Drawer toggle buttons */
-.mobile-bb-drawer-toggle {
-  font-size: 1.125rem;
-}
-
-/* Auth button in bottom bar (login / avatar) */
-.mobile-bb-auth-btn {
-  min-width: 2.25rem;
-  padding: 0.125rem;
-}
-
-.mobile-bb-avatar {
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.mobile-bb-login-label {
-  font-size: 0.5625rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: var(--foreground);
-}
-
-/* Login popup (above auth button) */
-.mobile-login-popup {
-  position: fixed;
-  transform: translate(-50%, -100%);
-  margin-top: -0.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.5rem;
-  z-index: 50;
-  box-shadow: 0 -4px 12px oklch(0 0 0 / 0.3);
-  min-width: 10rem;
+  gap: 0.1rem;
 }
 
-.mobile-login-popup-btn {
+.mpd-detail-tag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.1rem;
+}
+
+.mpd-detail-player {
+  font-size: 0.65rem;
+  color: var(--foreground);
+  padding-left: 0.5rem;
+}
+
+.mpd-detail-player::before {
+  content: '\25CF';
+  color: oklch(0.55 0.16 145);
+  font-size: 0.45rem;
+  margin-right: 0.25rem;
+}
+
+/* Bottom bar: sticky game type + cancel at bottom of drawer */
+.mpd-bottom-bar {
+  margin-top: auto;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
-  padding: 0.5rem 0.75rem;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mpd-action-btn {
+  flex: 1;
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  border: none;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.mobile-login-discord {
-  background-color: #5865F2;
-  color: white;
+.mpd-btn-cancel {
+  background: transparent;
+  color: var(--destructive);
+  border-color: var(--destructive);
 }
 
-.mobile-login-discord:active {
-  background-color: #4752C4;
+.mpd-empty {
+  text-align: center;
+  color: var(--muted-foreground);
+  padding: 1rem 0;
+  font-size: 0.8rem;
 }
 
-.mobile-login-google {
-  background-color: transparent;
-  color: var(--foreground);
-  border: 1px solid var(--border);
+/* ═══════════════════════════════════════════════════════════════════
+   Mobile Compare Tab: Grid highlights + MobileCompareContent + MobileCompareDetail
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ─── Comparison Cell Highlights ──────────────────────────────── */
+
+.mobile-cell-compare-full {
+    background: color-mix(in srgb, oklch(0.55 0.16 145) 20%, var(--secondary)) !important;
+    border-color: oklch(0.55 0.16 145) !important;
 }
 
-.mobile-login-google:active {
-  background-color: var(--muted);
+.mobile-cell-compare-partial {
+    background: color-mix(in srgb, oklch(0.65 0.14 85) 20%, var(--secondary)) !important;
+    border-color: oklch(0.65 0.14 85) !important;
 }
 
-.mobile-login-popup-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* ─── Desktop: Hide all mobile elements ─────────────────────────── */
-
-.mobile-drawer,
-.mobile-drawer-overlay,
-.mobile-bottom-bar {
-  display: none;
-}
-
-/* ─── Mobile Landscape: Grid Collapse + Mobile Elements ─────────── */
-
-@media (max-width: 1024px) and (orientation: landscape) {
-  .app-container {
-    padding: 0;
-    height: calc(100vh - 3rem); /* fallback: full viewport minus bottom bar */
-    height: calc(100dvh - 3rem); /* modern: dynamic viewport minus bottom bar */
-  }
-
-  /* Week header hidden on mobile - info is in the bottom bar */
-  .week-header-nav {
-    display: none;
-  }
-
-  .main-grid-v3 {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr;
-    gap: 0;
-    flex: 1; /* Fill flex parent (app-container) - more reliable than height: 100% */
-    min-height: 0;
-  }
-
-  /* Hide side panels (Slice 13.0f: unified sidebars) */
-  #panel-left,
-  #panel-right {
-    display: none;
-  }
-
-  /* Hide desktop divider row */
-  #panel-mid-center {
-    display: none;
-  }
-
-  /* Grid panels fill the single grid cell */
-  #panel-top-center,
-  #panel-bottom-center {
-    grid-column: 1;
-    grid-row: 1;
-    /* Grid items auto-stretch to fill their cell, no height needed */
-    overflow: hidden;
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  /* Panel children must flex to fill the panel */
-  #panel-top-center > *,
-  #panel-bottom-center > * {
-    flex: 1;
-    min-height: 0;
-    height: 100%; /* Backup for non-flex children */
-  }
-
-  /* Show mobile elements - drawers only when .open class is added by JS */
-  .mobile-drawer.open {
-    display: flex;
-  }
-  .mobile-bottom-bar {
-    display: flex;
-  }
-
-  /* Panels moved into drawers need to be visible (Slice 13.0f: unified left panel) */
-  .mobile-drawer-content #panel-left {
-    display: flex;
-    flex-direction: column;
-    height: auto;
-    min-height: 100%;
-  }
-
-  /* Left drawer: sidebar-content grows with content so drawer scrolls */
-  .mobile-drawer-content #panel-left > .sidebar-content {
-    height: auto;
-    padding-top: 0.5rem;
-  }
-
-  /* Left drawer: team logo — bigger now that roster is collapsed */
-  .mobile-drawer-content .team-logo-clickable {
-    width: 4rem;
-    height: 4rem;
-    border-radius: 0.375rem;
-    flex-shrink: 0;
-  }
-
-  /* Left drawer: shrink inactive team logo */
-  .mobile-drawer-content .team-logo-switch {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-
-  /* Left drawer: make gear icon always visible on mobile (no hover) */
-  .mobile-drawer-content .team-settings-icon {
-    opacity: 1;
-  }
-
-  /* Left drawer: hover popup hidden by default, toggled by team name click */
-  .mobile-drawer-content .team-hover-popup {
-    display: none;
-    position: static;
-    opacity: 1;
-    pointer-events: auto;
-    box-shadow: none;
-    border: none;
-    background: transparent;
-    padding: 0.5rem 0 0;
-  }
-
-  .mobile-drawer-content .team-hover-popup.mobile-open {
-    display: block;
-  }
-
-  /* Left drawer: team name acts as toggle — show caret hint */
-  .mobile-drawer-content .team-name-toggle {
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .mobile-drawer-content .team-name-toggle::after {
-    content: ' ▾';
-    font-size: 0.75em;
-    opacity: 0.5;
-  }
-
-  .mobile-drawer-content .team-name-toggle.open::after {
-    content: ' ▴';
-  }
-
-  /* Left drawer: hide profile footer (accessible from bottom bar avatar now) */
-  .mobile-drawer-content .sidebar-footer {
-    display: none;
-  }
-
-  /* Left drawer: roster fills full width */
-  .mobile-drawer-content #roster-container .space-y-0\.5 {
-    max-width: none;
-    margin-left: 0;
-    margin-right: 0;
-  }
-
-  /* Left drawer: roster name font (smaller than team name) */
-  .mobile-drawer-content .roster-member span.truncate {
-    font-size: 0.6875rem;
-  }
-
-  /* Left drawer: shrink leader star */
-  .mobile-drawer-content .roster-member svg {
-    width: 0.625rem;
-    height: 0.625rem;
-  }
-
-  /* Left drawer: compact avatar badges */
-  .mobile-drawer-content .roster-member > div.overflow-hidden {
-    width: 1.125rem;
-    height: 1.125rem;
-  }
-
-  /* Left drawer: tighter roster row spacing */
-  .mobile-drawer-content .roster-member {
-    padding: 0.0625rem 0.5rem;
-    gap: 0.25rem;
-  }
-
-  /* Left drawer: compact matches sections */
-  .mobile-drawer-content #your-matches-container,
-  .mobile-drawer-content #upcoming-matches-container {
-    font-size: 0.75rem;
-  }
-
-  /* Right drawer: Unified panel fills full drawer height (Slice 13.0e) */
-  .mobile-drawer-content #panel-right {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-  }
-
-  .mobile-drawer-content .team-browser {
-    height: 100%;
-  }
-
-  /* Touch-friendly filter buttons in drawer */
-  .mobile-drawer-content .division-filter-btn {
-    min-height: 2rem;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-  }
-
-  /* Compact single-row team cards in drawer */
-  .mobile-drawer-content .team-card {
-    min-height: 2.25rem;
-    padding: 0.25rem 0.375rem;
-  }
-
-  /* Hide the full meta line on mobile (division shown inline via pill) */
-  .mobile-drawer-content .team-meta {
-    display: none;
-  }
-
-  /* Show inline division pill on mobile */
-  .mobile-drawer-content .division-pill {
-    display: inline;
-  }
-
-  /* Smaller badge on mobile */
-  .mobile-drawer-content .team-tag-badge {
-    width: 1.75rem;
-    height: 1.5rem;
+.mobile-compare-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
     font-size: 0.5rem;
-    border-radius: 0.1875rem;
-  }
-
-  /* Star button touch area in drawer - always visible on mobile */
-  .mobile-drawer-content .star-btn {
-    min-width: 2.25rem;
-    min-height: 2.25rem;
+    font-weight: 700;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 1;
-  }
+    line-height: 1;
+}
 
-  /* Smaller star icon on mobile */
-  .mobile-drawer-content .star-btn svg {
-    width: 0.875rem;
-    height: 0.875rem;
-  }
+.mobile-grid-cell {
+    position: relative;
+}
 
-  /* Smaller team name text on mobile */
-  .mobile-drawer-content .team-name {
-    font-size: 0.75rem;
-  }
+/* ─── MobileCompareContent (mcc-*) ────────────────────────────── */
 
-  /* Hide scrollbar in mobile team list */
-  .mobile-drawer-content .team-list {
-    scrollbar-width: none;
-  }
-  .mobile-drawer-content .team-list::-webkit-scrollbar {
-    display: none;
-  }
-
-  /* Strip panel chrome inside drawers — panels should blend seamlessly */
-  .mobile-drawer-content .panel {
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
-    background: transparent;
-  }
-
-  /* Drawer bottom padding for bottom bar clearance */
-  .mobile-drawer-content {
-    padding-bottom: 3.5rem;
-    min-height: 100%;
-    flex-shrink: 0; /* Don't shrink inside flex drawer — let drawer scroll instead */
-    overscroll-behavior: contain; /* Prevent scroll from bubbling to body */
-  }
-
-  /* Reverse drawer layout: team list on top, search+filters at bottom (thumb zone) */
-  .mobile-drawer-content .team-browser {
-    flex-direction: column-reverse;
-  }
-
-  /* Stack search + filter rows vertically in narrow drawer */
-  .mobile-drawer-content .browser-header {
+.mcc-container {
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
-    margin-bottom: 0;
-    margin-top: 0.375rem;
-    flex-shrink: 0;
-  }
-
-  .mobile-drawer-content .browser-header > .relative {
-    min-width: 0;
-    margin-bottom: 0;
-  }
-
-  .mobile-drawer-content .browser-header > .flex {
-    gap: 0.25rem;
-  }
-
-  .mobile-drawer-content .browser-header input {
-    padding: 0.25rem 2rem 0.25rem 0.5rem;
-    font-size: 0.75rem;
-    min-height: 2rem;
-  }
-
-  /* Tighter team card spacing on mobile */
-  .mobile-drawer-content .team-list {
-    gap: 0.125rem;
-  }
-  .mobile-drawer-content .team-list > * + * {
-    margin-top: 0.125rem;
-  }
-
-  /* Remove cell min-height so rows shrink to fit viewport */
-  .grid-cell {
-    min-height: 0;
-    min-width: 0;
-  }
-
-  /* Narrower time label column on mobile */
-  .grid-header,
-  .grid-row {
-    grid-template-columns: 2rem repeat(7, 1fr);
-  }
-
-  /* Smaller time labels on mobile */
-  .time-label {
-    font-size: 0.6rem;
-  }
-
-  /* Tighter day header */
-  .day-header {
-    padding: 0;
-    font-size: 0.65rem;
-  }
-
-  /* Switch grid body from flex to CSS grid so rows divide space equally */
-  /* Use auto-rows instead of hardcoded count to support dynamic timeslot filtering */
-  .grid-body {
-    display: grid;
-    grid-auto-rows: 1fr;
-    gap: 1px;
-    overflow: hidden;
     height: 100%;
-    flex: 1;
-  }
-
-  /* Grid rows become grid items instead of flex items */
-  .grid-row {
-    min-height: 0;
-  }
-
-  /* Tighten week-display padding on mobile */
-  .week-display {
-    padding: 0;
-    flex: 1;
-    min-height: 0;
-  }
-
-  /* Ensure grid containers fill available height */
-  .week-grid-container {
-    flex: 1;
-    min-height: 0;
-    height: 100%;
-  }
-
-  .availability-grid-container {
-    flex: 1;
-    min-height: 0;
-    height: 100%;
-  }
-
-  /* Teams browser must fill panel */
-  .teams-browser {
-    flex: 1;
-    min-height: 0;
-  }
-
-  .teams-browser-content {
-    flex: 1;
-    min-height: 0;
-  }
-
-  .division-overview {
-    flex: 1;
-    min-height: 0;
-  }
-
-  /* Slice 10.0d: Touch interaction styles */
-
-  /* Prevent browser from stealing touch pointer for scroll/zoom on grid.
-     Grid doesn't scroll on mobile (overflow:hidden + 1fr rows), so this is safe.
-     Without this, the browser captures the pointer before our JS can disambiguate. */
-  .availability-grid-container {
-    touch-action: none;
-  }
-
-  /* Prevent text selection during drag */
-  .availability-grid-container.dragging {
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-touch-callout: none;
-  }
-
-  /* Tap feedback on grid cells */
-  .grid-cell:active {
-    opacity: 0.8;
-    transition: none;
-  }
-
-  /* Bottom bar button tap feedback */
-  .mobile-bb-btn:active {
-    opacity: 0.8;
-  }
-
-  /* FAB repositioning above bottom bar on mobile */
-  .selection-action-btn {
-    bottom: 3.5rem; /* 3rem bottom bar + 0.5rem spacing */
-  }
+    padding: 0.5rem;
 }
+
+.mcc-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.mcc-search-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.8rem;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--foreground);
+    outline: none;
+}
+
+.mcc-search-input:focus {
+    border-color: var(--primary);
+}
+
+.mcc-search-input::placeholder {
+    color: var(--muted-foreground);
+}
+
+.mcc-min-filter {
+    display: flex;
+    gap: 0.125rem;
+    flex-shrink: 0;
+}
+
+.mcc-min-btn {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.mcc-min-btn.active {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.mcc-pills {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.mcc-pill {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
+}
+
+.mcc-pill.active {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.mcc-pill-sep {
+    width: 1px;
+    height: 0.75rem;
+    background: var(--border);
+    flex-shrink: 0;
+}
+
+.mcc-team-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    -webkit-overflow-scrolling: touch;
+}
+
+.mcc-team-card {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.mcc-team-card:active {
+    opacity: 0.8;
+}
+
+.mcc-team-selected {
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 12%, var(--secondary));
+}
+
+.mcc-team-badge {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 0.2rem;
+}
+
+.mcc-team-badge-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.mcc-team-badge-text {
+    font-size: 0.45rem;
+    font-weight: 700;
+    color: var(--muted-foreground);
+}
+
+.mcc-team-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+}
+
+.mcc-team-meta {
+    font-size: 0.6rem;
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+}
+
+.mcc-star-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--muted-foreground);
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.mcc-star-active {
+    color: #eab308;
+}
+
+/* ─── MobileCompareDetail (mcd-*) ─────────────────────────────── */
+
+.mcd-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.mcd-header {
+    font-size: 1rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+.mcd-sub {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    text-align: center;
+    margin-bottom: 0.25rem;
+}
+
+/* Expandable opponent card wrapper */
+.mcd-opp-card-wrap {
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.mcd-opp-card-wrap.mcd-expanded {
+    border-color: var(--primary);
+}
+
+/* Opponent card header (always visible) */
+.mcd-opp-card {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.mcd-opp-card:active {
+    opacity: 0.8;
+}
+
+/* Expanded header: both logos + NvN centered between them */
+.mcd-opp-card-expanded {
+    justify-content: center;
+    gap: 0.75rem;
+}
+
+.mcd-opp-card-expanded .mcd-opp-indicator {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+}
+
+.mcd-expand-arrow {
+    font-size: 0.55rem;
+    color: var(--muted-foreground);
+    margin-left: 0.25rem;
+    flex-shrink: 0;
+}
+
+/* Expanded body (VS roster + proposal) */
+.mcd-expand-body {
+    padding: 0 0.75rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Single-row proposal flow: [Official] [Practice] [SI?] [Propose →] */
+.mcd-proposal-row {
+    display: flex;
+    gap: 0.375rem;
+    padding-top: 0.375rem;
+    border-top: 1px solid var(--border);
+    align-items: center;
+}
+
+.mcd-opp-badge {
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.25rem;
+    overflow: hidden;
+}
+
+.mcd-opp-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.mcd-opp-tag {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--muted-foreground);
+}
+
+.mcd-opp-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mcd-opp-tag-inline {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--muted-foreground);
+    font-family: monospace;
+    flex-shrink: 0;
+}
+
+.mcd-opp-indicator {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.2rem 0.4rem;
+    border-radius: var(--radius);
+}
+
+.mcd-full {
+    color: oklch(0.55 0.16 145);
+    background: color-mix(in srgb, oklch(0.55 0.16 145) 12%, transparent);
+}
+
+.mcd-partial {
+    color: oklch(0.65 0.14 85);
+    background: color-mix(in srgb, oklch(0.65 0.14 85) 12%, transparent);
+}
+
+/* VS layout */
+.mcd-vs-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.mcd-team-side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.125rem;
+    text-align: center;
+}
+
+/* Compact label above roster (team tag) */
+.mcd-roster-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--primary);
+    font-family: monospace;
+    margin-bottom: 0.125rem;
+}
+
+.mcd-vs-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 0.25rem;
+    font-weight: 700;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+}
+
+.mcd-roster {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    width: 100%;
+}
+
+.mcd-player {
+    font-size: 0.7rem;
+    padding: 0.125rem 0;
+}
+
+.mcd-player-avail {
+    color: var(--foreground);
+}
+
+.mcd-player-avail::before {
+    content: '\25CF ';
+    color: oklch(0.55 0.16 145);
+    font-size: 0.5rem;
+}
+
+.mcd-player-unavail {
+    color: var(--muted-foreground);
+    opacity: 0.5;
+}
+
+.mcd-player-unavail::before {
+    content: '\25CB ';
+    font-size: 0.5rem;
+}
+
+.mcd-roster-anon {
+    font-size: 0.7rem;
+    color: var(--muted-foreground);
+    font-style: italic;
+}
+
+/* Proposal buttons (single-row: type + standin + propose) */
+
+.mcd-type-btn {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.mcd-type-official-active {
+    border-color: #4ade80;
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.08);
+}
+
+.mcd-type-practice-active {
+    border-color: #fbbf24;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.08);
+}
+
+.mcd-standin-btn {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.mcd-standin-active {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.mcd-propose-btn {
+    margin-left: auto;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.mcd-propose-btn:active {
+    opacity: 0.8;
+}
+
+.mcd-propose-btn.mcd-disabled,
+.mcd-propose-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+
+
+/* Old mobile drawer/bottom-bar/landscape CSS removed in Slice M1.0 */
+/* New mobile CSS is above in the M1.0 section */
+
 
 /* ============================================
    Slice 11.0a: H2H Foundation
@@ -6042,6 +7045,7 @@ body {
     flex-direction: column;
     height: 100vh;
     min-height: 0;
+    overflow: hidden;
 }
 
 /* Loading state (shown during DemoInfo fetch) */
@@ -6057,7 +7061,7 @@ body {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    padding: 0.375rem 1rem;
     background: var(--card);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
@@ -6065,7 +7069,7 @@ body {
 
 .vr-header-label {
     color: var(--muted-foreground);
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
 }
 
 .vr-header-sep {
@@ -6074,19 +7078,26 @@ body {
 
 .vr-header-title {
     color: var(--foreground);
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     font-weight: 500;
 }
 
-/* Iframe wrapper — grows to fill available space */
+/* Iframe wrapper — 16:9 aspect ratio, grows to fill but respects ratio */
 .vr-iframe-wrap {
     flex: 1;
     min-height: 0;
     position: relative;
     background: #000;
+    max-height: calc(100vh - 10rem); /* leave room for controls */
+    aspect-ratio: 16 / 9;
+    max-width: 100%;
+    margin: 0 auto; /* center if narrower than viewport */
 }
 
 .vr-iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     border: none;
@@ -6100,16 +7111,16 @@ body {
     background: var(--card);
 }
 
-/* Drop zone */
+/* Drop zone — compact */
 .vr-dropzone {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 1.5rem;
+    padding: 1rem;
     border: 2px dashed var(--border);
     border-radius: var(--radius);
-    margin: 1rem;
+    margin: 0.75rem;
     cursor: pointer;
     transition: border-color 150ms ease, background-color 150ms ease;
 }
@@ -6124,29 +7135,29 @@ body {
 }
 
 .vr-dropzone-icon {
-    font-size: 2rem;
-    margin-bottom: 0.5rem;
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
 }
 
 .vr-dropzone-text {
     color: var(--foreground);
-    font-size: 0.9375rem;
-    margin-bottom: 0.25rem;
+    font-size: 0.8125rem;
+    margin-bottom: 0.125rem;
 }
 
 .vr-dropzone-subtext {
     color: var(--muted-foreground);
-    font-size: 0.8125rem;
-    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    margin-bottom: 0.375rem;
 }
 
 .vr-browse-btn {
     display: inline-block;
-    padding: 0.375rem 1rem;
+    padding: 0.25rem 0.75rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     color: var(--foreground);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     cursor: pointer;
     transition: background-color 150ms ease, border-color 150ms ease;
 }
@@ -6157,63 +7168,62 @@ body {
 }
 
 .vr-drop-status {
-    margin-top: 0.5rem;
+    margin-top: 0.375rem;
     color: var(--muted-foreground);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
 }
 
-/* Loaded controls */
+/* Loaded controls — compact layout */
 .vr-controls-loaded {
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 1rem;
+}
+
+/* Side-by-side Volume + Offset */
+.vr-controls-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 1.5rem;
 }
 
 .vr-control-row {
     display: grid;
-    grid-template-columns: 7rem 1fr 3.5rem;
+    grid-template-columns: 4rem 1fr 3rem;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.25rem 0;
+    gap: 0.5rem;
+    padding: 0.125rem 0;
 }
 
 .vr-control-label {
     color: var(--muted-foreground);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     white-space: nowrap;
 }
 
 .vr-control-value {
     color: var(--foreground);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
-/* Tracks section */
+/* Tracks section — compact */
 .vr-tracks-section {
-    margin-top: 0.5rem;
+    margin-top: 0.375rem;
     border-top: 1px solid var(--border);
-    padding-top: 0.5rem;
-}
-
-.vr-tracks-header {
-    color: var(--muted-foreground);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.25rem;
+    padding-top: 0.375rem;
 }
 
 .vr-track-row {
     display: grid;
-    grid-template-columns: 7rem 1fr 3.5rem;
+    grid-template-columns: 6rem 1fr 2.5rem;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.25rem 0;
+    gap: 0.5rem;
+    padding: 0.125rem 0;
 }
 
 .vr-track-name {
     color: var(--foreground);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -6222,20 +7232,42 @@ body {
 
 .vr-track-value {
     color: var(--foreground);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
+/* Bot tracks — collapsible, dimmed */
+.vr-bot-tracks {
+    margin-top: 0.25rem;
+}
+
+.vr-bot-summary {
+    color: var(--muted-foreground);
+    font-size: 0.6875rem;
+    cursor: pointer;
+    padding: 0.125rem 0;
+    user-select: none;
+}
+
+.vr-bot-summary:hover {
+    color: var(--foreground);
+}
+
+.vr-track-bot .vr-track-name {
+    color: var(--muted-foreground);
+    font-weight: 400;
+}
+
 /* Add more files button */
 .vr-add-more {
-    margin-top: 0.5rem;
+    margin-top: 0.375rem;
     text-align: center;
 }
 
 .vr-add-more-btn {
     color: var(--muted-foreground);
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     cursor: pointer;
     transition: color 150ms ease;
 }
@@ -6244,13 +7276,13 @@ body {
     color: var(--primary);
 }
 
-/* Range slider styling */
+/* Range slider styling — compact */
 .vr-slider {
     -webkit-appearance: none;
     appearance: none;
     width: 100%;
-    height: 0.375rem;
-    border-radius: 0.1875rem;
+    height: 0.25rem;
+    border-radius: 0.125rem;
     background: var(--muted);
     outline: none;
     cursor: pointer;
@@ -6259,8 +7291,8 @@ body {
 .vr-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 0.875rem;
-    height: 0.875rem;
+    width: 0.75rem;
+    height: 0.75rem;
     border-radius: 50%;
     background: var(--primary);
     cursor: pointer;
@@ -6268,8 +7300,8 @@ body {
 }
 
 .vr-slider::-moz-range-thumb {
-    width: 0.875rem;
-    height: 0.875rem;
+    width: 0.75rem;
+    height: 0.75rem;
     border-radius: 50%;
     background: var(--primary);
     cursor: pointer;
@@ -6282,4 +7314,309 @@ body {
 
 .vr-slider:hover::-moz-range-thumb {
     box-shadow: 0 0 0 3px oklch(from var(--primary) l c h / 0.25);
+}
+
+/* Overlay audio controls — floats over bottom-left of iframe */
+.vr-overlay {
+    position: absolute;
+    bottom: 7rem; /* above Hub's own control bar + timeline */
+    left: 1rem;
+    background: oklch(0.15 0.02 260 / 0.88);
+    backdrop-filter: blur(10px);
+    border-radius: var(--radius);
+    padding: 0.625rem 0.75rem;
+    min-width: 14rem;
+    max-width: 18rem;
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+}
+
+/* Show on mouse activity (JS adds/removes .vr-show class on 3s timer) */
+.vr-iframe-wrap.vr-show .vr-overlay {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Fullscreen button — centered over hub's button in windowed mode */
+.vr-fs-btn {
+    position: absolute;
+    bottom: 0.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: oklch(0.15 0.02 260 / 0.8);
+    backdrop-filter: blur(8px);
+    border: 1px solid oklch(0.35 0.02 260);
+    border-radius: var(--radius);
+    color: var(--foreground);
+    padding: 0.375rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 200ms ease;
+}
+.vr-iframe-wrap.vr-show .vr-fs-btn {
+    opacity: 1;
+}
+.vr-fs-btn:hover {
+    background: oklch(0.25 0.02 260 / 0.9);
+}
+
+/* Fullscreen: wrapper goes fullscreen so voice overlay stays visible */
+.vr-iframe-wrap:fullscreen {
+    background: #000;
+    width: 100vw;
+    height: 100vh;
+    max-height: none;
+    aspect-ratio: auto;
+}
+.vr-iframe-wrap:fullscreen .vr-iframe {
+    width: 100%;
+    height: 100%;
+}
+.vr-iframe-wrap:fullscreen .vr-overlay {
+    bottom: 5.5rem;
+}
+.vr-iframe-wrap:fullscreen .vr-fs-btn {
+    bottom: 0.25rem;
+    left: auto;
+    right: 0.75rem;
+    transform: none;
+}
+
+.vr-ov-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.1875rem 0;
+}
+
+.vr-ov-sync-row {
+    border-top: 1px solid oklch(0.35 0.02 260);
+    margin-top: 0.25rem;
+    padding-top: 0.375rem;
+}
+
+.vr-ov-track {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0;
+}
+
+.vr-ov-mute {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid oklch(0.4 0.02 260);
+    border-radius: 0.1875rem;
+    cursor: pointer;
+    font-size: 0.625rem;
+    padding: 0;
+    line-height: 1;
+    transition: border-color 150ms ease, opacity 150ms ease;
+}
+
+.vr-ov-mute:hover {
+    border-color: var(--primary);
+}
+
+.vr-ov-muted {
+    opacity: 0.5;
+}
+
+.vr-ov-label {
+    color: oklch(0.7 0.02 260);
+    font-size: 0.6875rem;
+    min-width: 1.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.vr-ov-label-sync {
+    margin-left: 1.625rem; /* align with sliders above (mute btn width + gap) */
+}
+
+.vr-ov-name {
+    color: oklch(0.85 0.02 260);
+    font-size: 0.6875rem;
+    min-width: 4.5rem;
+    max-width: 5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vr-ov-val {
+    color: oklch(0.7 0.02 260);
+    font-size: 0.625rem;
+    min-width: 2.25rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-ov-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 0.1875rem;
+    border-radius: 0.09375rem;
+    background: oklch(0.35 0.02 260);
+    outline: none;
+    cursor: pointer;
+}
+
+.vr-ov-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: none;
+}
+
+.vr-ov-slider::-moz-range-thumb {
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: none;
+}
+
+/* Add more files link in overlay */
+.vr-ov-add-more {
+    display: block;
+    text-align: center;
+    margin-top: 0.375rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid oklch(0.35 0.02 260);
+    color: oklch(0.6 0.02 260);
+    font-size: 0.625rem;
+    cursor: pointer;
+    transition: color 150ms ease;
+}
+
+.vr-ov-add-more:hover {
+    color: var(--primary);
+}
+
+/* Voice Replay Auth States */
+.vr-auth-prompt {
+    text-align: center;
+    padding: 1.5rem 1rem;
+}
+
+.vr-auth-message {
+    color: var(--muted-foreground);
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.vr-auth-denied {
+    color: var(--destructive);
+}
+
+.vr-auth-buttons {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.vr-auth-btn {
+    padding: 0.5rem 1.25rem;
+    border-radius: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--foreground);
+    transition: background 0.15s;
+}
+
+.vr-auth-btn:hover {
+    background: var(--accent);
+}
+
+/* ── Admin Stat Cards (Slice A2) ── */
+
+.admin-stat-card {
+    background: oklch(from var(--muted) l c h / 0.5);
+    border: 1px solid oklch(from var(--border) l c h);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+}
+
+/* ── Team Management Modal Tab Styles (Slice P5.1) ── */
+
+.tab-btn {
+    @apply px-3 py-2 text-xs font-medium text-muted-foreground border-b-2 border-transparent
+           hover:text-foreground transition-colors cursor-pointer;
+}
+.tab-btn.active {
+    @apply text-foreground border-primary;
+}
+
+/* ── Admin Discord Panel (Slice A3) ── */
+
+/* Admin session cards */
+.admin-session-card {
+    background: oklch(from var(--muted) l c h / 0.5);
+    border: 1px solid oklch(from var(--border) l c h);
+    border-radius: 0.375rem;
+    padding: 0.625rem 0.75rem;
+}
+
+.admin-session-stale {
+    border-color: oklch(from var(--warning) l c h / 0.5);
+}
+
+/* Admin bot grid */
+.admin-bot-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto auto;
+    gap: 0 1rem;
+    align-items: center;
+}
+
+.admin-bot-header {
+    font-weight: 600;
+    color: oklch(from var(--muted-foreground) l c h);
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid oklch(from var(--border) l c h);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* ── Aggregated Admin Grid (Slice A4) ── */
+
+/* Disable interactions in aggregated mode */
+.aggregated-mode .grid-cell {
+    cursor: default;
+}
+
+/* Count number styling */
+.aggregated-count {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: oklch(from var(--foreground) l c h);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+/* Heatmap: cell background intensity driven by CSS variable */
+.grid-cell.aggregated-cell {
+    background: oklch(from var(--primary) l c h / var(--heat-intensity, 0.2));
 }

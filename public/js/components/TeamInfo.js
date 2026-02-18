@@ -18,6 +18,7 @@ const TeamInfo = (function() {
     let _userProfileListener = null;
     let _initialized = false;
     let _activeColorPickerUserId = null; // Track inline color picker state across re-renders
+    let _adminModeActive = false; // Slice A2: admin sidebar stats mode
 
     // Initialize component - now takes two container IDs
     function init(identityContainerId, rosterContainerId) {
@@ -47,6 +48,9 @@ const TeamInfo = (function() {
         // Slice 5.0.1: Re-render roster when display mode or player colors change
         window.addEventListener('display-mode-changed', _render);
         window.addEventListener('player-colors-changed', _render);
+
+        // Slice A2: Admin mode toggles sidebar between team view and admin stats
+        window.addEventListener('admin-mode-changed', _handleAdminModeChanged);
 
         // Event delegation for inline color picker in hover popup
         _identityContainer.addEventListener('click', (e) => {
@@ -350,9 +354,46 @@ const TeamInfo = (function() {
         }
     }
 
+    // Slice A2: Handle admin mode toggle
+    function _handleAdminModeChanged(e) {
+        const wasAdmin = _adminModeActive;
+        _adminModeActive = e.detail.active;
+
+        if (wasAdmin && !_adminModeActive) {
+            AdminStatsDisplay.cleanup();
+        }
+
+        _render();
+    }
+
+    // Slice A2: Render admin overview with stats cards
+    function _renderAdminMode() {
+        _identityContainer.innerHTML = `
+            <div class="text-center py-4">
+                <div class="w-14 h-14 rounded-lg bg-muted/50 flex items-center justify-center mx-auto mb-3">
+                    <svg class="w-7 h-7 text-muted-foreground" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                </div>
+                <h4 class="text-sm font-semibold text-foreground">Admin Overview</h4>
+            </div>
+        `;
+
+        _rosterContainer.innerHTML = '<div id="admin-stats-sidebar"></div>';
+        AdminStatsDisplay.init('admin-stats-sidebar');
+    }
+
     // Render component - split into identity and roster containers
     function _render() {
         if (!_identityContainer || !_rosterContainer) return;
+
+        // Slice A2: Admin mode takes priority over all other render modes
+        if (_adminModeActive && window._isAdmin) {
+            _renderAdminMode();
+            return;
+        }
 
         if (!_currentUser) {
             _renderGuestMode();
@@ -516,7 +557,9 @@ const TeamInfo = (function() {
     function _buildRosterHTML(displayMode) {
         if (!_selectedTeam?.playerRoster) return '';
 
-        return _selectedTeam.playerRoster.map(player => {
+        return [..._selectedTeam.playerRoster].sort((a, b) =>
+            (a.displayName || '').localeCompare(b.displayName || '')
+        ).map(player => {
             const colorOrDefault = typeof PlayerColorService !== 'undefined'
                 ? PlayerColorService.getPlayerColorOrDefault(player.userId)
                 : '#6B7280';
@@ -537,9 +580,9 @@ const TeamInfo = (function() {
                     </div>
                 `;
             } else if (displayMode === 'coloredInitials') {
-                visualElement = `<span class="text-sm font-bold flex-shrink-0" style="color: ${colorOrDefault}">${player.initials}</span>`;
+                visualElement = `<span class="text-sm font-bold font-mono w-8 flex-shrink-0" style="color: ${colorOrDefault}">${player.initials}</span>`;
             } else {
-                visualElement = `<span class="text-sm font-bold text-muted-foreground flex-shrink-0">${player.initials}</span>`;
+                visualElement = `<span class="text-sm font-bold font-mono w-8 text-muted-foreground flex-shrink-0">${player.initials}</span>`;
             }
 
             return `
@@ -907,6 +950,7 @@ const TeamInfo = (function() {
     // Cleanup function
     function cleanup() {
         _cleanupListeners();
+        window.removeEventListener('admin-mode-changed', _handleAdminModeChanged);
         _initialized = false;
     }
 

@@ -9,6 +9,7 @@ const AvailabilityService = (function() {
     let _functions = null;
     let _cache = new Map(); // Key: "{teamId}_{weekId}", Value: availability doc
     let _listeners = new Map(); // Key: "{teamId}_{weekId}", Value: unsubscribe fn
+    let _callbacks = new Map(); // Key: "{teamId}_{weekId}", Value: Set<callback>
     let _allTeamsLoadedWeeks = new Set(); // Track which weeks have all teams loaded (Find Standin)
 
     /**
@@ -69,8 +70,16 @@ const AvailabilityService = (function() {
     async function subscribe(teamId, weekId, callback) {
         const cacheKey = `${teamId}_${weekId}`;
 
-        // Don't duplicate listeners
+        // Register callback
+        if (!_callbacks.has(cacheKey)) {
+            _callbacks.set(cacheKey, new Set());
+        }
+        _callbacks.get(cacheKey).add(callback);
+
+        // If listener already exists, just fire callback with cached data (if available)
         if (_listeners.has(cacheKey)) {
+            const cached = _cache.get(cacheKey);
+            if (cached) callback(cached);
             return;
         }
 
@@ -84,7 +93,9 @@ const AvailabilityService = (function() {
                 : { id: cacheKey, teamId, weekId, slots: {} };
 
             _cache.set(cacheKey, data);
-            callback(data);
+            // Notify all registered callbacks
+            const cbs = _callbacks.get(cacheKey);
+            if (cbs) cbs.forEach(cb => cb(data));
         }, (error) => {
             console.error('Availability listener error:', error);
         });
@@ -93,16 +104,38 @@ const AvailabilityService = (function() {
     }
 
     /**
-     * Unsubscribe from a team/week
+     * Unsubscribe a specific callback from a team/week.
+     * Only tears down the Firestore listener when no callbacks remain.
      * @param {string} teamId - Team ID
      * @param {string} weekId - Week ID
+     * @param {Function} [callback] - Specific callback to remove. If omitted, removes ALL callbacks and listener.
      */
-    function unsubscribe(teamId, weekId) {
+    function unsubscribe(teamId, weekId, callback) {
         const cacheKey = `${teamId}_${weekId}`;
-        const unsub = _listeners.get(cacheKey);
-        if (unsub) {
-            unsub();
-            _listeners.delete(cacheKey);
+
+        if (callback) {
+            // Remove specific callback
+            const cbs = _callbacks.get(cacheKey);
+            if (cbs) {
+                cbs.delete(callback);
+                // Only tear down listener if no callbacks remain
+                if (cbs.size === 0) {
+                    _callbacks.delete(cacheKey);
+                    const unsub = _listeners.get(cacheKey);
+                    if (unsub) {
+                        unsub();
+                        _listeners.delete(cacheKey);
+                    }
+                }
+            }
+        } else {
+            // Remove all callbacks and listener
+            _callbacks.delete(cacheKey);
+            const unsub = _listeners.get(cacheKey);
+            if (unsub) {
+                unsub();
+                _listeners.delete(cacheKey);
+            }
         }
     }
 
@@ -112,6 +145,7 @@ const AvailabilityService = (function() {
     function unsubscribeAll() {
         _listeners.forEach(unsub => unsub());
         _listeners.clear();
+        _callbacks.clear();
     }
 
     /**
@@ -882,6 +916,7 @@ const AvailabilityService = (function() {
     function cleanup() {
         _listeners.forEach(unsub => unsub());
         _listeners.clear();
+        _callbacks.clear();
         _cache.clear();
         _allTeamsLoadedWeeks.clear();
         console.log('🧹 AvailabilityService cleaned up');

@@ -339,9 +339,20 @@ const MatchesPanel = (function() {
 
                     <!-- RIGHT: SCHEDULED MATCHES ONLY -->
                     <div class="flex-[2] min-w-0 flex flex-col border-l border-border pl-4">
-                        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                            Scheduled Matches
-                        </h3>
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Scheduled Matches
+                            </h3>
+                            ${_canQuickAdd() ? `
+                                <button data-action="quick-add-match"
+                                        class="text-muted-foreground hover:text-primary transition-colors p-0.5 rounded hover:bg-muted/50"
+                                        title="Quick add a pre-arranged match">
+                                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                                    </svg>
+                                </button>
+                            ` : ''}
+                        </div>
                         <div class="flex-1 overflow-y-auto space-y-1">
                             ${scheduledMatches.map(m => _renderUpcomingMatchCompact(m)).join('')}
                         </div>
@@ -861,7 +872,30 @@ const MatchesPanel = (function() {
                 _archivedExpanded = !_archivedExpanded;
                 _renderAll();
                 break;
+            case 'quick-add-match':
+                _handleQuickAddMatch();
+                break;
         }
+    }
+
+    /**
+     * Check if current user can quick-add matches (is leader/scheduler on any team).
+     */
+    function _canQuickAdd() {
+        const userId = AuthService.getCurrentUser()?.uid;
+        if (!userId) return false;
+        return _userTeamIds.some(tid => TeamService.isScheduler(tid, userId));
+    }
+
+    /**
+     * Open the Quick Add Match modal with user's scheduler team IDs.
+     */
+    function _handleQuickAddMatch() {
+        const userId = AuthService.getCurrentUser()?.uid;
+        if (!userId) return;
+        const schedulerTeamIds = _userTeamIds.filter(tid => TeamService.isScheduler(tid, userId));
+        if (schedulerTeamIds.length === 0) return;
+        QuickAddMatchModal.show(schedulerTeamIds);
     }
 
     /**
@@ -904,20 +938,22 @@ const MatchesPanel = (function() {
             AvailabilityService.loadWeekAvailability(proposal.opponentTeamId, weekId)
         ]);
 
-        // Subscribe to real-time updates
-        await AvailabilityService.subscribe(proposal.proposerTeamId, weekId, () => {
+        // Subscribe to real-time updates (store callbacks for targeted unsubscribe)
+        const proposerCb = () => {
             if (_expandedProposalId === proposal.id) {
                 _renderAll();
             }
-        });
-        _availabilityUnsubs.push({ teamId: proposal.proposerTeamId, weekId });
+        };
+        await AvailabilityService.subscribe(proposal.proposerTeamId, weekId, proposerCb);
+        _availabilityUnsubs.push({ teamId: proposal.proposerTeamId, weekId, callback: proposerCb });
 
-        await AvailabilityService.subscribe(proposal.opponentTeamId, weekId, () => {
+        const opponentCb = () => {
             if (_expandedProposalId === proposal.id) {
                 _renderAll();
             }
-        });
-        _availabilityUnsubs.push({ teamId: proposal.opponentTeamId, weekId });
+        };
+        await AvailabilityService.subscribe(proposal.opponentTeamId, weekId, opponentCb);
+        _availabilityUnsubs.push({ teamId: proposal.opponentTeamId, weekId, callback: opponentCb });
     }
 
     /**
@@ -926,9 +962,9 @@ const MatchesPanel = (function() {
     function _collapseCard() {
         _expandedProposalId = null;
 
-        // Unsubscribe from availability listeners
-        for (const { teamId, weekId } of _availabilityUnsubs) {
-            AvailabilityService.unsubscribe(teamId, weekId);
+        // Unsubscribe specific callbacks (preserves app.js subscriptions)
+        for (const { teamId, weekId, callback } of _availabilityUnsubs) {
+            AvailabilityService.unsubscribe(teamId, weekId, callback);
         }
         _availabilityUnsubs = [];
     }
@@ -1053,29 +1089,28 @@ const MatchesPanel = (function() {
      * Cancel a scheduled match (revert proposal to active)
      */
     async function _handleCancelMatch(matchId, btn) {
-        const confirmed = confirm('Cancel this scheduled match? The proposal will revert to active so you can pick a different slot.');
-        if (!confirmed) return;
-
-        btn.disabled = true;
-        btn.textContent = 'Cancelling...';
-
-        try {
-            const result = await ProposalService.cancelScheduledMatch(matchId);
-            if (result.success) {
-                ToastService.showSuccess('Match cancelled. Proposal is active again.');
-                // UI updates via listeners — match disappears from upcoming, proposal reappears in active
-            } else {
-                ToastService.showError(result.error || 'Failed to cancel match');
-            }
-        } catch (error) {
-            console.error('Cancel match failed:', error);
-            ToastService.showError('Network error — please try again');
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = 'Cancel';
-            }
+        const match = ScheduledMatchService.getMatch(matchId);
+        if (!match) {
+            ToastService.showError('Match not found');
+            return;
         }
+
+        CancelMatchModal.show(match, async (confirmedMatchId) => {
+            try {
+                const result = await ProposalService.cancelScheduledMatch(confirmedMatchId);
+                if (result.success) {
+                    const isQuickAdd = match.origin === 'quick_add' || !match.proposalId;
+                    ToastService.showSuccess(isQuickAdd
+                        ? 'Match cancelled.'
+                        : 'Match cancelled. Proposal is active again.');
+                } else {
+                    ToastService.showError(result.error || 'Failed to cancel scheduled match');
+                }
+            } catch (error) {
+                console.error('Cancel match failed:', error);
+                ToastService.showError('Network error — please try again');
+            }
+        });
     }
 
     /**
@@ -1218,7 +1253,7 @@ const MatchesPanel = (function() {
                     const discordUserId = userDoc.data().discordUserId;
                     if (discordUserId) {
                         setTimeout(() => {
-                            window.location.href = `discord://discord.com/users/${discordUserId}`;
+                            window.open(`discord://discord.com/users/${discordUserId}`, '_blank');
                         }, 100);
                         return;
                     }

@@ -23,6 +23,14 @@ const TeamBrowserState = (function() {
         }));
     }
 
+    // Dispatch filter change event for cross-component communication (Slice A4)
+    function _dispatchFilterChange() {
+        if (_onFilterChange) {
+            _onFilterChange({ search: _searchQuery, divisions: _divisionFilters });
+        }
+        window.dispatchEvent(new CustomEvent('team-browser-filter-changed'));
+    }
+
     // ========================================
     // Selection Methods
     // ========================================
@@ -128,9 +136,7 @@ const TeamBrowserState = (function() {
 
     function setSearchQuery(query) {
         _searchQuery = (query || '').toLowerCase().trim();
-        if (_onFilterChange) {
-            _onFilterChange({ search: _searchQuery, divisions: _divisionFilters });
-        }
+        _dispatchFilterChange();
     }
 
     function getDivisionFilters() {
@@ -147,24 +153,18 @@ const TeamBrowserState = (function() {
         } else {
             _divisionFilters.add(division);
         }
-        if (_onFilterChange) {
-            _onFilterChange({ search: _searchQuery, divisions: _divisionFilters });
-        }
+        _dispatchFilterChange();
         console.log('🏷️ Division filters:', Array.from(_divisionFilters));
     }
 
     function clearDivisionFilters() {
         _divisionFilters.clear();
-        if (_onFilterChange) {
-            _onFilterChange({ search: _searchQuery, divisions: _divisionFilters });
-        }
+        _dispatchFilterChange();
     }
 
     function toggleFavoritesFilter() {
         _favoritesFilterActive = !_favoritesFilterActive;
-        if (_onFilterChange) {
-            _onFilterChange({ search: _searchQuery, divisions: _divisionFilters });
-        }
+        _dispatchFilterChange();
     }
 
     function isFavoritesFilterActive() {

@@ -22,7 +22,7 @@
 
 const { QW_TEAMS, CAPTAIN_DISCORD } = require('./seed-data/teams');
 const CONFIG = require('./seed-data/config');
-const { getCurrentWeekNumber, getISOWeekYear } = require('../functions/week-utils');
+const { getCurrentWeekNumber, getISOWeekYear, computeScheduledDate } = require('../functions/week-utils');
 
 // ============================================
 // Parse flags
@@ -509,6 +509,174 @@ async function seed() {
         const discordIcon = leaderDiscord ? '📱' : '  ';
         const tag = team.teamTag ? `[${team.teamTag}]` : '';
         console.log(`  ${logoIcon}${discordIcon} ✓ ${team.teamName} ${tag} — ${roster.length} players (${team.divisions.join('/')})`);
+    }
+
+    // ============================================
+    // Seed match proposals (2 active) + scheduled matches (5 upcoming)
+    // ============================================
+    if (!LEADERS_ONLY) {
+        console.log('\n⚔️  Seeding match proposals & scheduled matches...\n');
+
+        const matchBatch = db.batch();
+        const now = Timestamp.now();
+
+        // Pick teams for matchups — use well-known D1 teams for visual variety
+        const matchups = [
+            // Scheduled matches (5)
+            { a: 'team-ving-001', b: 'team-sd-001',   slot: 'fri_2200', gameType: 'practice', week: 0 },
+            { a: 'team-sd-001',   b: 'team-koff-001', slot: 'sun_2130', gameType: 'official', week: 0 },
+            { a: 'team-hx-001',   b: 'team-koff-001', slot: 'thu_2100', gameType: 'practice', week: 1 },
+            { a: 'team-gg-001',   b: 'team-tsq-001',  slot: 'thu_2100', gameType: 'official', week: 1 },
+            { a: 'team-sr-001',   b: 'team-pol-001',  slot: 'wed_2000', gameType: 'official', week: 1 },
+        ];
+
+        for (const m of matchups) {
+            const teamA = QW_TEAMS.find(t => t.id === m.a);
+            const teamB = QW_TEAMS.find(t => t.id === m.b);
+            const weekId = weekIds[m.week];
+            const scheduledDate = computeScheduledDate(weekId, m.slot);
+            const leaderA = generateUserId(teamA.teamTag, teamA.players.find(p => p.role === 'leader').name);
+            const leaderB = generateUserId(teamB.teamTag, teamB.players.find(p => p.role === 'leader').name);
+
+            const matchRef = db.collection('scheduledMatches').doc();
+            matchBatch.set(matchRef, {
+                teamAId: m.a,
+                teamAName: teamA.teamName,
+                teamATag: teamA.teamTag || '',
+                teamBId: m.b,
+                teamBName: teamB.teamName,
+                teamBTag: teamB.teamTag || '',
+                weekId,
+                slotId: m.slot,
+                scheduledDate,
+                blockedSlot: m.slot,
+                blockedTeams: [m.a, m.b],
+                teamARoster: [leaderA],
+                teamBRoster: [leaderB],
+                proposalId: 'seed-proposal',
+                status: 'upcoming',
+                gameType: m.gameType,
+                gameTypeSetBy: leaderA,
+                confirmedAt: now,
+                confirmedByA: leaderA,
+                confirmedByB: leaderB,
+                createdAt: now,
+            });
+
+            console.log(`  ✓ Match: ${teamA.teamTag || '?'} vs ${teamB.teamTag || '?'} — ${m.slot} (${m.gameType})`);
+        }
+
+        // Proposals (2 active) — dev user's team (Slackers) involved so they show in sidebar
+        const proposals = [
+            { proposer: 'team-sr-001', opponent: 'team-bb-001', week: 0, gameType: 'official' },
+            { proposer: 'team-axe-001', opponent: 'team-sr-001', week: 1, gameType: 'practice' },
+        ];
+
+        for (const p of proposals) {
+            const proposerTeam = QW_TEAMS.find(t => t.id === p.proposer);
+            const opponentTeam = QW_TEAMS.find(t => t.id === p.opponent);
+            const weekId = weekIds[p.week];
+            const createdBy = generateUserId(proposerTeam.teamTag, proposerTeam.players.find(pl => pl.role === 'leader').name);
+
+            // Collect all member userIds for involvedTeamMembers
+            const involvedMembers = [
+                ...proposerTeam.players.map(pl => {
+                    if (pl.isDevUser) return CONFIG.DEV_USER.uid;
+                    return generateUserId(proposerTeam.teamTag, pl.name);
+                }),
+                ...opponentTeam.players.map(pl => {
+                    if (pl.isDevUser) return CONFIG.DEV_USER.uid;
+                    return generateUserId(opponentTeam.teamTag, pl.name);
+                }),
+            ];
+
+            const proposalRef = db.collection('matchProposals').doc();
+            matchBatch.set(proposalRef, {
+                proposerTeamId: p.proposer,
+                opponentTeamId: p.opponent,
+                weekId,
+                minFilter: { yourTeam: 3, opponent: 3 },
+                gameType: p.gameType,
+                proposerStandin: false,
+                opponentStandin: false,
+                proposerConfirmedSlots: {},
+                opponentConfirmedSlots: {},
+                confirmedSlotId: null,
+                scheduledMatchId: null,
+                status: 'active',
+                cancelledBy: null,
+                proposerTeamName: proposerTeam.teamName,
+                proposerTeamTag: proposerTeam.teamTag || '',
+                opponentTeamName: opponentTeam.teamName,
+                opponentTeamTag: opponentTeam.teamTag || '',
+                involvedTeamMembers: involvedMembers,
+                createdBy,
+                createdAt: now,
+                updatedAt: now,
+                expiresAt: Timestamp.fromDate(new Date(Date.now() + 7 * 86400000)),
+            });
+
+            console.log(`  ✓ Proposal: ${proposerTeam.teamTag || '?'} → ${opponentTeam.teamTag || '?'} (${p.gameType})`);
+        }
+
+        await matchBatch.commit();
+        console.log(`\n  📋 ${proposals.length} proposals, ⚔️ ${matchups.length} scheduled matches`);
+    }
+
+    // ============================================
+    // Seed voice recording manifests (for replay auto-load testing)
+    // ============================================
+    if (!LEADERS_ONLY) {
+        console.log('\n🎙️  Seeding voice recording manifests...\n');
+
+        // Use a fake demo SHA256 — in production, this comes from QW Hub
+        const testDemoSha256 = 'a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678';
+
+        await db.collection('voiceRecordings').doc(testDemoSha256).set({
+            demoSha256: testDemoSha256,
+            teamTag: 'sr',
+            teamId: 'team-sr-001',
+            source: 'firebase_storage',
+            tracks: [
+                {
+                    playerName: 'ParadokS',
+                    fileName: 'ParadokS.ogg',
+                    storagePath: `voice-recordings/${testDemoSha256}/ParadokS.ogg`,
+                    size: 1945357,
+                    duration: null,
+                },
+                {
+                    playerName: 'zero',
+                    fileName: 'zero.ogg',
+                    storagePath: `voice-recordings/${testDemoSha256}/zero.ogg`,
+                    size: 2103482,
+                    duration: null,
+                },
+                {
+                    playerName: 'xantom',
+                    fileName: 'xantom.ogg',
+                    storagePath: `voice-recordings/${testDemoSha256}/xantom.ogg`,
+                    size: 1876234,
+                    duration: null,
+                },
+                {
+                    playerName: 'bps',
+                    fileName: 'bps.ogg',
+                    storagePath: `voice-recordings/${testDemoSha256}/bps.ogg`,
+                    size: 1654891,
+                    duration: null,
+                },
+            ],
+            mapName: 'dm3',
+            recordedAt: Timestamp.fromDate(new Date(Date.now() - 2 * 86400000)),
+            uploadedAt: Timestamp.fromDate(new Date(Date.now() - 2 * 86400000)),
+            uploadedBy: 'quad-bot',
+            trackCount: 4,
+        });
+
+        console.log(`  ✓ voiceRecordings/${testDemoSha256.substring(0, 12)}… (sr, dm3, 4 tracks)`);
+        console.log(`    Test URL: replay.html?demo=${testDemoSha256}`);
+        console.log(`    Note: Audio files not in Storage — will fall back to drop zone`);
     }
 
     // ============================================

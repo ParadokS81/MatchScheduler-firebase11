@@ -140,6 +140,28 @@ const ScheduledMatchService = (function() {
         );
     }
 
+    // ─── Cloud Function Calls ──────────────────────────────────────────
+
+    /**
+     * Quick-add a pre-arranged match (bypasses proposal workflow).
+     * @param {Object} params
+     * @param {string} params.teamId - Your team
+     * @param {string} params.opponentTeamId - Opponent team
+     * @param {string} params.dateTime - ISO 8601 UTC datetime
+     * @param {string} params.gameType - 'official' or 'practice'
+     * @returns {Promise<{success: boolean, matchId?: string, error?: string}>}
+     */
+    async function quickAddMatch({ teamId, opponentTeamId, dateTime, gameType }) {
+        try {
+            return await TeamService.callFunction('quickAddMatch', {
+                teamId, opponentTeamId, dateTime, gameType
+            });
+        } catch (error) {
+            console.error('quickAddMatch error:', error);
+            return { success: false, error: error.message || 'Unknown error' };
+        }
+    }
+
     // ─── Public API ────────────────────────────────────────────────────
 
     return {
@@ -149,6 +171,7 @@ const ScheduledMatchService = (function() {
         removeFromCache,
         clearCache,
         getBlockedSlotsForTeam,
-        getUpcomingMatchesForTeams
+        getUpcomingMatchesForTeams,
+        quickAddMatch
     };
 })();

@@ -135,7 +135,13 @@ const ProposalService = (function() {
         const proposerAvail = AvailabilityService.getCachedData(proposerTeamId, weekId);
         const opponentAvail = AvailabilityService.getCachedData(opponentTeamId, weekId);
 
-        if (!proposerAvail || !opponentAvail) return [];
+        if (!proposerAvail || !opponentAvail) {
+            console.warn('⚠️ computeViableSlots: cache miss', {
+                proposerTeamId, opponentTeamId, weekId,
+                hasProposer: !!proposerAvail, hasOpponent: !!opponentAvail
+            });
+            return [];
+        }
 
         const proposerSlots = proposerAvail.slots || {};
         const opponentSlots = opponentAvail.slots || {};
@@ -154,9 +160,14 @@ const ProposalService = (function() {
             ...Object.keys(opponentSlots)
         ]);
 
+        let blockedCount = 0;
+        let belowFilterCount = 0;
         for (const slotId of allSlotIds) {
             // Skip blocked slots
-            if (proposerBlocked.has(slotId) || opponentBlocked.has(slotId)) continue;
+            if (proposerBlocked.has(slotId) || opponentBlocked.has(slotId)) {
+                blockedCount++;
+                continue;
+            }
 
             const proposerPlayers = proposerSlots[slotId] || [];
             const opponentPlayers = opponentSlots[slotId] || [];
@@ -174,7 +185,50 @@ const ProposalService = (function() {
                     proposerRoster: proposerPlayers,
                     opponentRoster: opponentPlayers
                 });
+            } else {
+                belowFilterCount++;
             }
+        }
+
+        // Diagnostic: log when result is 0 but data exists
+        if (viableSlots.length === 0 && allSlotIds.size > 0) {
+            // Find the slot with highest combined player count (the one most likely to be "viable")
+            let bestSlot = null;
+            let bestTotal = -1;
+            for (const sid of allSlotIds) {
+                if (proposerBlocked.has(sid) || opponentBlocked.has(sid)) continue;
+                const p = proposerSlots[sid];
+                const o = opponentSlots[sid];
+                const pLen = Array.isArray(p) ? p.length : (p ? 'NOT_ARRAY:' + typeof p : 0);
+                const oLen = Array.isArray(o) ? o.length : (o ? 'NOT_ARRAY:' + typeof o : 0);
+                const total = (typeof pLen === 'number' ? pLen : 0) + (typeof oLen === 'number' ? oLen : 0);
+                if (total > bestTotal) {
+                    bestTotal = total;
+                    bestSlot = { sid, pLen, oLen };
+                }
+            }
+            console.warn(
+                `⚠️ computeViableSlots: 0 viable | ${allSlotIds.size} total | blocked=${blockedCount} belowFilter=${belowFilterCount}` +
+                ` | filter=${minFilter.yourTeam}v${minFilter.opponent}` +
+                ` | proposerKeys=${Object.keys(proposerSlots).length} opponentKeys=${Object.keys(opponentSlots).length}` +
+                ` | best: ${bestSlot ? bestSlot.sid + ' ' + bestSlot.pLen + 'v' + bestSlot.oLen : 'none'}` +
+                ` | teams: ${proposerTeamId.slice(0,8)}.. vs ${opponentTeamId.slice(0,8)}.. | week=${weekId}`
+            );
+            // Dump top-5 slots by combined count for deeper analysis
+            const ranked = [...allSlotIds]
+                .filter(sid => !proposerBlocked.has(sid) && !opponentBlocked.has(sid))
+                .map(sid => {
+                    const p = proposerSlots[sid] || [];
+                    const o = opponentSlots[sid] || [];
+                    return `${sid}:${Array.isArray(p)?p.length:'!'}v${Array.isArray(o)?o.length:'!'}`;
+                })
+                .sort((a, b) => {
+                    const aTotal = a.split(':')[1].split('v').reduce((s,n) => s + (parseInt(n)||0), 0);
+                    const bTotal = b.split(':')[1].split('v').reduce((s,n) => s + (parseInt(n)||0), 0);
+                    return bTotal - aTotal;
+                })
+                .slice(0, 5);
+            console.warn('  top-5 slots:', ranked.join(', '));
         }
 
         return viableSlots.sort((a, b) => _slotSortOrder(a.slotId) - _slotSortOrder(b.slotId));

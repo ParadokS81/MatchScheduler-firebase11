@@ -5,6 +5,10 @@ module.exports = {
     "./public/**/*.{html,js}",
     "./public/js/**/*.js"
   ],
+  safelist: [
+    'text-green-500',
+    'text-red-500',
+  ],
   theme: {
     extend: {
       colors: {

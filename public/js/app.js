@@ -38,11 +38,70 @@ const MatchSchedulerApp = (function() {
             ]);
         }
 
+        // Slice A1: Check for admin custom claims before initializing components
+        await _checkAdminClaims();
+
+        // Slice M1.0: Mobile detection — route to MobileApp on small screens
+        const MOBILE_BREAKPOINT = '(max-width: 768px)';
+        const mobileMediaQuery = window.matchMedia(MOBILE_BREAKPOINT);
+
+        if (mobileMediaQuery.matches && typeof MobileApp !== 'undefined') {
+            console.log('📱 Mobile viewport detected — initializing MobileApp');
+            await MobileApp.init();
+            _initialized = true;
+
+            // Listen for viewport changes (e.g., dev tools resize)
+            mobileMediaQuery.addEventListener('change', (e) => {
+                window.location.reload();
+            });
+
+            console.log('✅ MatchScheduler (Mobile) initialized successfully');
+            return;
+        }
+
         _initializeComponents();
         _setupEventListeners();
         _initialized = true;
 
+        // Listen for viewport changes to mobile — reload to re-init
+        mobileMediaQuery.addEventListener('change', (e) => {
+            if (e.matches) window.location.reload();
+        });
+
         console.log('✅ MatchScheduler initialized successfully');
+    }
+
+    /**
+     * Slice A1: Check if the current user has admin custom claims.
+     * Sets window._isAdmin and shows/hides admin tab button.
+     */
+    async function _checkAdminClaims() {
+        const user = window.firebase?.auth?.currentUser;
+        if (!user) {
+            window._isAdmin = false;
+            return;
+        }
+        try {
+            const tokenResult = await user.getIdTokenResult();
+            window._isAdmin = tokenResult.claims.admin === true;
+        } catch (err) {
+            console.warn('Admin claims check failed:', err);
+            window._isAdmin = false;
+        }
+
+        // Dev mode override: Auth emulator doesn't support custom claims
+        if (!window._isAdmin && AuthService.isDevMode() && user.uid === 'dev-user-001') {
+            window._isAdmin = true;
+        }
+
+        if (window._isAdmin) {
+            const adminTab = document.getElementById('admin-tab-btn');
+            if (adminTab) adminTab.classList.remove('hidden');
+            console.log('🔑 Admin mode available');
+        } else {
+            const adminTab = document.getElementById('admin-tab-btn');
+            if (adminTab) adminTab.classList.add('hidden');
+        }
     }
 
     // Initialize components
@@ -78,13 +137,7 @@ const MatchSchedulerApp = (function() {
         // Set up scheduled match highlights on grid
         _setupScheduledMatchListener();
 
-        // Initialize MobileLayout for drawer management (Slice 10.0b)
-        if (typeof MobileLayout !== 'undefined') {
-            MobileLayout.init();
-        }
-        if (typeof MobileBottomBar !== 'undefined') {
-            MobileBottomBar.init();
-        }
+        // Old mobile drawer/bottom-bar removed in Slice M1.0 (replaced by MobileApp)
 
         // Initialize hash-based router for back/forward navigation
         if (typeof Router !== 'undefined') {
@@ -382,6 +435,8 @@ const MatchSchedulerApp = (function() {
             if (_weekDisplay2) _weekDisplay2.enterComparisonMode();
             // Initial highlight update
             _updateComparisonHighlights();
+            // Show opponent scheduled matches on grid
+            _updateScheduledMatchHighlights();
         });
 
         // When comparison results update, refresh highlights
@@ -391,6 +446,7 @@ const MatchSchedulerApp = (function() {
             if (_weekDisplay1) _weekDisplay1.enterComparisonMode();
             if (_weekDisplay2) _weekDisplay2.enterComparisonMode();
             _updateComparisonHighlights();
+            _updateScheduledMatchHighlights();
         });
 
         // When comparison ends, exit comparison mode
@@ -398,6 +454,8 @@ const MatchSchedulerApp = (function() {
             console.log('📊 Comparison ended - exiting comparison mode');
             if (_weekDisplay1) _weekDisplay1.exitComparisonMode();
             if (_weekDisplay2) _weekDisplay2.exitComparisonMode();
+            // Revert to showing only user team matches
+            _updateScheduledMatchHighlights();
         });
     }
 
@@ -552,6 +610,9 @@ const MatchSchedulerApp = (function() {
             detail: { teamId: team?.id || null }
         }));
 
+        // Refresh scheduled match highlights for new team
+        _updateScheduledMatchHighlights();
+
         if (team) {
             // Set up new availability listeners
             _setupAvailabilityListeners(team.id);
@@ -684,9 +745,17 @@ const MatchSchedulerApp = (function() {
         if (typeof ScheduledMatchService === 'undefined') return;
 
         const currentTeamId = _selectedTeam ? _selectedTeam.id : null;
+
+        // Collect team IDs to show matches for: user's team + comparison opponents
+        const teamIds = new Set();
+        if (currentTeamId) teamIds.add(currentTeamId);
+
+        // Only show the user's own team's scheduled matches in the grid.
+        // Opponent teams' matches are visible in the left sidebar Upcoming section.
+
         const allMatches = ScheduledMatchService.getMatchesFromCache()
             .filter(m => m.status === 'upcoming')
-            .filter(m => currentTeamId && (m.teamAId === currentTeamId || m.teamBId === currentTeamId));
+            .filter(m => [...teamIds].some(tid => m.teamAId === tid || m.teamBId === tid));
 
         if (_weekDisplay1) {
             const week1Id = _weekDisplay1.getWeekId();
@@ -717,6 +786,11 @@ const MatchSchedulerApp = (function() {
 
         // Listen for profile updates (avatar changes, etc.) to refresh grid display
         window.addEventListener('profile-updated', _handleProfileUpdated);
+
+        // Slice A1: Re-check admin claims when auth state changes (sign in/out)
+        window.addEventListener('auth-state-changed', async () => {
+            await _checkAdminClaims();
+        });
     }
 
     /**

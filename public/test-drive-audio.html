@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Google Drive Audio CORS Test</title>
+    <style>
+        body { font-family: system-ui; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+        .step { margin: 1.5rem 0; padding: 1rem; border: 1px solid #ccc; border-radius: 8px; }
+        .step h3 { margin-top: 0; }
+        .pass { border-color: #4caf50; background: #e8f5e9; }
+        .fail { border-color: #f44336; background: #ffebee; }
+        button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+        input { padding: 0.5rem; font-size: 1rem; width: 100%; box-sizing: border-box; }
+        #log { white-space: pre-wrap; font-family: monospace; font-size: 0.85rem; background: #111; color: #0f0; padding: 1rem; border-radius: 8px; max-height: 300px; overflow-y: auto; }
+        audio { width: 100%; margin-top: 0.5rem; }
+    </style>
+</head>
+<body>
+    <h1>Google Drive Audio — CORS Test</h1>
+    <p>Tests whether a browser can fetch audio from Google Drive API and play it.</p>
+
+    <div class="step" id="step1">
+        <h3>Step 1 — Sign in with Google</h3>
+        <p>Opens Google's login page in this tab. You'll be redirected back with a token.</p>
+        <button id="signin-btn" onclick="doSignIn()">Sign in with Google</button>
+        <p id="signin-status"></p>
+    </div>
+
+    <div class="step" id="step2">
+        <h3>Step 2 — Enter a Drive file ID</h3>
+        <p>Upload any OGG/MP3 file to your Google Drive. Copy the file ID from the URL:<br>
+        <code>drive.google.com/file/d/<b>{THIS_PART}</b>/view</code></p>
+        <input type="text" id="file-id" placeholder="e.g. 1aBcDeFgHiJkLmNoPqRsTuVwXyZ" value="1qDFHI2_P9bpnL246A48Y4PT2pab_ixGc">
+    </div>
+
+    <div class="step" id="step3">
+        <h3>Step 3 — Run the test</h3>
+        <button id="test-btn" onclick="runTest()" disabled>Fetch & Play</button>
+    </div>
+
+    <div class="step" id="results" style="display:none">
+        <h3>Results</h3>
+        <div id="result-fetch"></div>
+        <div id="result-play"></div>
+        <audio id="player" controls></audio>
+    </div>
+
+    <h3>Log</h3>
+    <div id="log"></div>
+
+    <script>
+        const CLIENT_ID = '340309534131-if9rcttvfm38ik2l2qhicl7blkea938b.apps.googleusercontent.com';
+        const SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
+        const REDIRECT_URI = window.location.origin + window.location.pathname;
+
+        let accessToken = null;
+
+        function log(msg) {
+            const el = document.getElementById('log');
+            el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        // Check if we're returning from OAuth redirect (token in URL hash)
+        function checkForToken() {
+            const hash = window.location.hash.substring(1);
+            if (!hash) return;
+
+            const params = new URLSearchParams(hash);
+            const token = params.get('access_token');
+            if (token) {
+                accessToken = token;
+                const expiresIn = params.get('expires_in');
+                log(`OAuth redirect received! Token: ${token.substring(0, 20)}...`);
+                log(`Token expires in: ${expiresIn}s`);
+                document.getElementById('signin-status').textContent = '✅ Signed in! Token received.';
+                document.getElementById('step1').classList.add('pass');
+                document.getElementById('test-btn').disabled = false;
+
+                // Clean the URL hash so token isn't sitting in the address bar
+                history.replaceState(null, '', window.location.pathname);
+            }
+
+            const error = params.get('error');
+            if (error) {
+                log(`OAuth error: ${error}`);
+                document.getElementById('signin-status').textContent = '❌ ' + error;
+            }
+        }
+
+        function doSignIn() {
+            log('Redirecting to Google OAuth...');
+            const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+                client_id: CLIENT_ID,
+                redirect_uri: REDIRECT_URI,
+                response_type: 'token',
+                scope: SCOPES,
+                include_granted_scopes: 'true',
+                prompt: 'consent'
+            });
+            window.location.href = authUrl;
+        }
+
+        async function runTest() {
+            const fileId = document.getElementById('file-id').value.trim();
+            if (!fileId) { log('ERROR: Enter a file ID first'); return; }
+            if (!accessToken) { log('ERROR: Sign in first'); return; }
+
+            const results = document.getElementById('results');
+            const resultFetch = document.getElementById('result-fetch');
+            const resultPlay = document.getElementById('result-play');
+            const player = document.getElementById('player');
+            results.style.display = 'block';
+
+            // --- Test 1: Fetch via Drive API ---
+            log(`\nFetching file ${fileId} from Drive API...`);
+            resultFetch.textContent = '⏳ Fetching...';
+
+            try {
+                const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+                log(`GET ${url}`);
+                log(`Authorization: Bearer ${accessToken.substring(0, 20)}...`);
+
+                const t0 = performance.now();
+                const response = await fetch(url, {
+                    headers: { Authorization: `Bearer ${accessToken}` }
+                });
+                const elapsed = Math.round(performance.now() - t0);
+
+                log(`Response: ${response.status} ${response.statusText} (${elapsed}ms)`);
+                log(`Content-Type: ${response.headers.get('content-type')}`);
+                log(`Content-Length: ${response.headers.get('content-length')}`);
+
+                const corsHeader = response.headers.get('access-control-allow-origin');
+                log(`Access-Control-Allow-Origin: ${corsHeader || '(not exposed — but fetch succeeded = CORS OK)'}`);
+
+                if (!response.ok) {
+                    const body = await response.text();
+                    log(`ERROR body: ${body.substring(0, 500)}`);
+                    resultFetch.textContent = `❌ FETCH FAILED: ${response.status} ${response.statusText}`;
+                    results.classList.add('fail');
+                    return;
+                }
+
+                const blob = await response.blob();
+                log(`Blob received: ${blob.size} bytes, type: ${blob.type}`);
+                resultFetch.textContent = `✅ FETCH OK — ${(blob.size / 1024).toFixed(0)} KB in ${elapsed}ms (CORS passed!)`;
+
+                // --- Test 2: Play as Audio ---
+                log(`\nCreating blob URL and loading into Audio element...`);
+                resultPlay.textContent = '⏳ Loading audio...';
+
+                const blobUrl = URL.createObjectURL(blob);
+                player.src = blobUrl;
+
+                player.oncanplay = () => {
+                    const mins = Math.floor(player.duration / 60);
+                    const secs = Math.round(player.duration % 60);
+                    log(`Audio canplay! Duration: ${mins}m ${secs}s`);
+                    resultPlay.textContent = `✅ AUDIO PLAYABLE — ${mins}m ${secs}s duration`;
+                    results.classList.add('pass');
+                    log('\n🎉 ALL TESTS PASSED — Google Drive audio streaming via CORS works!');
+                };
+
+                player.onerror = () => {
+                    log(`Audio error: ${player.error?.message || 'unknown'} (code ${player.error?.code})`);
+                    resultPlay.textContent = `❌ AUDIO FAILED — browser can't decode this format`;
+                    results.classList.add('fail');
+                };
+
+                player.load();
+
+            } catch (err) {
+                log(`FETCH ERROR: ${err.message}`);
+                if (err.message.includes('CORS') || err.message.includes('NetworkError')) {
+                    resultFetch.textContent = `❌ CORS BLOCKED — browser refused the cross-origin request`;
+                    log('\n💀 CORS FAILED. Google Drive API does not allow cross-origin audio fetch.');
+                } else {
+                    resultFetch.textContent = `❌ FETCH ERROR: ${err.message}`;
+                }
+                results.classList.add('fail');
+            }
+        }
+
+        // On page load, check if returning from OAuth
+        checkForToken();
+    </script>
+</body>
+</html>

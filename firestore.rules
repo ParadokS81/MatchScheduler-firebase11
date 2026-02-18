@@ -282,6 +282,8 @@ service cloud.firestore {
           !('teamTag' in data) || isValidTeamTag()
         ) && (
           !('schedulers' in data) || isValidSchedulers()
+        ) && (
+          !('voiceSettings' in data) || isValidVoiceSettings()
         );
       }
 
@@ -294,6 +296,12 @@ service cloud.firestore {
       function isValidSchedulers() {
         return request.resource.data.schedulers is list
           && request.resource.data.schedulers.size() <= 10;
+      }
+
+      function isValidVoiceSettings() {
+        return request.resource.data.voiceSettings is map
+          && 'defaultVisibility' in request.resource.data.voiceSettings
+          && request.resource.data.voiceSettings.defaultVisibility in ['public', 'private'];
       }
 
       function isValidTeamName() {
@@ -423,6 +431,56 @@ service cloud.firestore {
     match /feedback/{feedbackId} {
       allow read: if false;
       allow write: if false;
+    }
+
+    // Bot registrations - voice bot connection status per team (Phase 1a)
+    match /botRegistrations/{teamId} {
+      // Leaders and schedulers can read their team's registration (for UI status display)
+      allow read: if request.auth != null
+        && (get(/databases/$(database)/documents/teams/$(teamId)).data.leaderId == request.auth.uid
+            || ('schedulers' in get(/databases/$(database)/documents/teams/$(teamId)).data
+                && request.auth.uid in get(/databases/$(database)/documents/teams/$(teamId)).data.schedulers));
+
+      // All writes via Cloud Function or Admin SDK (bot)
+      allow write: if false;
+    }
+
+    // Deletion requests — coordinates Firebase + quad server cleanup
+    match /deletionRequests/{requestId} {
+      // Team leaders can read their own team's deletion requests
+      allow read: if request.auth != null
+        && resource.data.teamId in
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teams;
+
+      // All writes via Cloud Function or Admin SDK
+      allow write: if false;
+    }
+
+    // Voice recordings manifest — written by Quad bot via Admin SDK
+    // Privacy: public recordings readable by anyone, private require team membership
+    // Legacy: recordings with empty teamId or missing visibility stay public
+    match /voiceRecordings/{demoSha256} {
+      allow read: if
+        resource.data.visibility == 'public'
+        || resource.data.teamId == ''
+        || !('visibility' in resource.data)
+        || (request.auth != null
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teams[resource.data.teamId] == true);
+      allow write: if false; // Only Admin SDK (Quad bot) can write
+    }
+
+    // ===== Admin Collections (Slice A1) =====
+
+    // Weekly stats — written by scheduled Cloud Function, read by admin
+    match /weeklyStats/{weekId} {
+      allow read: if request.auth != null && request.auth.token.admin == true;
+      allow write: if false; // Cloud Functions use Admin SDK
+    }
+
+    // Recording sessions — written by quad bot via Admin SDK, read by admin
+    match /recordingSessions/{sessionId} {
+      allow read: if request.auth != null && request.auth.token.admin == true;
+      allow write: if false; // Quad bot uses Admin SDK
     }
 
     // Deny all other access by default

@@ -15,6 +15,10 @@ This document defines the authoritative data structures for all Firestore collec
 | `eventLog` | Custom format | Audit trail for team operations |
 | `matchProposals` | Auto-generated | Match proposals between teams |
 | `scheduledMatches` | Auto-generated | Confirmed scheduled matches |
+| `voiceRecordings` | `{demoSha256}` | Voice recording manifests for replay auto-load |
+| `botRegistrations` | `{teamId}` | Voice bot connection status per team |
+| `weeklyStats` | `{weekId}` (YYYY-WW) | Weekly platform activity stats (admin-only) |
+| `recordingSessions` | Auto-generated | Voice recording session tracking (admin-only) |
 
 ---
 
@@ -164,6 +168,11 @@ interface TeamDocument {
       medium: string;         // 150px - for drawer, cards
       small: string;          // 48px - for badges, comparison view
     };
+  };
+
+  // Voice recording settings (Phase 2 — read by Quad bot at upload time)
+  voiceSettings?: {
+    defaultVisibility: 'public' | 'private';  // Applied to new recordings at upload
   };
 
   // Metadata
@@ -317,7 +326,8 @@ type EventType =
   | 'PROPOSAL_CREATED'
   | 'SLOT_CONFIRMED'
   | 'MATCH_SCHEDULED'
-  | 'PROPOSAL_CANCELLED';
+  | 'PROPOSAL_CANCELLED'
+  | 'MATCH_QUICK_ADDED';           // Slice 18.0: Match added via quick-add (no proposal)
 ```
 
 **Event ID Format:** `{date}-{time}-{teamName}-{type}_{randomId}`
@@ -430,8 +440,10 @@ interface ScheduledMatchDocument {
   teamARoster: string[];           // userIds available at confirmation
   teamBRoster: string[];           // userIds available at confirmation
 
-  // Origin
-  proposalId: string;              // Reference back to matchProposal
+  // Origin (Slice 18.0: Quick Add Match)
+  origin: 'proposal' | 'quick_add';  // How the match was created (missing = 'proposal' for legacy docs)
+  proposalId: string | null;         // Reference back to matchProposal (null for quick_add)
+  addedBy: string | null;            // userId who quick-added (null for proposal-created)
 
   // Status
   status: 'upcoming' | 'completed' | 'cancelled';
@@ -443,7 +455,7 @@ interface ScheduledMatchDocument {
   // Metadata
   confirmedAt: Date;
   confirmedByA: string;            // userId from team A who confirmed
-  confirmedByB: string;            // userId from team B who confirmed
+  confirmedByB: string | null;     // userId from team B who confirmed (null for quick_add)
   createdAt: Date;
 }
 ```
@@ -451,10 +463,151 @@ interface ScheduledMatchDocument {
 **Key Points:**
 - `blockedTeams` array-contains enables querying blocked slots per team
 - `scheduledDate` computed from weekId + slotId for display
-- Roster snapshots preserve who was available at confirmation time
+- Roster snapshots preserve who was available at confirmation time (empty `[]` for quick_add)
 - `gameType` is required - user must explicitly choose 'official' or 'practice' when confirming
+- `origin` field: `'proposal'` for matches created via proposal workflow, `'quick_add'` for direct adds. Legacy docs without this field are treated as `'proposal'`
 - All matches are publicly readable (community feed + public API for QWHub)
 - Document ID: auto-generated
+
+---
+
+## `/voiceRecordings/{demoSha256}`
+
+Voice recording manifest for auto-loading audio on the replay page. Written by Quad bot via Admin SDK after the fast pipeline splits audio per map.
+
+```typescript
+interface VoiceRecordingDocument {
+  demoSha256: string;                              // Matches demo ID from QW Hub (document ID)
+  teamTag: string;                                 // ASCII team tag (lowercase), e.g., "sr"
+  teamId: string;                                  // Firestore team ID, e.g., "team-sr-001"
+  visibility: 'public' | 'private';                // Resolved at upload from team's defaultVisibility
+  source: 'firebase_storage' | 'google_drive';     // Which fetch path to use
+
+  tracks: VoiceTrack[];                            // Per-player audio files
+
+  mapName: string;                                 // Map name from demo, e.g., "dm3"
+  recordedAt: Timestamp;                           // When the match was played
+  uploadedAt: Timestamp;                           // When Quad uploaded the files
+  uploadedBy: string;                              // "quad-bot"
+  trackCount: number;                              // Convenience for UI (show "4 tracks")
+}
+
+interface VoiceTrack {
+  discordUserId: string;                 // Stable file identifier (Discord user ID)
+  discordUsername: string;               // Discord display name at recording time
+  playerName: string;                    // QW name (resolved or fallback)
+  resolved: boolean;                     // true if playerName was confirmed via roster/knownPlayers
+  fileName: string;                      // "{discordUserId}.ogg"
+  storagePath: string;                   // "voice-recordings/{teamId}/{sha256}/{discordUserId}.ogg"
+  size: number;                          // File size in bytes
+  duration: number | null;               // Audio duration in seconds (if known)
+}
+```
+
+**Key Points:**
+- Document ID = `demoSha256` (natural key, matches Hub demo URLs)
+- `visibility` controls Firestore read access; `private` requires team membership
+- `source` field enables Tier 2 (Google Drive) later without schema changes
+- `storagePath` per track lets frontend build download URLs
+- Legacy recordings (no `visibility` field or `teamId: ''`) treated as public
+- New storage path: `voice-recordings/{teamId}/{demoSha256}/{discordUserId}.ogg`
+- Legacy storage path: `voice-recordings/{demoSha256}/{playerName}.ogg` (still supported)
+- Admin-only write (Quad bot uses Admin SDK)
+
+---
+
+## `/botRegistrations/{teamId}`
+
+Voice bot connection status per team. Created when a team leader initiates bot registration, activated when the Quad bot completes setup in their Discord server.
+
+```typescript
+interface BotRegistrationDocument {
+  teamId: string;                     // = document ID
+  teamTag: string;
+  teamName: string;
+  authorizedDiscordUserId: string;    // Leader's Discord ID — only this user can run /register
+  registeredBy: string;               // Firebase UID of the leader
+  guildId: string | null;             // null while pending, populated on completion
+  guildName: string | null;
+  status: 'pending' | 'active';
+  knownPlayers: {
+    [discordUserId: string]: string;  // Discord user ID → QW display name
+  };
+  createdAt: Timestamp;
+  activatedAt: Timestamp | null;
+  updatedAt: Timestamp;
+}
+```
+
+**Key Points:**
+- Document ID = `teamId` (one registration per team)
+- `status: 'pending'` until Quad bot activates in the Discord server
+- `knownPlayers` maps Discord user IDs to QW names for voice track resolution
+- Read: team leader only (via Firestore rules `get()` on team doc)
+- Write: Admin SDK only (Cloud Function + Quad bot)
+
+---
+
+## `/weeklyStats/{weekId}`
+
+Weekly platform activity statistics, computed by a scheduled Cloud Function. Admin-only read access.
+
+```typescript
+interface WeeklyStatsDocument {
+  weekId: string;               // "2026-08" (YYYY-WW, same format as availability docs)
+  activeUsers: number;          // Unique users who marked ≥1 availability slot
+  activeTeams: number;          // Teams with ≥1 user with availability
+  proposalCount: number;        // Total proposals created this week (any status)
+  scheduledCount: number;       // Total confirmed matches this week
+  teamBreakdown: {              // Per-team activity breakdown
+    [teamId: string]: {
+      users: number;
+      proposals: number;
+      matches: number;
+    };
+  };
+  computedAt: Timestamp;
+}
+```
+
+**Key Points:**
+- Document ID = `weekId` (e.g., `"2026-08"`)
+- Written by: Scheduled Cloud Function (slice A5)
+- Read by: AdminStatsService (slice A2), AdminPanel (slice A3)
+- Client writes always denied — Admin SDK only
+
+---
+
+## `/recordingSessions/{auto-id}`
+
+Voice recording session tracking. Written by Quad bot via Admin SDK when a voice recording starts/ends.
+
+```typescript
+interface RecordingSessionDocument {
+  sessionId: string;            // Quad's internal UUID
+  teamId: string | null;        // From botRegistrations lookup. null if unregistered
+  guildId: string;              // Discord guild ID
+  guildName: string;            // Discord guild name
+  channelId: string;            // Discord voice channel ID
+  channelName: string;          // Discord voice channel name
+  participants: string[];       // Current discord display names (non-bot, live snapshot)
+  startedAt: Timestamp;         // When recording began
+  status: 'recording' | 'completed' | 'interrupted';
+  lastHeartbeat: Timestamp;     // Updated every 60s during recording
+  endedAt: Timestamp | null;    // When recording ended (null while recording)
+  duration: number | null;      // Total seconds (null while recording)
+  participantCount: number | null; // Peak participants (null while recording)
+}
+```
+
+**Key Points:**
+- Auto-generated document ID
+- Status lifecycle: `recording` → `completed` (normal) or `recording` → `interrupted` (crash recovery)
+- `lastHeartbeat` updated every 60s during active recording
+- Documents are never deleted
+- Written by: Quad bot via Admin SDK
+- Read by: RecordingSessionService (slice A3)
+- Composite index: `teamId ASC, startedAt DESC`
 
 ---
 
@@ -525,6 +678,10 @@ const docId = `${teamId}_${weekId}`;
 | `eventLog` | Authenticated users | Cloud Functions only |
 | `matchProposals` | Involved team members only | Cloud Functions only |
 | `scheduledMatches` | Authenticated users | Cloud Functions only |
+| `voiceRecordings` | Public if `visibility == 'public'` or legacy; private require team membership | Admin SDK only (Quad bot) |
+| `botRegistrations` | Team leader only | Admin SDK only (Cloud Function + Quad bot) |
+| `weeklyStats` | Admin only (custom claim) | Admin SDK only (Cloud Function) |
+| `recordingSessions` | Admin only (custom claim) | Admin SDK only (Quad bot) |
 
 ---
 
@@ -541,3 +698,7 @@ const docId = `${teamId}_${weekId}`;
 - **2026-02-05**: Added hiddenTimeSlots field to user document (Slice 12.0c)
 - **2026-02-08**: Added extraTimeSlots field to user document (Slice 14.0a)
 - **2026-02-08**: Added gameType, proposerStandin, opponentStandin to matchProposals; min filter range changed to 3-4
+- **2026-02-14**: Added voiceRecordings collection for replay auto-load (Voice Replay Tier 3)
+- **2026-02-14**: Added origin, addedBy fields to scheduledMatches; MATCH_QUICK_ADDED event type (Slice 18.0)
+- **2026-02-14**: Voice replay Phase 2 — visibility + track identity fields on voiceRecordings, botRegistrations collection, teams.voiceSettings (Slice P3.1)
+- **2026-02-16**: Added weeklyStats and recordingSessions admin-only collections (Slice A1)

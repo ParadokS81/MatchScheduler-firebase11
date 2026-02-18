@@ -72,6 +72,10 @@ exports.getFeedbackCount = getFeedbackCount;
 // Bot registration functions (Phase 1a)
 exports.manageBotRegistration = manageBotRegistration;
 
+// Admin functions
+const { computeWeeklyStats } = require('./compute-weekly-stats');
+exports.computeWeeklyStats = computeWeeklyStats;
+
 // Simple test function
 exports.helloWorld = functions.region('europe-west3').https.onRequest((request, response) => {
     response.json({ message: 'MatchScheduler Functions are working!' });
