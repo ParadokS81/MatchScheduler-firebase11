@@ -4880,8 +4880,8 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
-  background: var(--secondary);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid var(--secondary);
   border-radius: 0.25rem;
   cursor: pointer;
   font-size: 0.65rem;
@@ -4895,17 +4895,24 @@ body {
 }
 
 .mobile-cell-has-players {
-  background: color-mix(in srgb, var(--primary) 8%, var(--secondary));
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--secondary));
 }
 
 .mobile-cell-selected {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
-  background: color-mix(in srgb, var(--primary) 20%, var(--secondary));
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
 }
 
 .mobile-cell-match {
-  background: color-mix(in srgb, var(--chart-5) 25%, var(--secondary));
+  background: color-mix(in srgb, var(--chart-5) 15%, transparent);
+  border-color: color-mix(in srgb, var(--chart-5) 40%, var(--secondary));
+}
+
+/* Past timeslots — dimmed, non-interactive */
+.mobile-grid-cell.mobile-cell-past {
+  opacity: 0.15;
+  pointer-events: none;
 }
 
 .mobile-cell-match-logo {

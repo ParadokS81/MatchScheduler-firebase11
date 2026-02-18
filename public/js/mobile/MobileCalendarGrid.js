@@ -17,6 +17,7 @@ const MobileCalendarGrid = (function() {
 
     const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
     const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    let _pastCells = new Set();
 
     async function init(containerId) {
         _containerId = containerId;
@@ -61,15 +62,78 @@ const MobileCalendarGrid = (function() {
             : ['1930', '2000', '2030', '2100', '2130', '2200', '2230', '2300'];
     }
 
+    // ─── Past-slot tracking ──────────────────────────────────────────
+
+    function _buildPastCells() {
+        _pastCells.clear();
+        const monday = DateUtils.getMondayOfWeek(_weekNumber);
+        const now = Date.now();
+        const userOffsetMin = typeof TimezoneService !== 'undefined'
+            ? TimezoneService.getOffsetMinutes(monday)
+            : 60;
+        const timeSlots = _getTimeSlots();
+
+        for (let d = 0; d < DAYS.length; d++) {
+            for (const time of timeSlots) {
+                const localDisplay = typeof TimezoneService !== 'undefined'
+                    ? TimezoneService.baseToLocalDisplay(time, monday)
+                    : `${time.slice(0, 2)}:${time.slice(2)}`;
+                const localHour = parseInt(localDisplay.split(':')[0]);
+                const localMin = parseInt(localDisplay.split(':')[1]);
+                const utcTotalMin = (localHour * 60 + localMin) - userOffsetMin;
+                const cellDate = new Date(monday.getTime());
+                cellDate.setUTCDate(monday.getUTCDate() + d);
+                cellDate.setUTCHours(0, 0, 0, 0);
+                cellDate.setUTCMinutes(utcTotalMin);
+                if (cellDate.getTime() < now) {
+                    _pastCells.add(`${DAYS[d]}_${time}`);
+                }
+            }
+        }
+    }
+
+    function _isPastCell(cellId) {
+        return _pastCells.has(cellId);
+    }
+
+    /**
+     * Returns indices of days to render.
+     * Current week: starts from today (no past days before today).
+     * Other weeks: shows all 7 days.
+     * Always shows at least 4 columns.
+     */
+    function _getVisibleDayIndices() {
+        const todayIdx = _getTodayDayIndex();
+
+        if (todayIdx >= 0) {
+            // Current week: start from today, go through Sunday
+            const indices = [];
+            for (let d = todayIdx; d < DAYS.length; d++) {
+                indices.push(d);
+            }
+            // If less than 4 remaining days (e.g. Fri-Sun = 3), pad with earlier days
+            for (let d = todayIdx - 1; d >= 0 && indices.length < 4; d--) {
+                indices.unshift(d);
+            }
+            return indices;
+        }
+
+        // Past/future weeks: show all days
+        return DAYS.map((_, i) => i);
+    }
+
     // ─── Render ──────────────────────────────────────────────────────
 
     function _render() {
         const container = document.getElementById(_containerId);
         if (!container) return;
 
+        _buildPastCells();
+
         const timeSlots = _getTimeSlots();
         const monday = DateUtils.getMondayOfWeek(_weekNumber);
         const todayIdx = _getTodayDayIndex();
+        const visibleDays = _getVisibleDayIndices();
 
         let html = '<div class="mobile-grid-wrapper">';
 
@@ -84,9 +148,10 @@ const MobileCalendarGrid = (function() {
         });
         html += '</div>';
 
-        // Scrollable day columns
+        // Scrollable day columns — only visible (non-past) days
         html += '<div class="mobile-grid-scroll">';
-        DAYS.forEach((day, i) => {
+        visibleDays.forEach(i => {
+            const day = DAYS[i];
             const date = new Date(monday);
             date.setUTCDate(monday.getUTCDate() + i);
             const dayNum = date.getUTCDate();
@@ -97,7 +162,8 @@ const MobileCalendarGrid = (function() {
 
             timeSlots.forEach(time => {
                 const cellId = `${day}_${time}`;
-                html += `<div class="mobile-grid-cell" data-cell="${cellId}"></div>`;
+                const pastClass = _isPastCell(cellId) ? ' mobile-cell-past' : '';
+                html += `<div class="mobile-grid-cell${pastClass}" data-cell="${cellId}"></div>`;
             });
 
             html += '</div>';
@@ -112,8 +178,11 @@ const MobileCalendarGrid = (function() {
             wrapper.addEventListener('click', _handleGridTap);
         }
 
-        // Auto-scroll to today
-        _scrollToToday();
+        // Auto-scroll to today — defer until DOM layout is complete
+        // so scroll-snap doesn't override our position
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => _scrollToToday());
+        });
     }
 
     // ─── Today Detection & Scroll ────────────────────────────────────
@@ -134,25 +203,9 @@ const MobileCalendarGrid = (function() {
         if (!container) return;
         const scrollEl = container.querySelector('.mobile-grid-scroll');
         if (!scrollEl) return;
-
-        const todayIdx = _getTodayDayIndex();
-        if (todayIdx < 0) {
-            scrollEl.scrollLeft = 0;
-            return;
-        }
-
-        // Cap so we don't show empty space past Sunday
-        // Max first column = 7 - 4 = 3 (Thursday)
-        const maxFirstCol = DAYS.length - 4;
-        const targetCol = Math.min(todayIdx, maxFirstCol);
-
-        const dayColumns = scrollEl.querySelectorAll('.mobile-grid-day');
-        if (dayColumns[targetCol]) {
-            scrollEl.scrollTo({
-                left: dayColumns[targetCol].offsetLeft,
-                behavior: 'instant'
-            });
-        }
+        // Today is always the first column (position 0) for current week,
+        // so just ensure we're at the start
+        scrollEl.scrollLeft = 0;
     }
 
     // ─── Tap Handlers ────────────────────────────────────────────────
@@ -178,6 +231,9 @@ const MobileCalendarGrid = (function() {
 
         const cellId = cell.dataset.cell;
         if (!cellId) return;
+
+        // Block interaction on past cells
+        if (_isPastCell(cellId)) return;
 
         const user = AuthService.getCurrentUser();
         if (!user) {
@@ -236,6 +292,7 @@ const MobileCalendarGrid = (function() {
 
         // Toggle: if all selected, deselect all; otherwise select all
         const selectableCellIds = cellIds.filter(id => {
+            if (_isPastCell(id)) return false;
             const utcSlot = _gridToUtcMap.get(id);
             return !(utcSlot && _getMatchAtSlot(utcSlot));
         });
@@ -268,6 +325,7 @@ const MobileCalendarGrid = (function() {
         const cellIds = DAYS.map(day => `${day}_${time}`);
 
         const selectableCellIds = cellIds.filter(id => {
+            if (_isPastCell(id)) return false;
             const utcSlot = _gridToUtcMap.get(id);
             return !(utcSlot && _getMatchAtSlot(utcSlot));
         });
@@ -367,15 +425,16 @@ const MobileCalendarGrid = (function() {
             const cellId = cell.dataset.cell;
             const utcSlotId = _gridToUtcMap.get(cellId);
             const players = utcSlotId ? (utcSlots[utcSlotId] || []) : [];
+            const pastClass = _isPastCell(cellId) ? ' mobile-cell-past' : '';
 
             const match = utcSlotId ? _getMatchAtSlot(utcSlotId) : null;
 
             if (match) {
                 cell.innerHTML = _renderMatchCellContent(match);
-                cell.className = 'mobile-grid-cell mobile-cell-match';
+                cell.className = 'mobile-grid-cell mobile-cell-match' + pastClass;
             } else {
                 cell.innerHTML = _renderCellContent(players, roster);
-                cell.className = 'mobile-grid-cell' +
+                cell.className = 'mobile-grid-cell' + pastClass +
                     (_selectedCells.has(cellId) ? ' mobile-cell-selected' : '') +
                     (players.length > 0 ? ' mobile-cell-has-players' : '');
             }
