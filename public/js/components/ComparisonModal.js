@@ -16,6 +16,9 @@ const ComparisonModal = (function() {
     let _createdProposalId = null;
     let _discordMessage = null; // Pre-built message for step 3
     let _opponentDiscordUserId = null; // Resolved in background
+    let _viableSlots = []; // All 4v3+ viable slots for the week (proposal picker)
+    let _selectedSlots = new Set(); // Slot IDs the user has checked for the proposal
+    let _confirmedSlotsCount = 0; // Count of pre-confirmed slots at proposal creation time
 
     /**
      * Escape HTML to prevent XSS
@@ -458,6 +461,39 @@ const ComparisonModal = (function() {
     }
 
     /**
+     * Compute viable slots for the proposal picker using the 4v3 gate.
+     * Auto-selects all 4v4 slots. Updates _viableSlots and _selectedSlots.
+     */
+    function _computeViableForProposal() {
+        if (!_currentData || !_selectedGameType) return;
+        const selectedMatch = _currentData.matches[_selectedOpponentIndex] || _currentData.matches[0];
+        const standinSettings = _selectedGameType === 'practice' && _withStandin
+            ? { proposerStandin: true, opponentStandin: false }
+            : undefined;
+
+        // Gate: proposer needs 4 (or 3+standin=4), opponent needs at least 3
+        const gateFilter = { yourTeam: 4, opponent: 3 };
+
+        _viableSlots = ProposalService.computeViableSlots(
+            _currentData.userTeamInfo.teamId,
+            selectedMatch.teamId,
+            _currentData.weekId,
+            gateFilter,
+            standinSettings
+        );
+
+        // Auto-select all 4v4 slots
+        _selectedSlots = new Set();
+        for (const slot of _viableSlots) {
+            const effectiveProposer = slot.proposerCount + (slot.proposerStandin ? 1 : 0);
+            const effectiveOpponent = slot.opponentCount + (slot.opponentStandin ? 1 : 0);
+            if (effectiveProposer >= 4 && effectiveOpponent >= 4) {
+                _selectedSlots.add(slot.slotId);
+            }
+        }
+    }
+
+    /**
      * Render the 3-step horizontal stepper for the proposal flow.
      * Step 1: Match Type (OFF/PRAC + standin)
      * Step 2: Propose Match
@@ -504,30 +540,79 @@ const ComparisonModal = (function() {
             </div>
         `;
 
-        // Step 2 content: Propose button
-        const step2Content = step2Done
-            ? `<div class="mt-1.5 text-xs text-green-400">Created!</div>`
-            : `<button id="propose-match-btn" class="mt-1.5 px-3 py-1 rounded text-xs font-medium transition-colors
-                    ${step1Done
-                        ? 'bg-primary text-primary-foreground hover:bg-primary/80'
-                        : 'bg-muted/30 text-muted-foreground/40 cursor-not-allowed'}"
-                    ${step1Done ? '' : 'disabled'}>
-                Propose
-            </button>`;
+        // Step 2 content: Timeslot picker + Propose button
+        let step2Content;
+        if (step2Done) {
+            step2Content = `<div class="mt-1.5 text-xs text-green-400">Created!</div>`;
+        } else if (!step1Done) {
+            step2Content = `<div class="mt-1.5 text-xs text-muted-foreground/40">Select match type first</div>`;
+        } else {
+            // Show timeslot picker
+            const refDate = _getRefDate(_currentData?.weekId);
+            if (_viableSlots.length === 0) {
+                // Compute best slot counts for informative message
+                const bestInfo = (() => {
+                    if (!_currentData) return '';
+                    const selectedMatch = _currentData.matches[_selectedOpponentIndex] || _currentData.matches[0];
+                    const all = ProposalService.computeViableSlots(
+                        _currentData.userTeamInfo.teamId,
+                        selectedMatch.teamId,
+                        _currentData.weekId,
+                        { yourTeam: 1, opponent: 1 }
+                    );
+                    if (!all.length) return '';
+                    const best = all.reduce((a, b) =>
+                        (a.proposerCount + a.opponentCount) >= (b.proposerCount + b.opponentCount) ? a : b
+                    );
+                    return ` (best: ${best.proposerCount}v${best.opponentCount})`;
+                })();
+                step2Content = `
+                    <div class="mt-1.5 text-xs text-muted-foreground/60">Need 4v3+ overlap to propose${bestInfo}</div>
+                    <button class="mt-1.5 px-3 py-1 rounded text-xs font-medium bg-muted/30 text-muted-foreground/40 cursor-not-allowed" disabled>
+                        Propose
+                    </button>`;
+            } else {
+                const slotItems = _viableSlots.map(slot => {
+                    const checked = _selectedSlots.has(slot.slotId);
+                    const display = TimezoneService.formatSlotForDisplay(slot.slotId, refDate);
+                    const shortDay = (display.dayLabel || '').slice(0, 3);
+                    return `<label class="cm-slot-item" data-slot-id="${slot.slotId}">
+                        <span class="cm-slot-check">${checked ? '☑' : '☐'}</span>
+                        <span class="cm-slot-time">${shortDay} ${display.timeLabel}</span>
+                        <span class="cm-slot-count">${slot.proposerCount}v${slot.opponentCount}</span>
+                    </label>`;
+                }).join('');
+                const selCount = _selectedSlots.size;
+                step2Content = `
+                    <div class="mt-1.5 cm-slot-list" id="cm-slot-list">${slotItems}</div>
+                    <button id="propose-match-btn" class="mt-1.5 px-3 py-1 rounded text-xs font-medium transition-colors
+                            ${selCount > 0
+                                ? 'bg-primary text-primary-foreground hover:bg-primary/80'
+                                : 'bg-muted/30 text-muted-foreground/40 cursor-not-allowed'}"
+                            ${selCount > 0 ? '' : 'disabled'}>
+                        ${selCount > 0 ? `Propose (${selCount}) →` : 'Select times first'}
+                    </button>`;
+            }
+        }
 
-        // Step 3 content: Discord + Copy (full buttons)
+        // Step 3 content: Notification sent + optional Discord contact
         const escapedMsg = _discordMessage ? _escapeHtml(_discordMessage).replace(/\n/g, '&#10;') : '';
+        const proposedCount = _confirmedSlotsCount;
         const step3Content = step3Active
-            ? `<div class="flex items-center gap-1.5 mt-1.5">
+            ? `<div class="mt-1.5 text-xs text-green-400">
+                ✓ Proposal created with ${proposedCount} timeslot${proposedCount !== 1 ? 's' : ''}
+               </div>
+               <div class="mt-1 text-xs text-muted-foreground">Opponent will be notified.</div>
+               ${_discordMessage ? `<div class="flex items-center gap-1.5 mt-1.5">
                 <button id="post-proposal-discord" class="px-2.5 py-1 rounded text-xs font-medium bg-[#5865F2] hover:bg-[#4752C4] text-white flex items-center gap-1"
                         data-message="${escapedMsg}">
-                    Contact Leader ${discordIcon}
+                    DM Leader ${discordIcon}
                 </button>
                 <button id="post-proposal-copy" class="px-2.5 py-1 rounded text-xs border border-border text-muted-foreground hover:text-foreground"
                         data-message="${escapedMsg}">
-                    Copy Message
+                    Copy msg
                 </button>
-            </div>`
+            </div>` : ''}`
             : `<div class="mt-1.5 text-xs text-muted-foreground/30">${discordIcon}</div>`;
 
         return `
@@ -549,7 +634,7 @@ const ComparisonModal = (function() {
                         ${circle(2, step2Done, step2Active && step1Done)}
                         ${line(step2Done)}
                     </div>
-                    <div class="text-xs mt-1 ${step2Active && step1Done ? 'text-foreground' : 'text-muted-foreground'} font-medium">Propose</div>
+                    <div class="text-xs mt-1 ${step2Active && step1Done ? 'text-foreground' : 'text-muted-foreground'} font-medium">Select & Propose</div>
                     ${step2Content}
                 </div>
                 <!-- Step 3 -->
@@ -559,7 +644,7 @@ const ComparisonModal = (function() {
                         ${circle(3, false, step3Active)}
                         <div class="flex-1"></div>
                     </div>
-                    <div class="text-xs mt-1 ${step3Active ? 'text-foreground' : 'text-muted-foreground'} font-medium">Contact</div>
+                    <div class="text-xs mt-1 ${step3Active ? 'text-foreground' : 'text-muted-foreground'} font-medium">Sent</div>
                     ${step3Content}
                 </div>
             </div>
@@ -680,6 +765,13 @@ const ComparisonModal = (function() {
                 const index = parseInt(tab.dataset.opponentIndex, 10);
                 if (index !== _selectedOpponentIndex && _currentData) {
                     _selectedOpponentIndex = index;
+                    // Reset proposal state for new opponent
+                    _selectedGameType = null;
+                    _withStandin = false;
+                    _proposalStep = 1;
+                    _viableSlots = [];
+                    _selectedSlots = new Set();
+                    _confirmedSlotsCount = 0;
                     // Re-render with new selection
                     _renderModal(
                         _currentData.weekId,
@@ -706,14 +798,30 @@ const ComparisonModal = (function() {
         document.getElementById('game-type-off')?.addEventListener('click', () => {
             _selectedGameType = 'official';
             _withStandin = false; // No standin for officials
+            _computeViableForProposal();
             _reRenderModal();
         });
         document.getElementById('game-type-prac')?.addEventListener('click', () => {
             _selectedGameType = 'practice';
+            _computeViableForProposal();
             _reRenderModal();
         });
         document.getElementById('standin-toggle')?.addEventListener('click', () => {
             _withStandin = !_withStandin;
+            _computeViableForProposal();
+            _reRenderModal();
+        });
+
+        // Slot checkbox toggles in the timeslot picker
+        document.getElementById('cm-slot-list')?.addEventListener('click', (e) => {
+            const label = e.target.closest('[data-slot-id]');
+            if (!label) return;
+            const slotId = label.dataset.slotId;
+            if (_selectedSlots.has(slotId)) {
+                _selectedSlots.delete(slotId);
+            } else {
+                _selectedSlots.add(slotId);
+            }
             _reRenderModal();
         });
 
@@ -721,13 +829,13 @@ const ComparisonModal = (function() {
         const proposeBtn = document.getElementById('propose-match-btn');
         if (proposeBtn) {
             proposeBtn.addEventListener('click', async () => {
-                if (!_selectedGameType) return;
+                if (!_selectedGameType || _selectedSlots.size === 0) return;
                 proposeBtn.disabled = true;
                 proposeBtn.textContent = 'Creating...';
 
                 try {
                     const selectedMatch = _currentData.matches[_selectedOpponentIndex] || _currentData.matches[0];
-                    // Proposals always use 4v4 — standin covers the 3+1 case
+                    // Proposal minFilter stays 4v4 (the living document filter)
                     const minFilter = { yourTeam: 4, opponent: 4 };
 
                     const result = await ProposalService.createProposal({
@@ -736,7 +844,8 @@ const ComparisonModal = (function() {
                         weekId: _currentData.weekId,
                         minFilter,
                         gameType: _selectedGameType,
-                        proposerStandin: _selectedGameType === 'practice' && _withStandin
+                        proposerStandin: _selectedGameType === 'practice' && _withStandin,
+                        confirmedSlots: [..._selectedSlots]
                     });
 
                     if (result.success) {
@@ -745,13 +854,13 @@ const ComparisonModal = (function() {
                     } else {
                         ToastService.showError(result.error || 'Failed to create proposal');
                         proposeBtn.disabled = false;
-                        proposeBtn.textContent = 'Propose Match';
+                        proposeBtn.textContent = `Propose (${_selectedSlots.size}) →`;
                     }
                 } catch (error) {
                     console.error('Propose match failed:', error);
                     ToastService.showError('Network error — please try again');
                     proposeBtn.disabled = false;
-                    proposeBtn.textContent = 'Propose Match';
+                    proposeBtn.textContent = `Propose (${_selectedSlots.size}) →`;
                 }
             });
         }
@@ -919,6 +1028,7 @@ const ComparisonModal = (function() {
 
         _discordMessage = lines.join('\n');
         _createdProposalId = proposalId;
+        _confirmedSlotsCount = _selectedSlots.size;
         _proposalStep = 3;
 
         // Resolve opponent leader Discord ID in background
@@ -940,7 +1050,7 @@ const ComparisonModal = (function() {
             _currentData.canSchedule
         );
 
-        ToastService.showSuccess('Proposal created!');
+        ToastService.showSuccess('Proposal sent! Opponent will be notified.');
     }
 
     /**
@@ -1019,6 +1129,9 @@ const ComparisonModal = (function() {
         _createdProposalId = null;
         _discordMessage = null;
         _opponentDiscordUserId = null;
+        _viableSlots = [];
+        _selectedSlots = new Set();
+        _confirmedSlotsCount = 0;
 
         // Deep-link to the created proposal so user can confirm timeslots
         if (navigateToProposal) {

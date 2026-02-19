@@ -11,8 +11,9 @@ const MobileCompareDetail = (function() {
 
     // Per-opponent state, keyed by index
     let _expandedCards = new Set();
-    let _gameTypes = {};   // index → 'official' | 'practice' | null
-    let _standins = {};    // index → boolean
+    let _gameTypes = {};             // index → 'official' | 'practice' | null
+    let _standins = {};              // index → boolean
+    let _selectedSlotsByIndex = {};  // index → Set of slotIds
 
     // ── Open ──────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ const MobileCompareDetail = (function() {
         _expandedCards = new Set();
         _gameTypes = {};
         _standins = {};
+        _selectedSlotsByIndex = {};
 
         const userTeamInfo = ComparisonEngine.getUserTeamInfo(weekId, slotId);
         const matches = ComparisonEngine.getSlotMatches(weekId, slotId);
@@ -33,10 +35,11 @@ const MobileCompareDetail = (function() {
             return;
         }
 
-        // Single opponent → auto-expand with Official pre-selected
+        // Single opponent → auto-expand with Official pre-selected + compute viable slots
         if (matches.length === 1) {
             _expandedCards.add(0);
             _gameTypes[0] = 'official';
+            _updateViableAndAutoSelect(0, userTeamInfo, matches[0]);
         }
 
         const html = _renderAll(userTeamInfo, matches);
@@ -47,6 +50,7 @@ const MobileCompareDetail = (function() {
     function _cleanup() {
         _weekId = null;
         _slotId = null;
+        _selectedSlotsByIndex = {};
     }
 
     function _attachSheetListeners() {
@@ -146,9 +150,9 @@ const MobileCompareDetail = (function() {
         html += _renderRosterColumn(match, false);
         html += '</div>';
 
-        // Single-row proposal flow (only for schedulers)
+        // Proposal section (only for schedulers)
         if (canSchedule) {
-            html += _renderProposalRow(index);
+            html += _renderProposalSection(index, userTeamInfo, match);
         }
 
         html += '</div>';
@@ -180,28 +184,77 @@ const MobileCompareDetail = (function() {
         `;
     }
 
-    // ── Render: Single-row Proposal ───────────────────────────────
-    // [Official] [Practice] [SI?] [Propose →]
+    // ── Compute viable slots for a given opponent index ────────────
 
-    function _renderProposalRow(index) {
+    function _computeViableSlotsForIndex(index, userTeamInfo, match) {
+        if (!_weekId || !userTeamInfo || !match) return [];
+        const gameType = _gameTypes[index] || null;
+        if (!gameType) return [];
+
+        const withStandin = _standins[index] || false;
+        const standinSettings = gameType === 'practice' && withStandin
+            ? { proposerStandin: true, opponentStandin: false }
+            : undefined;
+
+        return ProposalService.computeViableSlots(
+            userTeamInfo.teamId,
+            match.teamId,
+            _weekId,
+            { yourTeam: 4, opponent: 3 },
+            standinSettings
+        );
+    }
+
+    // ── Render: Proposal Section ────────────────────────────────────
+    // Game type row + timeslot list + propose button
+
+    function _renderProposalSection(index, userTeamInfo, match) {
         const gameType = _gameTypes[index] || null;
         const withStandin = _standins[index] || false;
+        const selectedSlots = _selectedSlotsByIndex[index] || new Set();
 
-        let html = '<div class="mcd-proposal-row">';
+        let html = '<div class="mcd-proposal-section">';
 
+        // Game type row
+        html += '<div class="mcd-proposal-row">';
         html += `<button class="mcd-type-btn ${gameType === 'official' ? 'mcd-type-official-active' : ''}"
                          data-action="set-game-type" data-index="${index}" data-type="official">Official</button>`;
         html += `<button class="mcd-type-btn ${gameType === 'practice' ? 'mcd-type-practice-active' : ''}"
                          data-action="set-game-type" data-index="${index}" data-type="practice">Practice</button>`;
-
         if (gameType === 'practice') {
             html += `<button class="mcd-standin-btn ${withStandin ? 'mcd-standin-active' : ''}"
                              data-action="toggle-standin" data-index="${index}">SI${withStandin ? ' \u2713' : ''}</button>`;
         }
+        html += '</div>';
 
-        html += `<button class="mcd-propose-btn ${gameType ? '' : 'mcd-disabled'}"
-                         data-action="propose-match" data-index="${index}"
-                         ${gameType ? '' : 'disabled'}>Propose \u2192</button>`;
+        // Timeslot list (only when game type selected)
+        if (gameType) {
+            const viableSlots = _computeViableSlotsForIndex(index, userTeamInfo, match);
+
+            if (viableSlots.length === 0) {
+                html += '<div class="mcd-no-slots">Need 4v3+ overlap to propose</div>';
+            } else {
+                html += '<div class="mcd-slot-list">';
+                viableSlots.forEach(slot => {
+                    const checked = selectedSlots.has(slot.slotId);
+                    const display = _formatSlot(slot.slotId);
+                    html += `<label class="mcd-slot-item" data-action="toggle-slot"
+                                    data-index="${index}" data-slot-id="${slot.slotId}">
+                        <span class="mcd-slot-check">${checked ? '☑' : '☐'}</span>
+                        <span class="mcd-slot-time">${display.day} ${display.time}</span>
+                        <span class="mcd-slot-count">${slot.proposerCount}v${slot.opponentCount}</span>
+                    </label>`;
+                });
+                html += '</div>';
+
+                const count = selectedSlots.size;
+                html += `<button class="mcd-propose-btn ${count > 0 ? '' : 'mcd-disabled'}"
+                                 data-action="propose-match" data-index="${index}"
+                                 ${count > 0 ? '' : 'disabled'}>
+                    ${count > 0 ? `Propose (${count}) \u2192` : 'Select times first'}
+                </button>`;
+            }
+        }
 
         html += '</div>';
         return html;
@@ -227,8 +280,11 @@ const MobileCompareDetail = (function() {
                     _expandedCards.delete(index);
                 } else {
                     _expandedCards.add(index);
-                    // Default to 'official' so Propose is immediately enabled
-                    if (!_gameTypes[index]) _gameTypes[index] = 'official';
+                    // Default to 'official' and compute viable slots immediately
+                    if (!_gameTypes[index]) {
+                        _gameTypes[index] = 'official';
+                        _updateViableAndAutoSelect(index, userTeamInfo, matches[index]);
+                    }
                 }
                 _reRender();
                 break;
@@ -238,6 +294,8 @@ const MobileCompareDetail = (function() {
                 if (index === null) break;
                 _gameTypes[index] = target.dataset.type;
                 _standins[index] = false;
+                // Compute viable slots and auto-select 4v4
+                _updateViableAndAutoSelect(index, userTeamInfo, matches[index]);
                 _reRender();
                 break;
             }
@@ -245,12 +303,29 @@ const MobileCompareDetail = (function() {
             case 'toggle-standin': {
                 if (index === null) break;
                 _standins[index] = !_standins[index];
+                // Recompute viable slots when standin changes
+                _updateViableAndAutoSelect(index, userTeamInfo, matches[index]);
+                _reRender();
+                break;
+            }
+
+            case 'toggle-slot': {
+                if (index === null) break;
+                const slotId = target.dataset.slotId;
+                if (!slotId) break;
+                if (!_selectedSlotsByIndex[index]) _selectedSlotsByIndex[index] = new Set();
+                if (_selectedSlotsByIndex[index].has(slotId)) {
+                    _selectedSlotsByIndex[index].delete(slotId);
+                } else {
+                    _selectedSlotsByIndex[index].add(slotId);
+                }
                 _reRender();
                 break;
             }
 
             case 'propose-match': {
-                if (index === null || !_gameTypes[index]) return;
+                const selectedSlots = _selectedSlotsByIndex[index] || new Set();
+                if (index === null || !_gameTypes[index] || selectedSlots.size === 0) return;
                 target.disabled = true;
                 target.textContent = 'Creating...';
 
@@ -258,22 +333,20 @@ const MobileCompareDetail = (function() {
                     const selectedMatch = matches[index];
                     const gameType = _gameTypes[index];
                     const withStandin = _standins[index] || false;
-                    const filters = (typeof FilterService !== 'undefined')
-                        ? FilterService.getFilters()
-                        : { yourTeam: 3, opponent: 3 };
 
                     const result = await ProposalService.createProposal({
                         proposerTeamId: userTeamInfo.teamId,
                         opponentTeamId: selectedMatch.teamId,
                         weekId: _weekId,
-                        minFilter: filters,
+                        minFilter: { yourTeam: 4, opponent: 4 },
                         gameType: gameType,
-                        proposerStandin: gameType === 'practice' && withStandin
+                        proposerStandin: gameType === 'practice' && withStandin,
+                        confirmedSlots: [...selectedSlots]
                     });
 
                     if (result.success) {
                         if (typeof ToastService !== 'undefined') {
-                            ToastService.showSuccess('Proposal created!');
+                            ToastService.showSuccess('Proposal sent! Opponent will be notified.');
                         }
                         // Close compare sheet, open proposal detail for slot confirmation
                         MobileBottomSheet.close();
@@ -288,7 +361,7 @@ const MobileCompareDetail = (function() {
                             ToastService.showError(result.error || 'Failed to create proposal');
                         }
                         target.disabled = false;
-                        target.textContent = 'Propose \u2192';
+                        _reRender();
                     }
                 } catch (err) {
                     console.error('MobileCompareDetail: propose failed:', err);
@@ -296,11 +369,25 @@ const MobileCompareDetail = (function() {
                         ToastService.showError('Network error - try again');
                     }
                     target.disabled = false;
-                    target.textContent = 'Propose \u2192';
+                    _reRender();
                 }
                 break;
             }
         }
+    }
+
+    // Compute viable slots for index and auto-select all 4v4 slots
+    function _updateViableAndAutoSelect(index, userTeamInfo, match) {
+        const viableSlots = _computeViableSlotsForIndex(index, userTeamInfo, match);
+        const autoSelected = new Set();
+        for (const slot of viableSlots) {
+            const effectiveProposer = slot.proposerCount + (slot.proposerStandin ? 1 : 0);
+            const effectiveOpponent = slot.opponentCount + (slot.opponentStandin ? 1 : 0);
+            if (effectiveProposer >= 4 && effectiveOpponent >= 4) {
+                autoSelected.add(slot.slotId);
+            }
+        }
+        _selectedSlotsByIndex[index] = autoSelected;
     }
 
     function _reRender() {

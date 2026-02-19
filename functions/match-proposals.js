@@ -101,7 +101,8 @@ exports.createProposal = functions
         }
 
         const userId = context.auth.uid;
-        const { proposerTeamId, opponentTeamId, weekId, minFilter, gameType, proposerStandin } = data;
+        const { proposerTeamId, opponentTeamId, weekId, minFilter, gameType, proposerStandin,
+                confirmedSlots } = data;
 
         // Validate inputs
         if (!proposerTeamId || typeof proposerTeamId !== 'string') {
@@ -137,6 +138,22 @@ exports.createProposal = functions
         }
         // Standin only valid for practice
         const standinValue = gameType === 'practice' && proposerStandin === true;
+
+        // Validate confirmedSlots (required — new clients must provide at least 1)
+        const slotsArray = Array.isArray(confirmedSlots) ? confirmedSlots : [];
+        if (slotsArray.length === 0) {
+            throw new functions.https.HttpsError('invalid-argument',
+                'At least one confirmed slot is required');
+        }
+        if (slotsArray.length > 14) {
+            throw new functions.https.HttpsError('invalid-argument', 'Too many confirmed slots');
+        }
+        for (const slotId of slotsArray) {
+            if (!isValidSlotId(slotId)) {
+                throw new functions.https.HttpsError('invalid-argument',
+                    `Invalid slot ID: ${slotId}`);
+            }
+        }
 
         // Read team docs
         const [proposerDoc, opponentDoc] = await Promise.all([
@@ -195,6 +212,65 @@ exports.createProposal = functions
             ...opponentTeam.playerRoster.map(p => p.userId)
         ];
 
+        // Read proposer availability to get countAtConfirm for each pre-confirmed slot
+        const proposerAvailDocId = `${proposerTeamId}_${weekId}`;
+        const proposerAvailDoc = await db.collection('availability').doc(proposerAvailDocId).get();
+        const proposerAvail = proposerAvailDoc.exists ? proposerAvailDoc.data() : { slots: {} };
+
+        // Read opponent availability for notification slot counts
+        const opponentAvailDocId = `${opponentTeamId}_${weekId}`;
+        const opponentAvailDoc = await db.collection('availability').doc(opponentAvailDocId).get();
+        const opponentAvail = opponentAvailDoc.exists ? opponentAvailDoc.data() : { slots: {} };
+
+        const proposerConfirmedSlots = {};
+        for (const slotId of slotsArray) {
+            const countAtConfirm = (proposerAvail.slots?.[slotId] || []).length;
+            proposerConfirmedSlots[slotId] = {
+                userId,
+                countAtConfirm,
+                gameType
+            };
+        }
+
+        // Pre-resolve notification delivery targets (outside transaction — delivery info can be slightly stale)
+        const [opponentBotReg, proposerBotReg] = await Promise.all([
+            db.collection('botRegistrations').doc(opponentTeamId).get(),
+            db.collection('botRegistrations').doc(proposerTeamId).get()
+        ]);
+        const opponentBot = opponentBotReg.exists ? opponentBotReg.data() : null;
+        const proposerBot = proposerBotReg.exists ? proposerBotReg.data() : null;
+
+        // Resolve opponent leader's Discord ID for DM fallback
+        let opponentLeaderDiscordId = null;
+        let opponentLeaderDisplayName = null;
+        if (opponentTeam.leaderId) {
+            const leaderDoc = await db.collection('users').doc(opponentTeam.leaderId).get();
+            if (leaderDoc.exists) {
+                const leaderData = leaderDoc.data();
+                opponentLeaderDiscordId = leaderData.discordUserId || null;
+                opponentLeaderDisplayName = leaderData.displayName || null;
+            }
+        }
+
+        // Resolve proposer's Discord ID (for "DM them" button in opponent's embed)
+        let proposerLeaderDiscordId = null;
+        let proposerLeaderDisplayName = null;
+        const proposerUserDoc = await db.collection('users').doc(userId).get();
+        if (proposerUserDoc.exists) {
+            const proposerUserData = proposerUserDoc.data();
+            proposerLeaderDiscordId = proposerUserData.discordUserId || null;
+            proposerLeaderDisplayName = proposerUserData.displayName
+                || proposerTeam.playerRoster?.find(p => p.userId === userId)?.displayName
+                || null;
+        }
+
+        // Build confirmed slots with counts for notification
+        const confirmedSlotsWithCounts = slotsArray.map(slotId => ({
+            slotId,
+            proposerCount: (proposerAvail.slots?.[slotId] || []).length,
+            opponentCount: (opponentAvail.slots?.[slotId] || []).length
+        }));
+
         // Create proposal
         const now = new Date();
         const proposalRef = db.collection('matchProposals').doc();
@@ -206,7 +282,7 @@ exports.createProposal = functions
             gameType,
             proposerStandin: standinValue,
             opponentStandin: false,
-            proposerConfirmedSlots: {},
+            proposerConfirmedSlots,
             opponentConfirmedSlots: {},
             confirmedSlotId: null,
             scheduledMatchId: null,
@@ -224,9 +300,47 @@ exports.createProposal = functions
         };
 
         const eventId = generateEventId(proposerTeam.teamName, 'proposal_created');
+        const notificationRef = db.collection('notifications').doc();
+        const notificationData = {
+            type: 'challenge_proposed',
+            status: 'pending',
+            proposalId: proposalRef.id,
+            createdBy: userId,
+            proposerTeamId,
+            proposerTeamName: proposerTeam.teamName,
+            proposerTeamTag: proposerTeam.teamTag,
+            opponentTeamId,
+            opponentTeamName: opponentTeam.teamName,
+            opponentTeamTag: opponentTeam.teamTag,
+            weekId,
+            gameType,
+            confirmedSlots: confirmedSlotsWithCounts,
+            delivery: {
+                opponent: {
+                    botRegistered: opponentBot?.status === 'active',
+                    notificationsEnabled: opponentBot?.notifications?.enabled !== false,
+                    channelId: opponentBot?.notifications?.channelId || null,
+                    guildId: opponentBot?.guildId || null,
+                    leaderDiscordId: opponentLeaderDiscordId,
+                    leaderDisplayName: opponentLeaderDisplayName
+                },
+                proposer: {
+                    botRegistered: proposerBot?.status === 'active',
+                    notificationsEnabled: proposerBot?.notifications?.enabled !== false,
+                    channelId: proposerBot?.notifications?.channelId || null,
+                    guildId: proposerBot?.guildId || null
+                }
+            },
+            proposalUrl: `https://scheduler.quake.world/#/matches/${proposalRef.id}`,
+            proposerLeaderDiscordId,
+            proposerLeaderDisplayName,
+            createdAt: now,
+            deliveredAt: null
+        };
 
         await db.runTransaction(async (transaction) => {
             transaction.set(proposalRef, proposalData);
+            transaction.set(notificationRef, notificationData);
 
             transaction.set(db.collection('eventLog').doc(eventId), {
                 eventId,

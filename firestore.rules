@@ -445,6 +445,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Notifications queue — written by Cloud Functions, consumed by Quad bot via Admin SDK
+    // Frontend has no need to read notifications; status display is future work
+    match /notifications/{notificationId} {
+      allow read, write: if false; // Admin SDK only (Cloud Functions + Quad bot)
+    }
+
     // Deletion requests — coordinates Firebase + quad server cleanup
     match /deletionRequests/{requestId} {
       // Team leaders can read their own team's deletion requests
