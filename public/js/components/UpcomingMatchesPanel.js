@@ -13,6 +13,7 @@ const UpcomingMatchesPanel = (function() {
     let _initialized = false;
     let _rosterTooltip = null;
     let _rosterTooltipHideTimeout = null;
+    let _gameTypeFilter = null; // null = show all, 'official' or 'practice' = filter
 
     // ─── Initialization ────────────────────────────────────────────────
 
@@ -119,14 +120,38 @@ const UpcomingMatchesPanel = (function() {
         // Render "Your Matches" section
         if (_yourMatchesContainer) {
             if (yourMatches.length > 0) {
+                // Apply game type filter
+                const filteredMatches = _gameTypeFilter
+                    ? yourMatches.filter(m => (m.gameType || 'official') === _gameTypeFilter)
+                    : yourMatches;
+
                 _yourMatchesContainer.innerHTML = `
                     <div class="your-matches-section">
-                        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 text-center">Your Matches</h3>
+                        <div class="flex items-center justify-between mb-2 px-1">
+                            <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Your Matches</h3>
+                            <div class="flex gap-1">
+                                ${_renderFilterButton('official', 'OFFI')}
+                                ${_renderFilterButton('practice', 'PRAC')}
+                            </div>
+                        </div>
                         <div class="space-y-1.5">
-                            ${yourMatches.map(_renderMatchCard).join('')}
+                            ${filteredMatches.length > 0
+                                ? filteredMatches.map(_renderMatchCard).join('')
+                                : '<div class="text-xs text-muted-foreground text-center py-2 italic">No matches of this type</div>'
+                            }
                         </div>
                     </div>
                 `;
+
+                // Attach filter button click handlers
+                _yourMatchesContainer.querySelectorAll('[data-filter-type]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const type = btn.dataset.filterType;
+                        _gameTypeFilter = _gameTypeFilter === type ? null : type;
+                        _render();
+                    });
+                });
             } else {
                 _yourMatchesContainer.innerHTML = '';
             }
@@ -167,6 +192,24 @@ const UpcomingMatchesPanel = (function() {
         });
     }
 
+    function _renderFilterButton(type, label) {
+        const isActive = _gameTypeFilter === type;
+        const isOfficial = type === 'official';
+
+        // Active: filled background. Inactive: just colored text (shows both types by default)
+        const classes = isActive
+            ? (isOfficial
+                ? 'bg-green-500/20 text-green-400 border-green-500/50'
+                : 'bg-amber-500/20 text-amber-400 border-amber-500/50')
+            : (isOfficial
+                ? 'text-green-400/70 border-transparent'
+                : 'text-amber-400/70 border-transparent');
+
+        return `<button data-filter-type="${type}"
+            class="text-[0.6rem] font-semibold px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${classes}"
+            title="${isActive ? 'Show all' : 'Show only ' + label}">${label}</button>`;
+    }
+
     function _renderMatchCard(match) {
         // Format slot — full day name + time
         let dayFull = '';
@@ -200,9 +243,10 @@ const UpcomingMatchesPanel = (function() {
         const tagA = teamA?.teamTag || match.teamAName || '?';
         const tagB = teamB?.teamTag || match.teamBName || '?';
 
-        // Game type label
+        // Game type label with color coding
         const gameType = match.gameType || 'official';
         const gameTypeLabel = gameType === 'practice' ? 'PRAC' : 'OFFI';
+        const gameTypeColor = gameType === 'practice' ? 'text-amber-400/80' : 'text-green-400/80';
 
         // Date line: "Thursday 12th. 22:00" or "Today 22:00"
         const dateLine = dayOrdinal === 'Today'
@@ -229,7 +273,7 @@ const UpcomingMatchesPanel = (function() {
                     ${logoBHtml}
                 </div>
                 <div class="flex items-center justify-center gap-1 mt-0.5">
-                    <span class="text-[0.625rem] text-muted-foreground uppercase tracking-wide">${gameTypeLabel}</span>
+                    <span class="text-[0.625rem] ${gameTypeColor} font-medium uppercase tracking-wide">${gameTypeLabel}</span>
                     <span class="text-[0.625rem] text-muted-foreground">·</span>
                     <span class="text-xs text-muted-foreground">${dateLine}</span>
                 </div>
@@ -270,8 +314,11 @@ const UpcomingMatchesPanel = (function() {
         const teamBId = card.dataset.teamB;
         if (!teamAId || !teamBId) return;
 
-        // Navigate to H2H page
-        window.location.hash = `/teams/${teamAId}/h2h/${teamBId}`;
+        // Put user's team first in H2H perspective
+        const userIsB = _userTeamIds.includes(teamBId) && !_userTeamIds.includes(teamAId);
+        const h2hFirst = userIsB ? teamBId : teamAId;
+        const h2hSecond = userIsB ? teamAId : teamBId;
+        window.location.hash = `/teams/${h2hFirst}/h2h/${h2hSecond}`;
     }
 
     // ─── Roster Tooltip ────────────────────────────────────────────────
@@ -355,7 +402,7 @@ const UpcomingMatchesPanel = (function() {
                 </div>
             </div>
             <div class="match-tooltip-footer">
-                <a href="#/teams/${teamAId}/h2h/${teamBId}" class="match-tooltip-h2h-link">View Head-to-Head</a>
+                <a href="#/teams/${isUserTeamB && !isUserTeamA ? teamBId : teamAId}/h2h/${isUserTeamB && !isUserTeamA ? teamAId : teamBId}" class="match-tooltip-h2h-link">View Head-to-Head</a>
             </div>
         `;
 
