@@ -9,7 +9,7 @@ const { processLogoUpload } = require('./logo-processing');
 const { processAvatarUpload } = require('./avatar-processing');
 const { googleSignIn, createProfile, updateProfile, getProfile, deleteAccount } = require('./user-profile');
 const { discordOAuthExchange } = require('./discord-auth');
-const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings, kickPlayer, transferLeadership, updateRosterInitials, updateTeamTags, updateRecordingVisibility, deleteRecording } = require('./team-operations');
+const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings, kickPlayer, transferLeadership, updateRosterInitials, updateTeamTags, updateRecordingVisibility, deleteRecording, addPhantomMember, removePhantomMember } = require('./team-operations');
 const { updateAvailability } = require('./availability');
 const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 const { updateFavorites } = require('./favorites');
@@ -17,6 +17,7 @@ const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cance
 const { getScheduledGames } = require('./scheduled-games-api');
 const { submitFeedback, getFeedbackCount } = require('./feedback');
 const { manageBotRegistration } = require('./bot-registration');
+const { expireProposals } = require('./expire-proposals');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
@@ -40,6 +41,8 @@ exports.updateRosterInitials = updateRosterInitials;
 exports.updateTeamTags = updateTeamTags;
 exports.updateRecordingVisibility = updateRecordingVisibility;
 exports.deleteRecording = deleteRecording;
+exports.addPhantomMember = addPhantomMember;
+exports.removePhantomMember = removePhantomMember;
 
 // Availability functions
 exports.updateAvailability = updateAvailability;
@@ -71,6 +74,9 @@ exports.getFeedbackCount = getFeedbackCount;
 
 // Bot registration functions (Phase 1a)
 exports.manageBotRegistration = manageBotRegistration;
+
+// Scheduled cleanup
+exports.expireProposals = expireProposals;
 
 // Admin functions
 const { computeWeeklyStats } = require('./compute-weekly-stats');

@@ -702,7 +702,7 @@ const TeamManagementModal = (function() {
         if (_botRegistration === undefined) {
             return `
                 <div id="voice-bot-section">
-                    <label class="text-sm font-medium text-foreground">Voice Bot</label>
+                    <label class="text-sm font-medium text-foreground">Quad Bot</label>
                     <p class="text-xs text-muted-foreground mt-1">Loading...</p>
                 </div>
             `;
@@ -712,13 +712,13 @@ const TeamManagementModal = (function() {
             // State: Not Connected
             return `
                 <div id="voice-bot-section">
-                    <label class="text-sm font-medium text-foreground">Voice Bot</label>
+                    <label class="text-sm font-medium text-foreground">Quad Bot</label>
                     <p class="text-xs text-muted-foreground mt-1 mb-2">
-                        Connect a Discord voice bot to automatically record and upload match audio for your team.
+                        Connect the Quad bot to your Discord server to enable notifications, voice recording and more.
                     </p>
                     <button id="voice-bot-connect-btn"
                             class="px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium rounded-lg transition-colors">
-                        Connect Voice Bot
+                        Connect Bot
                     </button>
                 </div>
             `;
@@ -733,7 +733,7 @@ const TeamManagementModal = (function() {
             return `
                 <div id="voice-bot-section">
                     <div class="flex items-center justify-between">
-                        <label class="text-sm font-medium text-foreground">Voice Bot</label>
+                        <label class="text-sm font-medium text-foreground">Quad Bot</label>
                         <span class="text-xs text-amber-500 font-medium">Pending</span>
                     </div>
                     <div class="mt-1 p-3 bg-muted/50 border border-border rounded-lg space-y-2">
@@ -760,39 +760,238 @@ const TeamManagementModal = (function() {
             ? _escapeHtml(_botRegistration.guildName)
             : 'Discord server';
 
-        const defaultVisibility = _teamData?.voiceSettings?.defaultVisibility || 'private';
-        const isPublic = defaultVisibility === 'public';
-
         return `
             <div id="voice-bot-section">
                 <div class="flex items-center justify-between">
-                    <label class="text-sm font-medium text-foreground">Voice Bot</label>
-                    <span class="text-xs text-green-500 font-medium">Connected</span>
+                    <label class="text-sm font-medium text-foreground">Quad Bot</label>
+                    <span class="text-xs text-green-500 font-medium">Connected ●</span>
                 </div>
-                <div class="mt-1 p-3 bg-muted/50 border border-border rounded-lg">
-                    <p class="text-sm text-foreground">${guildName}</p>
-                    <p class="text-xs text-muted-foreground">Discord server</p>
-                </div>
-                <div class="mt-2 flex items-center justify-between gap-3">
+                <div class="mt-1 flex items-center justify-between gap-3 p-3 bg-muted/50 border border-border rounded-lg">
                     <div>
-                        <p class="text-sm text-foreground">Recording visibility</p>
-                        <p class="text-xs text-muted-foreground voice-visibility-sublabel">
-                            ${isPublic
-                                ? 'New recordings visible to everyone'
-                                : 'New recordings visible to team members only'}
-                        </p>
+                        <p class="text-sm text-foreground">${guildName}</p>
+                        <p class="text-xs text-muted-foreground">Discord server</p>
                     </div>
-                    <button class="voice-visibility-toggle relative w-9 h-5 rounded-full transition-colors shrink-0
-                                ${isPublic ? 'bg-primary' : 'bg-muted-foreground/30'}"
-                            data-enabled="${isPublic}">
-                        <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
-                              style="left: ${isPublic ? '1.125rem' : '0.125rem'}"></span>
+                    <button id="voice-bot-disconnect-btn"
+                            class="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors shrink-0">
+                        Disconnect
                     </button>
                 </div>
-                <button id="voice-bot-disconnect-btn"
-                        class="mt-2 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors">
-                    Disconnect
-                </button>
+                ${_renderPlayerMappingSection()}
+                ${_renderNotificationSettingsSection()}
+                ${_renderScheduleChannelSection()}
+            </div>
+        `;
+    }
+
+    /**
+     * Render player mapping section — shows knownPlayers from botRegistration (read-only)
+     */
+    function _renderPlayerMappingSection() {
+        const knownPlayers = _botRegistration?.knownPlayers || {};
+        const entries = Object.entries(knownPlayers);
+
+        const listHtml = entries.length > 0
+            ? entries.map(([discordId, qwName]) => {
+                const shortId = discordId.slice(0, 6) + '…';
+                const escapedId = _escapeHtml(discordId);
+                return `<div class="flex items-center justify-between py-1 border-b border-border/50 last:border-0">
+                    <span class="text-sm text-foreground">${_escapeHtml(qwName)}</span>
+                    <div class="relative group flex items-center gap-1 shrink-0">
+                        <button class="player-mapping-copy text-muted-foreground hover:text-foreground transition-colors"
+                                data-discord-id="${escapedId}"
+                                title="Copy Discord ID">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                            </svg>
+                        </button>
+                        <span class="text-xs text-muted-foreground cursor-default select-none" title="${escapedId}">ID</span>
+                        <div class="absolute right-0 bottom-full mb-1.5 hidden group-hover:flex items-center gap-1.5
+                                    bg-popover border border-border rounded px-2 py-1 shadow-lg z-10 whitespace-nowrap">
+                            <span class="text-xs text-muted-foreground font-mono">${escapedId}</span>
+                        </div>
+                    </div>
+                </div>`;
+              }).join('')
+            : `<p class="text-xs text-muted-foreground py-1">No players registered yet.</p>`;
+
+        return `
+            <div class="pt-3 border-t border-border">
+                <div class="flex items-center justify-between gap-1.5 mb-2">
+                    <div class="flex items-center gap-1.5">
+                        <label class="text-sm font-medium text-foreground">Player Mapping</label>
+                        <div class="relative group">
+                            <span class="text-muted-foreground cursor-default text-xs">ⓘ</span>
+                            <div class="absolute left-0 bottom-full mb-1.5 hidden group-hover:block
+                                        bg-popover border border-border rounded px-2 py-1 shadow-lg z-10 whitespace-nowrap">
+                                <p class="text-xs text-muted-foreground">Players the bot recognizes in voice.</p>
+                                <p class="text-xs text-muted-foreground">Run <code class="bg-muted px-1 rounded">/register</code> in Discord to refresh.</p>
+                            </div>
+                        </div>
+                    </div>
+                    ${_isLeader ? `<button id="manage-players-btn"
+                            class="text-xs px-2.5 py-1 bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors">
+                        Manage Players
+                    </button>` : ''}
+                </div>
+                <div class="p-2 bg-muted/50 border border-border rounded-lg">
+                    ${listHtml}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render notification settings section — toggle + channel dropdown
+     */
+    function _renderNotificationSettingsSection() {
+        const notifications = _botRegistration?.notifications;
+        const isEnabled = notifications?.enabled !== false; // default true
+        const selectedChannelId = notifications?.channelId || null;
+        const availableChannels = _botRegistration?.availableChannels || [];
+
+        const channelOptions = availableChannels.map(ch => {
+            const canPost = ch.canPost !== false; // treat missing as true (backward compat)
+            return `<option value="${_escapeHtml(ch.id)}" ${ch.id === selectedChannelId ? 'selected' : ''}
+                        ${!canPost ? 'class="text-muted-foreground"' : ''}>
+                ${!canPost ? '🔒 ' : '# '}${_escapeHtml(ch.name)}${!canPost ? ' (no permission)' : ''}
+            </option>`;
+        }).join('');
+
+        // Check if currently selected channel lacks post permission
+        const selectedChannel = availableChannels.find(ch => ch.id === selectedChannelId);
+        const selectedCanPost = !selectedChannel || selectedChannel.canPost !== false;
+
+        const channelDropdown = availableChannels.length > 0 ? `
+            <div class="mt-2">
+                <p class="text-sm text-foreground mb-1">Post in channel:</p>
+                <select id="notification-channel-select"
+                        class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground"
+                        ${!isEnabled ? 'disabled' : ''}>
+                    <option value="">— DM team leader (fallback) —</option>
+                    ${channelOptions}
+                </select>
+                <p id="channel-permission-warning"
+                   class="text-xs text-amber-400 mt-1 ${selectedCanPost ? 'hidden' : ''}">
+                    ⚠ Bot needs "Send Messages" permission in this channel
+                </p>
+            </div>
+        ` : '';
+
+        return `
+            <div class="pt-3 border-t border-border">
+                <label class="text-sm font-medium text-foreground">Notifications</label>
+                <div class="mt-2 flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-sm text-foreground">Challenge notifications</p>
+                        <p class="text-xs text-muted-foreground">Get notified when opponents challenge you</p>
+                    </div>
+                    <button class="notifications-enabled-toggle relative w-9 h-5 rounded-full transition-colors shrink-0
+                                ${isEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}"
+                            data-enabled="${isEnabled}">
+                        <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                              style="left: ${isEnabled ? '1.125rem' : '0.125rem'}"></span>
+                    </button>
+                </div>
+                ${channelDropdown}
+                <p class="text-xs text-muted-foreground mt-1.5">
+                    ⓘ Bot must have access to the selected channel
+                </p>
+            </div>
+        `;
+    }
+
+    /**
+     * Render schedule channel section — dropdown to select where bot posts availability grid
+     */
+    function _renderScheduleChannelSection() {
+        const selectedChannelId = _botRegistration?.scheduleChannel?.channelId || null;
+        const availableChannels = _botRegistration?.availableChannels || [];
+
+        const channelOptions = availableChannels.map(ch => {
+            const canPost = ch.canPost !== false;
+            return `<option value="${_escapeHtml(ch.id)}" ${ch.id === selectedChannelId ? 'selected' : ''}
+                        ${!canPost ? 'class="text-muted-foreground"' : ''}>
+                ${!canPost ? '🔒 ' : '# '}${_escapeHtml(ch.name)}${!canPost ? ' (no permission)' : ''}
+            </option>`;
+        }).join('');
+
+        const selectedChannel = availableChannels.find(ch => ch.id === selectedChannelId);
+        const selectedCanPost = !selectedChannel || selectedChannel.canPost !== false;
+
+        const channelDropdown = availableChannels.length > 0 ? `
+            <div class="mt-2">
+                <select id="schedule-channel-select"
+                        class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground">
+                    <option value="">— No schedule channel —</option>
+                    ${channelOptions}
+                </select>
+                <p id="schedule-channel-permission-warning"
+                   class="text-xs text-amber-400 mt-1 ${selectedCanPost ? 'hidden' : ''}">
+                    ⚠ Bot needs "Send Messages" permission in this channel
+                </p>
+            </div>
+        ` : '';
+
+        return `
+            <div class="pt-3 border-t border-border">
+                <label class="text-sm font-medium text-foreground">Schedule Channel</label>
+                <p class="text-xs text-muted-foreground mt-0.5">Post availability grid in this channel</p>
+                ${channelDropdown}
+            </div>
+        `;
+    }
+
+    /**
+     * Render auto-recording settings section — toggle + min players + mode
+     */
+    function _renderAutoRecordSection() {
+        const autoRecord = _botRegistration?.autoRecord;
+        const isEnabled = autoRecord?.enabled || false;
+        const minPlayers = autoRecord?.minPlayers || 3;
+        const mode = autoRecord?.mode || 'all';
+
+        const modeOptions = [
+            { value: 'all', label: 'All sessions' },
+            { value: 'official', label: 'Officials only' },
+            { value: 'practice', label: 'Practice only' },
+        ].map(opt =>
+            `<option value="${opt.value}" ${opt.value === mode ? 'selected' : ''}>${opt.label}</option>`
+        ).join('');
+
+        return `
+            <div class="pt-3 border-t border-border">
+                <div class="flex items-center justify-between gap-3">
+                    <label class="text-sm font-medium text-foreground">Auto-Recording</label>
+                    <button class="auto-record-enabled-toggle relative w-9 h-5 rounded-full transition-colors shrink-0
+                                ${isEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}"
+                            data-enabled="${isEnabled}">
+                        <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                              style="left: ${isEnabled ? '1.125rem' : '0.125rem'}"></span>
+                    </button>
+                </div>
+                <div class="mt-2 ${!isEnabled ? 'opacity-50 pointer-events-none' : ''}">
+                    <p class="text-xs text-muted-foreground mb-1.5">Start when</p>
+                    <div class="flex gap-3">
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="auto-record-min-players" value="3"
+                                   class="auto-record-min-players-radio"
+                                   ${minPlayers === 3 ? 'checked' : ''}>
+                            <span class="text-sm text-foreground">3+ members</span>
+                        </label>
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="auto-record-min-players" value="4"
+                                   class="auto-record-min-players-radio"
+                                   ${minPlayers === 4 ? 'checked' : ''}>
+                            <span class="text-sm text-foreground">4+ members</span>
+                        </label>
+                    </div>
+                    <div class="mt-2">
+                        <select id="auto-record-mode-select"
+                                class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground">
+                            ${modeOptions}
+                        </select>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -846,8 +1045,48 @@ const TeamManagementModal = (function() {
         const disconnectBtn = document.getElementById('voice-bot-disconnect-btn');
         disconnectBtn?.addEventListener('click', _handleVoiceBotDisconnect);
 
-        const visibilityToggle = document.querySelector('.voice-visibility-toggle');
+        // New: notification settings
+        const notificationsToggle = document.querySelector('.notifications-enabled-toggle');
+        notificationsToggle?.addEventListener('click', _handleNotificationsToggle);
+
+        const notificationChannelSelect = document.getElementById('notification-channel-select');
+        notificationChannelSelect?.addEventListener('change', _handleNotificationChannelChange);
+
+        const scheduleChannelSelect = document.getElementById('schedule-channel-select');
+        scheduleChannelSelect?.addEventListener('change', _handleScheduleChannelChange);
+
+        // Player mapping copy buttons
+        document.querySelectorAll('.player-mapping-copy').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const discordId = btn.dataset.discordId;
+                if (discordId) navigator.clipboard.writeText(discordId).catch(() => {});
+            });
+        });
+
+        // Manage Players button (leader only)
+        const managePlayersBtn = document.getElementById('manage-players-btn');
+        managePlayersBtn?.addEventListener('click', () => {
+            ManagePlayersModal.show(_teamId);
+        });
+    }
+
+    /**
+     * Attach event listeners for recording settings controls (visibility + auto-record)
+     * Called when Recordings tab is rendered — these controls live there, not in Discord tab
+     */
+    function _attachRecordingSettingsListeners() {
+        const visibilityToggle = document.querySelector('#tab-content-recordings .voice-visibility-toggle');
         visibilityToggle?.addEventListener('click', _handleVisibilityToggle);
+
+        const autoRecordToggle = document.querySelector('#tab-content-recordings .auto-record-enabled-toggle');
+        autoRecordToggle?.addEventListener('click', _handleAutoRecordToggle);
+
+        document.querySelectorAll('#tab-content-recordings .auto-record-min-players-radio').forEach(radio => {
+            radio.addEventListener('change', _handleAutoRecordMinPlayersChange);
+        });
+
+        const autoRecordModeSelect = document.querySelector('#tab-content-recordings #auto-record-mode-select');
+        autoRecordModeSelect?.addEventListener('change', _handleAutoRecordModeChange);
     }
 
     /**
@@ -913,6 +1152,269 @@ const TeamManagementModal = (function() {
             }
             btn.disabled = false;
             btn.textContent = originalText;
+        }
+    }
+
+    /**
+     * Handle notifications enabled toggle click
+     */
+    async function _handleNotificationsToggle() {
+        const btn = document.querySelector('.notifications-enabled-toggle');
+        if (!btn) return;
+
+        const currentlyEnabled = btn.dataset.enabled === 'true';
+        const newEnabled = !currentlyEnabled;
+
+        // Read current channel selection before optimistic update
+        const channelSelect = document.getElementById('notification-channel-select');
+        const channelId = channelSelect?.value || null;
+        const availableChannels = _botRegistration?.availableChannels || [];
+        const channelEntry = availableChannels.find(ch => ch.id === channelId);
+
+        const newNotifications = {
+            enabled: newEnabled,
+            channelId: channelId || null,
+            channelName: channelEntry?.name || null,
+        };
+
+        // Optimistic update
+        btn.dataset.enabled = String(newEnabled);
+        btn.classList.toggle('bg-primary', newEnabled);
+        btn.classList.toggle('bg-muted-foreground/30', !newEnabled);
+        const knob = btn.querySelector('span');
+        if (knob) knob.style.left = newEnabled ? '1.125rem' : '0.125rem';
+        if (channelSelect) channelSelect.disabled = !newEnabled;
+
+        // Persist saved state for rollback
+        const prevNotifications = _botRegistration?.notifications;
+
+        // Apply optimistically to local state
+        if (_botRegistration) _botRegistration.notifications = newNotifications;
+
+        try {
+            const result = await BotRegistrationService.updateSettings(_teamId, { notifications: newNotifications });
+            if (result.success) {
+                ToastService.showSuccess(newEnabled ? 'Notifications enabled' : 'Notifications disabled');
+            } else {
+                // Rollback
+                if (_botRegistration) _botRegistration.notifications = prevNotifications;
+                _rerenderVoiceBotSection();
+                ToastService.showError(result.error || 'Failed to update notifications');
+            }
+        } catch (error) {
+            console.error('❌ Error updating notification settings:', error);
+            if (_botRegistration) _botRegistration.notifications = prevNotifications;
+            _rerenderVoiceBotSection();
+            ToastService.showError('Network error - please try again');
+        }
+    }
+
+    /**
+     * Handle notification channel selection change
+     */
+    async function _handleNotificationChannelChange() {
+        const channelSelect = document.getElementById('notification-channel-select');
+        if (!channelSelect) return;
+
+        const channelId = channelSelect.value || null;
+        const availableChannels = _botRegistration?.availableChannels || [];
+        const channelEntry = availableChannels.find(ch => ch.id === channelId);
+
+        // Toggle permission warning
+        const warning = document.getElementById('channel-permission-warning');
+        if (warning) {
+            const canPost = !channelEntry || channelEntry.canPost !== false;
+            warning.classList.toggle('hidden', canPost);
+        }
+
+        const isEnabled = _botRegistration?.notifications?.enabled !== false;
+        const newNotifications = {
+            enabled: isEnabled,
+            channelId: channelId,
+            channelName: channelEntry?.name || null,
+        };
+
+        const prevNotifications = _botRegistration?.notifications;
+        if (_botRegistration) _botRegistration.notifications = newNotifications;
+
+        try {
+            const result = await BotRegistrationService.updateSettings(_teamId, { notifications: newNotifications });
+            if (!result.success) {
+                if (_botRegistration) _botRegistration.notifications = prevNotifications;
+                _rerenderVoiceBotSection();
+                ToastService.showError(result.error || 'Failed to update channel');
+            } else {
+                ToastService.showSuccess('Notification channel updated');
+            }
+        } catch (error) {
+            console.error('❌ Error updating notification channel:', error);
+            if (_botRegistration) _botRegistration.notifications = prevNotifications;
+            _rerenderVoiceBotSection();
+            ToastService.showError('Network error - please try again');
+        }
+    }
+
+    /**
+     * Handle schedule channel selection change
+     */
+    async function _handleScheduleChannelChange() {
+        const channelSelect = document.getElementById('schedule-channel-select');
+        if (!channelSelect) return;
+
+        const channelId = channelSelect.value || null;
+        const availableChannels = _botRegistration?.availableChannels || [];
+        const channelEntry = availableChannels.find(ch => ch.id === channelId);
+
+        // Toggle permission warning
+        const warning = document.getElementById('schedule-channel-permission-warning');
+        if (warning) {
+            const canPost = !channelEntry || channelEntry.canPost !== false;
+            warning.classList.toggle('hidden', canPost);
+        }
+
+        const newScheduleChannel = {
+            channelId: channelId,
+            channelName: channelEntry?.name || null,
+        };
+
+        const prevScheduleChannel = _botRegistration?.scheduleChannel;
+        if (_botRegistration) _botRegistration.scheduleChannel = newScheduleChannel;
+
+        try {
+            const result = await BotRegistrationService.updateSettings(_teamId, { scheduleChannel: newScheduleChannel });
+            if (!result.success) {
+                if (_botRegistration) _botRegistration.scheduleChannel = prevScheduleChannel;
+                _rerenderVoiceBotSection();
+                ToastService.showError(result.error || 'Failed to update schedule channel');
+            } else {
+                ToastService.showSuccess('Schedule channel updated');
+            }
+        } catch (error) {
+            console.error('❌ Error updating schedule channel:', error);
+            if (_botRegistration) _botRegistration.scheduleChannel = prevScheduleChannel;
+            _rerenderVoiceBotSection();
+            ToastService.showError('Network error - please try again');
+        }
+    }
+
+    /**
+     * Handle auto-record enabled toggle click
+     */
+    async function _handleAutoRecordToggle() {
+        const btn = document.querySelector('.auto-record-enabled-toggle');
+        if (!btn) return;
+
+        const currentlyEnabled = btn.dataset.enabled === 'true';
+        const newEnabled = !currentlyEnabled;
+
+        const minPlayersRadio = document.querySelector('.auto-record-min-players-radio:checked');
+        const modeSelect = document.getElementById('auto-record-mode-select');
+        const minPlayers = minPlayersRadio ? parseInt(minPlayersRadio.value, 10) : (_botRegistration?.autoRecord?.minPlayers || 3);
+        const mode = modeSelect?.value || _botRegistration?.autoRecord?.mode || 'all';
+
+        const newAutoRecord = { enabled: newEnabled, minPlayers, mode };
+
+        // Optimistic update
+        btn.dataset.enabled = String(newEnabled);
+        btn.classList.toggle('bg-primary', newEnabled);
+        btn.classList.toggle('bg-muted-foreground/30', !newEnabled);
+        const knob = btn.querySelector('span');
+        if (knob) knob.style.left = newEnabled ? '1.125rem' : '0.125rem';
+        // Re-render to reflect enable/disable state of sub-controls
+        const prevAutoRecord = _botRegistration?.autoRecord;
+        if (_botRegistration) _botRegistration.autoRecord = newAutoRecord;
+
+        // Re-render just the auto-record section sub-controls opacity
+        const autoRecordSection = document.querySelector('#voice-bot-section .pt-3.border-t:last-child');
+        if (autoRecordSection) {
+            const controlsDiv = autoRecordSection.querySelector('.mt-2');
+            if (controlsDiv) {
+                controlsDiv.classList.toggle('opacity-50', !newEnabled);
+                controlsDiv.classList.toggle('pointer-events-none', !newEnabled);
+            }
+        }
+
+        try {
+            const result = await BotRegistrationService.updateSettings(_teamId, { autoRecord: newAutoRecord });
+            if (result.success) {
+                ToastService.showSuccess(newEnabled ? 'Auto-recording enabled' : 'Auto-recording disabled');
+            } else {
+                if (_botRegistration) _botRegistration.autoRecord = prevAutoRecord;
+                _rerenderVoiceBotSection();
+                ToastService.showError(result.error || 'Failed to update auto-recording');
+            }
+        } catch (error) {
+            console.error('❌ Error updating auto-record settings:', error);
+            if (_botRegistration) _botRegistration.autoRecord = prevAutoRecord;
+            _rerenderVoiceBotSection();
+            ToastService.showError('Network error - please try again');
+        }
+    }
+
+    /**
+     * Handle auto-record min-players radio change
+     */
+    async function _handleAutoRecordMinPlayersChange(e) {
+        const minPlayers = parseInt(e.target.value, 10);
+        if (![3, 4].includes(minPlayers)) return;
+
+        const modeSelect = document.getElementById('auto-record-mode-select');
+        const isEnabled = _botRegistration?.autoRecord?.enabled || false;
+        const mode = modeSelect?.value || _botRegistration?.autoRecord?.mode || 'all';
+
+        const newAutoRecord = { enabled: isEnabled, minPlayers, mode };
+        const prevAutoRecord = _botRegistration?.autoRecord;
+        if (_botRegistration) _botRegistration.autoRecord = newAutoRecord;
+
+        try {
+            const result = await BotRegistrationService.updateSettings(_teamId, { autoRecord: newAutoRecord });
+            if (!result.success) {
+                if (_botRegistration) _botRegistration.autoRecord = prevAutoRecord;
+                _rerenderVoiceBotSection();
+                ToastService.showError(result.error || 'Failed to update setting');
+            } else {
+                ToastService.showSuccess('Recording threshold updated');
+            }
+        } catch (error) {
+            console.error('❌ Error updating min-players:', error);
+            if (_botRegistration) _botRegistration.autoRecord = prevAutoRecord;
+            _rerenderVoiceBotSection();
+            ToastService.showError('Network error - please try again');
+        }
+    }
+
+    /**
+     * Handle auto-record mode dropdown change
+     */
+    async function _handleAutoRecordModeChange() {
+        const modeSelect = document.getElementById('auto-record-mode-select');
+        if (!modeSelect) return;
+
+        const mode = modeSelect.value;
+        if (!['all', 'official', 'practice'].includes(mode)) return;
+
+        const minPlayersRadio = document.querySelector('.auto-record-min-players-radio:checked');
+        const isEnabled = _botRegistration?.autoRecord?.enabled || false;
+        const minPlayers = minPlayersRadio ? parseInt(minPlayersRadio.value, 10) : (_botRegistration?.autoRecord?.minPlayers || 3);
+
+        const newAutoRecord = { enabled: isEnabled, minPlayers, mode };
+        const prevAutoRecord = _botRegistration?.autoRecord;
+        if (_botRegistration) _botRegistration.autoRecord = newAutoRecord;
+
+        try {
+            const result = await BotRegistrationService.updateSettings(_teamId, { autoRecord: newAutoRecord });
+            if (!result.success) {
+                if (_botRegistration) _botRegistration.autoRecord = prevAutoRecord;
+                _rerenderVoiceBotSection();
+                ToastService.showError(result.error || 'Failed to update setting');
+            } else {
+                ToastService.showSuccess('Recording mode updated');
+            }
+        } catch (error) {
+            console.error('❌ Error updating auto-record mode:', error);
+            if (_botRegistration) _botRegistration.autoRecord = prevAutoRecord;
+            _rerenderVoiceBotSection();
+            ToastService.showError('Network error - please try again');
         }
     }
 
@@ -1639,17 +2141,94 @@ const TeamManagementModal = (function() {
     }
 
     /**
+     * Render recording settings (visibility + auto-record) — leader/scheduler only
+     */
+    function _renderRecordingSettings() {
+        if (!(_isLeader || _isScheduler)) return '';
+        if (!_botRegistration || _botRegistration.status !== 'active') return '';
+
+        const defaultVisibility = _teamData?.voiceSettings?.defaultVisibility || 'private';
+        const isPublic = defaultVisibility === 'public';
+
+        const autoRecord = _botRegistration?.autoRecord;
+        const arEnabled = autoRecord?.enabled || false;
+        const minPlayers = autoRecord?.minPlayers || 3;
+        const mode = autoRecord?.mode || 'all';
+
+        const modeOptions = [
+            { value: 'all', label: 'All sessions' },
+            { value: 'official', label: 'Officials only' },
+            { value: 'practice', label: 'Practice only' },
+        ].map(opt =>
+            `<option value="${opt.value}" ${opt.value === mode ? 'selected' : ''}>${opt.label}</option>`
+        ).join('');
+
+        return `
+            <div class="mb-4 pb-4 border-b border-border space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-sm text-foreground">Public recordings</p>
+                        <p class="text-xs text-muted-foreground voice-visibility-sublabel">
+                            ${isPublic ? 'Visible to everyone' : 'Visible to team members only'}
+                        </p>
+                    </div>
+                    <button class="voice-visibility-toggle relative w-9 h-5 rounded-full transition-colors shrink-0
+                                ${isPublic ? 'bg-primary' : 'bg-muted-foreground/30'}"
+                            data-enabled="${isPublic}">
+                        <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                              style="left: ${isPublic ? '1.125rem' : '0.125rem'}"></span>
+                    </button>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                    <label class="text-sm text-foreground">Auto-Recording</label>
+                    <button class="auto-record-enabled-toggle relative w-9 h-5 rounded-full transition-colors shrink-0
+                                ${arEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}"
+                            data-enabled="${arEnabled}">
+                        <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                              style="left: ${arEnabled ? '1.125rem' : '0.125rem'}"></span>
+                    </button>
+                </div>
+                <div class="${!arEnabled ? 'opacity-50 pointer-events-none' : ''}">
+                    <p class="text-xs text-muted-foreground mb-1.5">Start when</p>
+                    <div class="flex gap-3 mb-2">
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="auto-record-min-players" value="3"
+                                   class="auto-record-min-players-radio"
+                                   ${minPlayers === 3 ? 'checked' : ''}>
+                            <span class="text-sm text-foreground">3+ members</span>
+                        </label>
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="auto-record-min-players" value="4"
+                                   class="auto-record-min-players-radio"
+                                   ${minPlayers === 4 ? 'checked' : ''}>
+                            <span class="text-sm text-foreground">4+ members</span>
+                        </label>
+                    </div>
+                    <select id="auto-record-mode-select"
+                            class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground">
+                        ${modeOptions}
+                    </select>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
      * Render series-grouped recording cards
      */
     function _renderRecordingsList() {
         const container = document.getElementById('tab-content-recordings');
         if (!container) return;
 
+        const settingsHtml = _renderRecordingSettings();
+
         if (_recordings.length === 0) {
             container.innerHTML = `
+                ${settingsHtml}
                 <p class="text-sm text-muted-foreground py-4">
-                    No voice recordings yet.${(_isLeader || _isScheduler) ? ' Connect a Voice Bot in the Discord tab to start recording.' : ''}
+                    No voice recordings yet.${(_isLeader || _isScheduler) ? ' Connect the Quad Bot in the Discord tab to start recording.' : ''}
                 </p>`;
+            _attachRecordingSettingsListeners();
             return;
         }
 
@@ -1661,6 +2240,7 @@ const TeamManagementModal = (function() {
 
         container.innerHTML = `
             <div>
+                ${settingsHtml}
                 <div class="flex items-center justify-between mb-3">
                     <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recordings</span>
                     <span class="text-xs text-muted-foreground">${_recordings.length} recording${_recordings.length !== 1 ? 's' : ''}</span>
@@ -1672,6 +2252,7 @@ const TeamManagementModal = (function() {
             </div>
         `;
 
+        _attachRecordingSettingsListeners();
         _attachRecordingsListeners();
         _loadOpponentLogos(series);
     }

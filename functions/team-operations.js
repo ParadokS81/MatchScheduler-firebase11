@@ -8,6 +8,13 @@ const { getStorage } = require('firebase-admin/storage');
 
 const db = getFirestore();
 
+// Generate initials from a display name (max 3 chars, alphanumeric only)
+function generateInitials(name) {
+    if (!name || typeof name !== 'string') return 'USR';
+    const clean = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    return clean.length === 0 ? 'USR' : clean.substring(0, 3);
+}
+
 // Generate secure join code
 function generateJoinCode() {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -1584,4 +1591,239 @@ exports.deleteRecording = functions
         console.error('❌ deleteRecording error:', error);
         throw new functions.https.HttpsError('internal', 'Failed to delete recording');
     }
+});
+
+/**
+ * Add a Discord user as a phantom member to a team.
+ * Creates a Firebase Auth account + user doc + roster entry.
+ * The phantom auto-upgrades when the real person logs in via Discord OAuth (D4).
+ */
+exports.addPhantomMember = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    // 1. Auth check
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+    }
+
+    const { teamId, discordUserId, displayName } = data;
+    const callerId = context.auth.uid;
+
+    // 2. Validate input
+    if (!teamId || typeof teamId !== 'string') {
+        throw new functions.https.HttpsError('invalid-argument', 'teamId required');
+    }
+    if (!discordUserId || typeof discordUserId !== 'string' || !/^\d{17,19}$/.test(discordUserId)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Valid Discord user ID required');
+    }
+    if (!displayName || typeof displayName !== 'string' || displayName.length < 2 || displayName.length > 30) {
+        throw new functions.https.HttpsError('invalid-argument', 'Display name must be 2-30 characters');
+    }
+
+    // 3. Verify caller is team leader
+    const teamDoc = await db.collection('teams').doc(teamId).get();
+    if (!teamDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Team not found');
+    }
+    const team = teamDoc.data();
+    if (team.leaderId !== callerId) {
+        throw new functions.https.HttpsError('permission-denied', 'Only team leaders can add phantom members');
+    }
+
+    // 4. Check maxPlayers
+    const currentRosterSize = (team.playerRoster || []).length;
+    if (currentRosterSize >= (team.maxPlayers || 20)) {
+        throw new functions.https.HttpsError('failed-precondition', 'Team is at max capacity');
+    }
+
+    // 5. Verify bot registration is active and discordUserId is in guildMembers
+    const regDoc = await db.collection('botRegistrations').doc(teamId).get();
+    if (!regDoc.exists || regDoc.data().status !== 'active') {
+        throw new functions.https.HttpsError('failed-precondition', 'Bot must be connected first');
+    }
+    const guildMembers = regDoc.data().guildMembers || {};
+    if (!guildMembers[discordUserId]) {
+        throw new functions.https.HttpsError('not-found', 'Discord user not found in server member list');
+    }
+
+    // 6. Conflict check — is this Discord UID already linked to a user with team membership?
+    const existingUsers = await db.collection('users')
+        .where('discordUserId', '==', discordUserId)
+        .limit(1)
+        .get();
+
+    if (!existingUsers.empty) {
+        const existingUser = existingUsers.docs[0].data();
+        const existingTeams = existingUser.teams || {};
+        const teamIds = Object.keys(existingTeams).filter(t => existingTeams[t] === true);
+
+        if (teamIds.length > 0) {
+            let teamName = 'another team';
+            try {
+                const otherTeam = await db.collection('teams').doc(teamIds[0]).get();
+                if (otherTeam.exists) teamName = otherTeam.data().teamName;
+            } catch { /* use fallback */ }
+
+            throw new functions.https.HttpsError(
+                'already-exists',
+                `This user is already on ${teamName}. They need to join your team themselves.`
+            );
+        }
+
+        // Orphaned phantom (no teams) — clean it up
+        const orphanId = existingUsers.docs[0].id;
+        try {
+            await getAuth().deleteUser(orphanId);
+        } catch { /* may not have Auth account */ }
+        await db.collection('users').doc(orphanId).delete();
+    }
+
+    // 7. Check if discordUserId is already in this team's roster
+    const alreadyOnRoster = (team.playerRoster || []).some(
+        p => p.discordUserId === discordUserId
+    );
+    if (alreadyOnRoster) {
+        throw new functions.https.HttpsError('already-exists', 'This Discord user is already on the roster');
+    }
+
+    // 8. Create Firebase Auth account (shell — no email, no password)
+    let authUser;
+    try {
+        authUser = await getAuth().createUser({
+            displayName: displayName,
+            disabled: false,
+        });
+    } catch (err) {
+        throw new functions.https.HttpsError('internal', 'Failed to create auth account: ' + err.message);
+    }
+
+    const userId = authUser.uid;
+    const guildMember = guildMembers[discordUserId];
+
+    // 9. Generate initials
+    const initials = generateInitials(displayName);
+
+    try {
+        // 10. Create user doc
+        await db.collection('users').doc(userId).set({
+            displayName: displayName,
+            initials: initials,
+            email: null,
+            photoURL: guildMember.avatarUrl || null,
+            teams: { [teamId]: true },
+            favoriteTeams: [],
+            discordUserId: discordUserId,
+            discordUsername: guildMember.username || null,
+            discordAvatarHash: null,
+            discordLinkedAt: null,
+            avatarSource: guildMember.avatarUrl ? 'discord' : 'initials',
+            isPhantom: true,
+            phantomCreatedBy: callerId,
+            createdAt: FieldValue.serverTimestamp(),
+            lastUpdatedAt: FieldValue.serverTimestamp(),
+        });
+
+        // 11. Add to team roster
+        const rosterEntry = {
+            userId: userId,
+            displayName: displayName,
+            initials: initials,
+            photoURL: guildMember.avatarUrl || null,
+            joinedAt: new Date(),
+            role: 'member',
+            isPhantom: true,
+            discordUserId: discordUserId,
+        };
+
+        await db.collection('teams').doc(teamId).update({
+            playerRoster: FieldValue.arrayUnion(rosterEntry),
+        });
+
+        // 12. Update knownPlayers on bot registration
+        await db.collection('botRegistrations').doc(teamId).update({
+            [`knownPlayers.${discordUserId}`]: displayName,
+        });
+
+        console.log('✅ Phantom member added:', { userId, discordUserId, displayName, teamId });
+        return { success: true, userId };
+
+    } catch (err) {
+        // Cleanup on failure — delete the Auth account we created
+        try { await getAuth().deleteUser(userId); } catch { /* best effort */ }
+        try { await db.collection('users').doc(userId).delete(); } catch { /* best effort */ }
+        throw new functions.https.HttpsError('internal', 'Failed to create phantom member: ' + err.message);
+    }
+});
+
+/**
+ * Remove a phantom member from a team.
+ * Completely deletes the phantom: user doc, Auth account, roster entry, knownPlayers.
+ * Rejects if the user is not a phantom (use kickPlayer for real users).
+ */
+exports.removePhantomMember = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+    }
+
+    const { teamId, userId } = data;
+    const callerId = context.auth.uid;
+
+    if (!teamId || !userId) {
+        throw new functions.https.HttpsError('invalid-argument', 'teamId and userId required');
+    }
+
+    // Verify caller is team leader
+    const teamDoc = await db.collection('teams').doc(teamId).get();
+    if (!teamDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Team not found');
+    }
+    if (teamDoc.data().leaderId !== callerId) {
+        throw new functions.https.HttpsError('permission-denied', 'Only team leaders can remove phantom members');
+    }
+
+    // Read user doc — verify it's a phantom
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'User not found');
+    }
+    const userData = userDoc.data();
+    if (!userData.isPhantom) {
+        throw new functions.https.HttpsError(
+            'failed-precondition',
+            'This user has logged in and is no longer a phantom. Use the regular kick flow.'
+        );
+    }
+
+    const discordUserId = userData.discordUserId;
+
+    // Remove from team roster
+    const roster = teamDoc.data().playerRoster || [];
+    const updatedRoster = roster.filter(p => p.userId !== userId);
+    await db.collection('teams').doc(teamId).update({
+        playerRoster: updatedRoster,
+    });
+
+    // Remove from knownPlayers (if present)
+    if (discordUserId) {
+        try {
+            await db.collection('botRegistrations').doc(teamId).update({
+                [`knownPlayers.${discordUserId}`]: FieldValue.delete(),
+            });
+        } catch { /* bot registration may not exist */ }
+    }
+
+    // Delete user doc
+    await db.collection('users').doc(userId).delete();
+
+    // Delete Firebase Auth account
+    try {
+        await getAuth().deleteUser(userId);
+    } catch (err) {
+        console.warn('⚠️ Failed to delete phantom Auth account (may not exist):', err.message);
+    }
+
+    console.log('✅ Phantom member removed:', { userId, discordUserId, teamId });
+    return { success: true };
 });

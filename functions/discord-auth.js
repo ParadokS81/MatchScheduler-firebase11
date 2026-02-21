@@ -180,54 +180,62 @@ exports.discordOAuthExchange = functions
 
         let uid;
         let isNewUser = false;
+        let wasClaimed = false;
 
         if (!existingUserQuery.empty) {
             // Existing user - get their Firebase UID
             uid = existingUserQuery.docs[0].id;
-            console.log(`Found existing user: ${uid}`);
-
-            // Update Discord data and avatar (in case username/avatar changed)
-            const newPhotoURL = getDiscordAvatarUrl(discordUser.id, discordUser.avatar);
             const existingUserData = existingUserQuery.docs[0].data();
+            console.log(`Found existing user: ${uid}, isPhantom: ${existingUserData.isPhantom || false}`);
 
-            await usersRef.doc(uid).update({
-                discordUsername: discordUser.username,
-                discordAvatarHash: discordUser.avatar,
-                photoURL: newPhotoURL,
-                lastUpdatedAt: FieldValue.serverTimestamp(),
-                lastLogin: FieldValue.serverTimestamp()
-            });
+            if (existingUserData.isPhantom) {
+                // Phantom claim: upgrade placeholder to real account
+                await claimPhantomAccount(uid, discordUser);
+                isNewUser = true;  // Treat claim as "new" for onboarding flow
+                wasClaimed = true;
+            } else {
+                // Real user: update Discord data and avatar (in case username/avatar changed)
+                const newPhotoURL = getDiscordAvatarUrl(discordUser.id, discordUser.avatar);
 
-            // Propagate updated avatar to team rosters
-            const userTeams = existingUserData.teams || {};
-            const teamIds = Object.keys(userTeams);
-            if (teamIds.length > 0) {
-                const teamsRef = db.collection('teams');
-                const batch = db.batch();
-                let rosterUpdates = 0;
+                await usersRef.doc(uid).update({
+                    discordUsername: discordUser.username,
+                    discordAvatarHash: discordUser.avatar,
+                    photoURL: newPhotoURL,
+                    lastUpdatedAt: FieldValue.serverTimestamp(),
+                    lastLogin: FieldValue.serverTimestamp()
+                });
 
-                for (const teamId of teamIds) {
-                    const teamDoc = await teamsRef.doc(teamId).get();
-                    if (!teamDoc.exists) continue;
+                // Propagate updated avatar to team rosters
+                const userTeams = existingUserData.teams || {};
+                const teamIds = Object.keys(userTeams);
+                if (teamIds.length > 0) {
+                    const teamsRef = db.collection('teams');
+                    const batch = db.batch();
+                    let rosterUpdates = 0;
 
-                    const teamData = teamDoc.data();
-                    const roster = teamData.playerRoster || [];
-                    const playerIndex = roster.findIndex(p => p.userId === uid);
+                    for (const teamId of teamIds) {
+                        const teamDoc = await teamsRef.doc(teamId).get();
+                        if (!teamDoc.exists) continue;
 
-                    if (playerIndex !== -1) {
-                        const updatedRoster = [...roster];
-                        updatedRoster[playerIndex] = {
-                            ...updatedRoster[playerIndex],
-                            photoURL: newPhotoURL
-                        };
-                        batch.update(teamDoc.ref, { playerRoster: updatedRoster });
-                        rosterUpdates++;
+                        const teamData = teamDoc.data();
+                        const roster = teamData.playerRoster || [];
+                        const playerIndex = roster.findIndex(p => p.userId === uid);
+
+                        if (playerIndex !== -1) {
+                            const updatedRoster = [...roster];
+                            updatedRoster[playerIndex] = {
+                                ...updatedRoster[playerIndex],
+                                photoURL: newPhotoURL
+                            };
+                            batch.update(teamDoc.ref, { playerRoster: updatedRoster });
+                            rosterUpdates++;
+                        }
                     }
-                }
 
-                if (rosterUpdates > 0) {
-                    await batch.commit();
-                    console.log(`Updated photoURL in ${rosterUpdates} team roster(s) for user: ${uid}`);
+                    if (rosterUpdates > 0) {
+                        await batch.commit();
+                        console.log(`Updated photoURL in ${rosterUpdates} team roster(s) for user: ${uid}`);
+                    }
                 }
             }
         } else {
@@ -303,6 +311,7 @@ exports.discordOAuthExchange = functions
             success: true,
             customToken: customToken,
             isNewUser: isNewUser,
+            wasClaimed: wasClaimed,
             user: {
                 discordUsername: discordUser.username,
                 discordUserId: discordUser.id,
@@ -315,6 +324,82 @@ exports.discordOAuthExchange = functions
         return { success: false, error: 'Authentication failed' };
     }
 });
+
+/**
+ * Upgrade a phantom user to a real user account.
+ * Updates Auth account, user doc, and all team roster entries.
+ * Keeps the QW displayName the leader assigned — don't overwrite with Discord name.
+ */
+async function claimPhantomAccount(userId, discordUser) {
+    const discordUserId = discordUser.id;
+    const { username, email, avatar } = discordUser;
+
+    // 1. Update Firebase Auth account
+    const authUpdate = { disabled: false };
+    if (email) authUpdate.email = email;
+    try {
+        await getAuth().updateUser(userId, authUpdate);
+    } catch (err) {
+        console.warn('⚠️ Failed to update phantom Auth account:', err.message);
+    }
+
+    // 2. Read current user doc to check existing fields
+    const userDoc = await db.collection('users').doc(userId).get();
+    const currentData = userDoc.data();
+
+    const userUpdate = {
+        isPhantom: FieldValue.delete(),
+        phantomCreatedBy: FieldValue.delete(),
+        discordUsername: username,
+        discordUserId: discordUserId,
+        discordAvatarHash: avatar || null,
+        discordLinkedAt: FieldValue.serverTimestamp(),
+        lastUpdatedAt: FieldValue.serverTimestamp(),
+        lastLogin: FieldValue.serverTimestamp(),
+    };
+
+    // Only set email if Discord provided one and user doesn't already have one
+    if (email && !currentData.email) {
+        userUpdate.email = email;
+    }
+
+    // Update avatar only if Discord has one and user had no real avatar yet
+    let newPhotoURL = null;
+    if (avatar && (!currentData.avatarSource || currentData.avatarSource === 'initials')) {
+        newPhotoURL = getDiscordAvatarUrl(discordUserId, avatar);
+        userUpdate.photoURL = newPhotoURL;
+        userUpdate.avatarSource = 'discord';
+    }
+
+    await db.collection('users').doc(userId).update(userUpdate);
+
+    // 3. Clear isPhantom flag on all team roster entries; update photo if we got one
+    const teams = currentData.teams || {};
+    for (const teamId of Object.keys(teams)) {
+        if (!teams[teamId]) continue;
+
+        const teamDoc = await db.collection('teams').doc(teamId).get();
+        if (!teamDoc.exists) continue;
+
+        const roster = teamDoc.data().playerRoster || [];
+        let updated = false;
+        const updatedRoster = roster.map(entry => {
+            if (entry.userId === userId && entry.isPhantom) {
+                updated = true;
+                const newEntry = { ...entry, isPhantom: false };
+                if (newPhotoURL) newEntry.photoURL = newPhotoURL;
+                return newEntry;
+            }
+            return entry;
+        });
+
+        if (updated) {
+            await db.collection('teams').doc(teamId).update({ playerRoster: updatedRoster });
+        }
+    }
+
+    console.log('✅ Phantom account claimed:', { userId, discordUserId });
+}
 
 /**
  * Helper: Log profile creation event to audit trail
