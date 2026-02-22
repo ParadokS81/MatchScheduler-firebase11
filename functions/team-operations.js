@@ -191,9 +191,30 @@ exports.createTeam = functions
             throw new functions.https.HttpsError('internal', 'Failed to generate unique join code. Please try again.');
         }
         
-        // Create team document
-        const teamRef = db.collection('teams').doc();
-        const teamId = teamRef.id;
+        // Create team document with readable ID: team-{tag}-{nnn}
+        const tagSlug = (teamData.teamTag || teamData.teamName)
+            .trim().toLowerCase()
+            .replace(/[^a-z0-9]/g, '')
+            .substring(0, 10) || 'new';
+        let teamId;
+        let teamRef;
+        let idAttempts = 0;
+        while (idAttempts < 10) {
+            const suffix = idAttempts === 0 ? '001' : String(idAttempts + 1).padStart(3, '0');
+            const candidateId = `team-${tagSlug}-${suffix}`;
+            const existing = await db.collection('teams').doc(candidateId).get();
+            if (!existing.exists) {
+                teamId = candidateId;
+                teamRef = db.collection('teams').doc(teamId);
+                break;
+            }
+            idAttempts++;
+        }
+        if (!teamRef) {
+            // Fallback to auto-generated ID if all readable IDs taken
+            teamRef = db.collection('teams').doc();
+            teamId = teamRef.id;
+        }
         
         const now = FieldValue.serverTimestamp();
         const nowDate = new Date(); // Use regular Date for array fields
@@ -1813,6 +1834,31 @@ exports.removePhantomMember = functions
             });
         } catch { /* bot registration may not exist */ }
     }
+
+    // Clean up any availability entries for this phantom
+    const availabilitySnap = await db.collection('availability')
+        .where('teamId', '==', teamId)
+        .get();
+
+    const batch = db.batch();
+    availabilitySnap.docs.forEach(doc => {
+        const data = doc.data();
+        const slots = data.slots || {};
+        let hasChanges = false;
+
+        Object.keys(slots).forEach(slotKey => {
+            if (Array.isArray(slots[slotKey]) && slots[slotKey].includes(userId)) {
+                slots[slotKey] = slots[slotKey].filter(uid => uid !== userId);
+                hasChanges = true;
+            }
+        });
+
+        if (hasChanges) {
+            batch.update(doc.ref, { slots });
+        }
+    });
+
+    await batch.commit();
 
     // Delete user doc
     await db.collection('users').doc(userId).delete();

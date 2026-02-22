@@ -904,8 +904,10 @@ const TeamManagementModal = (function() {
      * Render schedule channel section — dropdown to select where bot posts availability grid
      */
     function _renderScheduleChannelSection() {
-        const selectedChannelId = _botRegistration?.scheduleChannel?.channelId || null;
+        const selectedChannelId = _botRegistration?.scheduleChannelId
+            || _botRegistration?.scheduleChannel?.channelId || null;
         const availableChannels = _botRegistration?.availableChannels || [];
+        const pendingCreate = _botRegistration?.createChannelRequest?.status === 'pending';
 
         const channelOptions = availableChannels.map(ch => {
             const canPost = ch.canPost !== false;
@@ -932,11 +934,25 @@ const TeamManagementModal = (function() {
             </div>
         ` : '';
 
+        const createBtn = pendingCreate ? `
+            <button id="create-schedule-channel-btn" disabled
+                    class="mt-2 w-full px-3 py-1.5 bg-muted border border-border rounded-lg text-sm text-muted-foreground cursor-wait flex items-center justify-center gap-2">
+                <span class="animate-spin inline-block w-3.5 h-3.5 border-2 border-muted-foreground border-t-transparent rounded-full"></span>
+                Creating channel...
+            </button>
+        ` : `
+            <button id="create-schedule-channel-btn"
+                    class="mt-2 w-full px-3 py-1.5 bg-muted hover:bg-muted/80 border border-border rounded-lg text-sm text-foreground transition-colors">
+                + Create Channel
+            </button>
+        `;
+
         return `
             <div class="pt-3 border-t border-border">
                 <label class="text-sm font-medium text-foreground">Schedule Channel</label>
                 <p class="text-xs text-muted-foreground mt-0.5">Post availability grid in this channel</p>
                 ${channelDropdown}
+                ${createBtn}
             </div>
         `;
     }
@@ -1054,6 +1070,9 @@ const TeamManagementModal = (function() {
 
         const scheduleChannelSelect = document.getElementById('schedule-channel-select');
         scheduleChannelSelect?.addEventListener('change', _handleScheduleChannelChange);
+
+        const createChannelBtn = document.getElementById('create-schedule-channel-btn');
+        createChannelBtn?.addEventListener('click', _handleCreateChannel);
 
         // Player mapping copy buttons
         document.querySelectorAll('.player-mapping-copy').forEach(btn => {
@@ -1294,6 +1313,31 @@ const TeamManagementModal = (function() {
             if (_botRegistration) _botRegistration.scheduleChannel = prevScheduleChannel;
             _rerenderVoiceBotSection();
             ToastService.showError('Network error - please try again');
+        }
+    }
+
+    /**
+     * Handle "Create Channel" button click — request bot to create a schedule channel
+     */
+    async function _handleCreateChannel() {
+        if (!_teamId) return;
+
+        try {
+            const result = await BotRegistrationService.createChannel(_teamId, 'schedule');
+            if (result.success) {
+                ToastService.showSuccess('Creating schedule channel...');
+                _rerenderVoiceBotSection();
+            } else {
+                ToastService.showError(result.error || 'Failed to request channel creation');
+            }
+        } catch (error) {
+            const msg = error?.message || 'Network error';
+            if (msg.includes('already-exists') || msg.includes('already pending')) {
+                ToastService.showWarning('Channel creation already in progress');
+            } else {
+                console.error('Error creating schedule channel:', error);
+                ToastService.showError('Failed to create channel');
+            }
         }
     }
 

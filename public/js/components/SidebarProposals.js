@@ -9,6 +9,7 @@ const SidebarProposals = (function() {
     let _unsubscribers = [];
     let _userTeamIds = [];
     let _initialized = false;
+    let _gameTypeFilter = null; // null = show all, synced from UpcomingMatchesPanel
 
     // ─── Initialization ──────────────────────────────────────────────
 
@@ -18,6 +19,9 @@ const SidebarProposals = (function() {
 
         // Event delegation for clicks — attach once, survives re-renders
         _container.addEventListener('click', _handleClick);
+
+        // Listen for panel-wide game type filter changes
+        window.addEventListener('game-type-filter-changed', _handleGameTypeFilterChanged);
 
         const currentUser = AuthService.getCurrentUser();
         if (!currentUser) {
@@ -103,23 +107,42 @@ const SidebarProposals = (function() {
         }
     }
 
+    // ─── Game Type Filter ──────────────────────────────────────────
+
+    function _handleGameTypeFilterChanged(e) {
+        _gameTypeFilter = e.detail.gameType;
+        _render();
+    }
+
     // ─── Rendering ───────────────────────────────────────────────────
 
     function _render() {
         if (!_container) return;
 
+        const now = new Date();
         const proposals = ProposalService.getProposalsFromCache()
-            .filter(p => p.status === 'active');
+            .filter(p => p.status === 'active')
+            .filter(p => !p.expiresAt || !(p.expiresAt.toDate ? p.expiresAt.toDate() < now : new Date(p.expiresAt) < now));
 
         if (proposals.length === 0) {
             _container.innerHTML = '';
             return;
         }
 
-        // Sort by weekId (earliest first)
-        proposals.sort((a, b) => (a.weekId || '').localeCompare(b.weekId || ''));
+        // Apply game type filter (synced from UpcomingMatchesPanel)
+        const filteredProposals = _gameTypeFilter
+            ? proposals.filter(p => (p.gameType || 'official') === _gameTypeFilter)
+            : proposals;
 
-        const cardsHtml = proposals.map(p => _renderProposalPreview(p)).join('');
+        if (filteredProposals.length === 0) {
+            _container.innerHTML = '';
+            return;
+        }
+
+        // Sort by weekId (earliest first)
+        filteredProposals.sort((a, b) => (a.weekId || '').localeCompare(b.weekId || ''));
+
+        const cardsHtml = filteredProposals.map(p => _renderProposalPreview(p)).join('');
 
         _container.innerHTML = `
             <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 text-center">
@@ -221,6 +244,8 @@ const SidebarProposals = (function() {
     function cleanup() {
         _unsubscribers.forEach(unsub => unsub());
         _unsubscribers = [];
+        window.removeEventListener('game-type-filter-changed', _handleGameTypeFilterChanged);
+        _gameTypeFilter = null;
         if (_container) {
             _container.removeEventListener('click', _handleClick);
             _container.innerHTML = '';

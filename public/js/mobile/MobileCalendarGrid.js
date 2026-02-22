@@ -232,8 +232,9 @@ const MobileCalendarGrid = (function() {
         const cellId = cell.dataset.cell;
         if (!cellId) return;
 
-        // Block interaction on past cells
+        // Block interaction on past cells and buffer cells
         if (_isPastCell(cellId)) return;
+        if (cell.classList.contains('mobile-cell-buffer')) return;
 
         const user = AuthService.getCurrentUser();
         if (!user) {
@@ -291,10 +292,13 @@ const MobileCalendarGrid = (function() {
         const cellIds = timeSlots.map(time => `${day}_${time}`);
 
         // Toggle: if all selected, deselect all; otherwise select all
+        const bufferSlots = _getBufferSlots();
         const selectableCellIds = cellIds.filter(id => {
             if (_isPastCell(id)) return false;
             const utcSlot = _gridToUtcMap.get(id);
-            return !(utcSlot && _getMatchAtSlot(utcSlot));
+            if (utcSlot && _getMatchAtSlot(utcSlot)) return false;
+            if (utcSlot && bufferSlots.has(utcSlot)) return false;
+            return true;
         });
         const allSelected = selectableCellIds.every(id => _selectedCells.has(id));
 
@@ -324,10 +328,13 @@ const MobileCalendarGrid = (function() {
 
         const cellIds = DAYS.map(day => `${day}_${time}`);
 
+        const bufferSlots = _getBufferSlots();
         const selectableCellIds = cellIds.filter(id => {
             if (_isPastCell(id)) return false;
             const utcSlot = _gridToUtcMap.get(id);
-            return !(utcSlot && _getMatchAtSlot(utcSlot));
+            if (utcSlot && _getMatchAtSlot(utcSlot)) return false;
+            if (utcSlot && bufferSlots.has(utcSlot)) return false;
+            return true;
         });
         const allSelected = selectableCellIds.every(id => _selectedCells.has(id));
 
@@ -372,6 +379,54 @@ const MobileCalendarGrid = (function() {
             m.status === 'upcoming' &&
             (m.teamAId === teamId || m.teamBId === teamId)
         ) || null;
+    }
+
+    /**
+     * Returns Set of UTC slot IDs that are buffer zones (30 min before/after scheduled matches).
+     * Mirrors desktop _adjacentSlots logic from AvailabilityGrid.js.
+     */
+    function _getBufferSlots() {
+        const teamId = MobileApp.getSelectedTeamId();
+        if (!teamId) return new Set();
+
+        const weekId = _getWeekId();
+        const matches = ScheduledMatchService.getMatchesFromCache();
+        const teamMatches = matches.filter(m =>
+            m.weekId === weekId &&
+            m.status === 'upcoming' &&
+            (m.teamAId === teamId || m.teamBId === teamId)
+        );
+
+        const matchSlots = new Set(teamMatches.map(m => m.blockedSlot));
+        const bufferSlots = new Set();
+        const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+        for (const slotId of matchSlots) {
+            const [day, time] = slotId.split('_');
+            const h = parseInt(time.slice(0, 2));
+            const m = parseInt(time.slice(2));
+            const di = days.indexOf(day);
+
+            // Previous slot (-30 min)
+            let pm = m - 30, ph = h, pdi = di;
+            if (pm < 0) { pm = 30; ph--; }
+            if (ph < 0) { ph = 23; pdi--; }
+            if (pdi >= 0) {
+                const prev = `${days[pdi]}_${String(ph).padStart(2,'0')}${String(pm).padStart(2,'0')}`;
+                if (!matchSlots.has(prev)) bufferSlots.add(prev);
+            }
+
+            // Next slot (+30 min)
+            let nm = m + 30, nh = h, ndi = di;
+            if (nm >= 60) { nm = 0; nh++; }
+            if (nh >= 24) { nh = 0; ndi++; }
+            if (ndi < days.length) {
+                const next = `${days[ndi]}_${String(nh).padStart(2,'0')}${String(nm).padStart(2,'0')}`;
+                if (!matchSlots.has(next)) bufferSlots.add(next);
+            }
+        }
+
+        return bufferSlots;
     }
 
     // ─── Data Loading ────────────────────────────────────────────────
@@ -420,6 +475,7 @@ const MobileCalendarGrid = (function() {
         const cells = container.querySelectorAll('.mobile-grid-cell');
         const team = MobileApp.getSelectedTeam();
         const roster = team?.playerRoster || [];
+        const bufferSlots = _getBufferSlots();
 
         cells.forEach(cell => {
             const cellId = cell.dataset.cell;
@@ -428,10 +484,14 @@ const MobileCalendarGrid = (function() {
             const pastClass = _isPastCell(cellId) ? ' mobile-cell-past' : '';
 
             const match = utcSlotId ? _getMatchAtSlot(utcSlotId) : null;
+            const isBuffer = utcSlotId && bufferSlots.has(utcSlotId);
 
             if (match) {
                 cell.innerHTML = _renderMatchCellContent(match);
                 cell.className = 'mobile-grid-cell mobile-cell-match' + pastClass;
+            } else if (isBuffer) {
+                cell.innerHTML = _renderCellContent(players, roster);
+                cell.className = 'mobile-grid-cell mobile-cell-buffer' + pastClass;
             } else {
                 cell.innerHTML = _renderCellContent(players, roster);
                 cell.className = 'mobile-grid-cell' + pastClass +

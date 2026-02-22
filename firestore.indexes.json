@@ -26,6 +26,14 @@
       ]
     },
     {
+      "collectionGroup": "matchProposals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "expiresAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "recordingSessions",
       "queryScope": "COLLECTION",
       "fields": [

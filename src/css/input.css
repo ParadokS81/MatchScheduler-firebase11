@@ -1120,6 +1120,12 @@ body {
   pointer-events: none;
 }
 
+/* Buffer slots adjacent to scheduled matches — fully dimmed like past */
+.grid-cell.match-buffer {
+  opacity: 0.15;
+  pointer-events: none;
+}
+
 /* Past day headers — dimmed when all cells in column are past */
 .day-header.past-day {
   opacity: 0.3;
@@ -3769,6 +3775,10 @@ body {
 .mh-result-loss { color: rgb(239, 68, 68); }
 .mh-result-draw { color: var(--muted-foreground); }
 
+/* Score coloring — winning score green, losing score red */
+.mh-score-win { color: rgb(34, 197, 94); font-weight: 700; }
+.mh-score-loss { color: rgb(239, 68, 68); }
+
 /* P5.3: Action icon buttons in match rows */
 .mh-icon-btn {
     @apply p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer;
@@ -4911,6 +4921,12 @@ body {
 
 /* Past timeslots — dimmed, non-interactive */
 .mobile-grid-cell.mobile-cell-past {
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+/* Buffer slots adjacent to scheduled matches — dimmed, non-interactive */
+.mobile-grid-cell.mobile-cell-buffer {
   opacity: 0.15;
   pointer-events: none;
 }
@@ -6346,6 +6362,116 @@ body {
     cursor: default;
 }
 
+/* Proposal section (19.0b): wraps type row + slot list + propose button */
+.mcd-proposal-section {
+    border-top: 1px solid var(--border);
+    padding-top: 0.375rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+/* Slot list in mobile proposal section */
+.mcd-slot-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    max-height: 10rem;
+    overflow-y: auto;
+}
+
+.mcd-slot-item {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.375rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.mcd-slot-item:active {
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.mcd-slot-check {
+    font-size: 0.85rem;
+    color: var(--primary);
+    flex-shrink: 0;
+    min-width: 1rem;
+}
+
+.mcd-slot-time {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--foreground);
+    flex: 1;
+}
+
+.mcd-slot-count {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+}
+
+.mcd-no-slots {
+    font-size: 0.7rem;
+    color: var(--muted-foreground);
+    font-style: italic;
+    padding: 0.25rem 0;
+}
+
+/* Proposal slot list in desktop ComparisonModal (cm = comparison modal) */
+.cm-slot-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    max-height: 12rem;
+    overflow-y: auto;
+    margin-top: 0.375rem;
+}
+
+.cm-slot-item {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.2rem 0.375rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.75rem;
+}
+
+.cm-slot-item:hover {
+    background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.cm-slot-item .cm-slot-check {
+    color: var(--primary);
+    flex-shrink: 0;
+    min-width: 1rem;
+}
+
+.cm-slot-item .cm-slot-time {
+    font-weight: 500;
+    color: var(--foreground);
+    flex: 1;
+}
+
+.cm-slot-item .cm-slot-count {
+    font-size: 0.65rem;
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+}
+
+.cm-slot-day-header {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0 0.375rem;
+    opacity: 0.8;
+}
 
 
 /* Old mobile drawer/bottom-bar/landscape CSS removed in Slice M1.0 */
@@ -6392,9 +6518,10 @@ body {
 
 /* Team selector header */
 /* Left panel column header — same grid as data rows for pixel-perfect alignment */
+/* 4 columns: date | map | scoreA | scoreB (W/L column removed) */
 .h2h-column-header {
     display: grid;
-    grid-template-columns: 6.5rem auto 2.25rem 2.25rem 1.25rem;
+    grid-template-columns: 6.5rem auto 2.25rem 2.25rem;
     align-items: center;
     column-gap: 0.25rem;
     padding: 0.3125rem 0.5rem;
@@ -6416,34 +6543,37 @@ body {
     justify-self: start;
 }
 
-/* Record uses display:contents so children become grid items */
+/* Record uses display:contents so children (logo badges) become grid items */
 .h2h-header-record {
     display: contents;
 }
 
-/* Force each record span into the correct column — center to match scores */
-.h2h-header-record > span:nth-child(1) {
+/* Team A logo badge → column 3, Team B → column 4 */
+.h2h-header-record > *:nth-child(1) {
     grid-column: 3;
     grid-row: 1;
-    text-align: center;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    justify-self: center;
 }
 
-.h2h-header-record > span:nth-child(2) {
+.h2h-header-record > *:nth-child(2) {
     grid-column: 4;
     grid-row: 1;
-    text-align: center;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    justify-self: center;
 }
 
-.h2h-header-record > span:nth-child(3) {
-    grid-column: 5;
-    grid-row: 1;
-    text-align: center;
-    font-size: 0.6875rem;
+/* Small logo badges in the column header */
+.h2h-header-badge {
+    width: 1.125rem;
+    height: 1.125rem;
+    border-radius: 0.125rem;
+    object-fit: contain;
+}
+
+.h2h-header-badge-text {
+    font-size: 0.5625rem;
     font-weight: 600;
+    color: var(--muted-foreground);
+    text-transform: uppercase;
 }
 
 .h2h-opponent-select {
@@ -6511,9 +6641,9 @@ body {
     gap: 0;
 }
 
-/* H2H result rows: 5-column grid (date, map, score, score, result) */
+/* H2H result rows: 4-column grid (date, map, scoreA, scoreB) */
 .h2h-split .mh-table-row {
-    grid-template-columns: 6.5rem auto 2.25rem 2.25rem 1.25rem;
+    grid-template-columns: 6.5rem auto 2.25rem 2.25rem;
 }
 
 /* Form result rows: 6-column grid (date, map, scoreUs, scoreThem, opponent, result) */
@@ -7591,7 +7721,7 @@ body {
 /* Admin bot grid */
 .admin-bot-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr auto auto;
+    grid-template-columns: 1fr auto 1fr auto auto;
     gap: 0 1rem;
     align-items: center;
 }

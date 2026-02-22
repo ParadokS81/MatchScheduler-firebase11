@@ -28,8 +28,8 @@ exports.manageBotRegistration = functions
         if (!teamId || typeof teamId !== 'string') {
             throw new functions.https.HttpsError('invalid-argument', 'teamId is required');
         }
-        if (!action || !['connect', 'disconnect'].includes(action)) {
-            throw new functions.https.HttpsError('invalid-argument', 'action must be "connect" or "disconnect"');
+        if (!action || !['connect', 'disconnect', 'updateSettings', 'createChannel'].includes(action)) {
+            throw new functions.https.HttpsError('invalid-argument', 'action must be "connect", "disconnect", "updateSettings", or "createChannel"');
         }
 
         // 3. Verify team exists and caller is leader or scheduler
@@ -47,8 +47,12 @@ exports.manageBotRegistration = functions
 
         if (action === 'connect') {
             return await _handleConnect(userId, teamId, team);
-        } else {
+        } else if (action === 'disconnect') {
             return await _handleDisconnect(teamId);
+        } else if (action === 'createChannel') {
+            return await _handleCreateChannel(data, userId, teamId);
+        } else {
+            return await _handleUpdateSettings(data, teamId);
         }
 
     } catch (error) {
@@ -122,6 +126,98 @@ async function _handleConnect(userId, teamId, team) {
             updatedAt: new Date().toISOString(),
         }
     };
+}
+
+/**
+ * Handle updateSettings action - persist notification and auto-record settings
+ */
+async function _handleUpdateSettings(data, teamId) {
+    const regDoc = await db.collection('botRegistrations').doc(teamId).get();
+    if (!regDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Bot registration not found');
+    }
+
+    const reg = regDoc.data();
+    if (reg.status !== 'active') {
+        throw new functions.https.HttpsError('failed-precondition', 'Bot must be active to update settings');
+    }
+
+    const { notifications, autoRecord, scheduleChannel } = data;
+    const updateData = { updatedAt: FieldValue.serverTimestamp() };
+
+    if (notifications !== undefined) {
+        if (typeof notifications.enabled !== 'boolean') {
+            throw new functions.https.HttpsError('invalid-argument', 'notifications.enabled must be a boolean');
+        }
+        updateData.notifications = {
+            enabled: notifications.enabled,
+            channelId: notifications.channelId ?? null,
+            channelName: notifications.channelName ?? null,
+        };
+    }
+
+    if (autoRecord !== undefined) {
+        if (typeof autoRecord.enabled !== 'boolean') {
+            throw new functions.https.HttpsError('invalid-argument', 'autoRecord.enabled must be a boolean');
+        }
+        if (![3, 4].includes(autoRecord.minPlayers)) {
+            throw new functions.https.HttpsError('invalid-argument', 'autoRecord.minPlayers must be 3 or 4');
+        }
+        if (!['all', 'official', 'practice'].includes(autoRecord.mode)) {
+            throw new functions.https.HttpsError('invalid-argument', 'autoRecord.mode must be "all", "official", or "practice"');
+        }
+        updateData.autoRecord = {
+            enabled: autoRecord.enabled,
+            minPlayers: autoRecord.minPlayers,
+            mode: autoRecord.mode,
+        };
+    }
+
+    if (scheduleChannel !== undefined) {
+        updateData.scheduleChannelId = scheduleChannel.channelId ?? null;
+        updateData.scheduleChannelName = scheduleChannel.channelName ?? null;
+    }
+
+    await db.collection('botRegistrations').doc(teamId).update(updateData);
+
+    console.log('✅ Bot settings updated:', { teamId, fields: Object.keys(updateData).filter(k => k !== 'updatedAt') });
+
+    return { success: true };
+}
+
+/**
+ * Handle createChannel action - request bot to create a schedule channel in the Discord guild
+ */
+async function _handleCreateChannel(data, userId, teamId) {
+    const regDoc = await db.collection('botRegistrations').doc(teamId).get();
+    if (!regDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Bot registration not found');
+    }
+
+    const reg = regDoc.data();
+    if (reg.status !== 'active') {
+        throw new functions.https.HttpsError('failed-precondition', 'Bot must be active to create a channel');
+    }
+
+    if (reg.createChannelRequest?.status === 'pending') {
+        throw new functions.https.HttpsError('already-exists', 'A channel creation request is already pending');
+    }
+
+    const channelName = (data.channelName || 'schedule').toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
+
+    await regDoc.ref.update({
+        createChannelRequest: {
+            channelName,
+            requestedBy: userId,
+            requestedAt: FieldValue.serverTimestamp(),
+            status: 'pending',
+        },
+        updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    console.log('✅ Channel creation requested:', { teamId, channelName, requestedBy: userId });
+
+    return { success: true };
 }
 
 /**

@@ -187,15 +187,8 @@ const MobileLayout = (function() {
 
         if (entering) {
             // On mobile: show the active tab's panel, hide the other
-            const activeTab = typeof BottomPanelController !== 'undefined'
-                ? BottomPanelController.getActiveTab() : 'calendar';
-            if (activeTab === 'calendar') {
-                topCenter.style.display = '';
-                bottomCenter.style.display = 'none';
-            } else {
-                topCenter.style.display = 'none';
-                bottomCenter.style.display = '';
-            }
+            topCenter.style.display = 'none';
+            bottomCenter.style.display = '';
         } else {
             // On desktop: clear all inline styles so CSS grid takes over
             topCenter.style.display = '';

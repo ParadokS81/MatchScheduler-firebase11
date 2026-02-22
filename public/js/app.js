@@ -337,9 +337,6 @@ const MatchSchedulerApp = (function() {
             BottomPanelController.init(_weekDisplay2);
         }
 
-        // Listen for calendar tab being shown to refresh week 2 availability data
-        window.addEventListener('calendar-tab-shown', _handleCalendarTabShown);
-
         // Slice 13.0f: Initialize UpcomingMatchesPanel with split containers
         if (typeof UpcomingMatchesPanel !== 'undefined') {
             UpcomingMatchesPanel.init('your-matches-container', 'upcoming-matches-container');
@@ -526,38 +523,6 @@ const MatchSchedulerApp = (function() {
     function _handleClearAll() {
         if (_weekDisplay1) _weekDisplay1.clearAll();
         if (_weekDisplay2) _weekDisplay2.clearAll();
-    }
-
-    /**
-     * Handle calendar tab being shown - refresh week 2 availability from cache
-     * This is needed because when switching tabs, the grid is recreated but
-     * Firestore listeners only fire on data changes, not on grid recreation.
-     */
-    function _handleCalendarTabShown() {
-        if (!_selectedTeam || !_weekDisplay2) return;
-
-        const week2Id = _weekDisplay2.getWeekId();
-        const currentUserId = window.firebase?.auth?.currentUser?.uid;
-
-        if (!week2Id || !currentUserId) return;
-
-        console.log('📅 Calendar tab shown, refreshing week 2 availability');
-
-        // Get cached data and update the grid
-        const cachedData = AvailabilityService.getCachedData(_selectedTeam.id, week2Id);
-        if (cachedData) {
-            _weekDisplay2.getGrid()?.updateAvailabilityDisplay(cachedData, currentUserId);
-            _updateTeamDisplay(_weekDisplay2, cachedData, currentUserId);
-        }
-
-        // Also refresh scheduled match highlights
-        _updateScheduledMatchHighlights();
-
-        // Restore comparison mode on the recreated grid if comparison is active
-        if (typeof ComparisonEngine !== 'undefined' && ComparisonEngine.isActive()) {
-            _weekDisplay2.enterComparisonMode();
-            _updateComparisonHighlights();
-        }
     }
 
     /**
@@ -847,7 +812,7 @@ const MatchSchedulerApp = (function() {
     function cleanup() {
         // Remove event listeners
         window.removeEventListener('profile-updated', _handleProfileUpdated);
-        window.removeEventListener('calendar-tab-shown', _handleCalendarTabShown);
+
 
         // Clean up scheduled match listener
         if (_scheduledMatchUnsub) {

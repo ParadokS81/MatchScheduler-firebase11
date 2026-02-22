@@ -112,10 +112,17 @@ const UpcomingMatchesPanel = (function() {
             }
         }
 
-        // Sort by scheduled date
-        const sortByDate = (a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || '');
-        yourMatches.sort(sortByDate);
-        communityMatches.sort(sortByDate);
+        // Sort by scheduled date, then by slotId time for same-day matches
+        const sortByDateTime = (a, b) => {
+            const dateCmp = (a.scheduledDate || '').localeCompare(b.scheduledDate || '');
+            if (dateCmp !== 0) return dateCmp;
+            // Same date — sort by time portion of slotId (e.g., "sun_2030" → "2030")
+            const timeA = (a.slotId || '').split('_')[1] || '';
+            const timeB = (b.slotId || '').split('_')[1] || '';
+            return timeA.localeCompare(timeB);
+        };
+        yourMatches.sort(sortByDateTime);
+        communityMatches.sort(sortByDateTime);
 
         // Render "Your Matches" section
         if (_yourMatchesContainer) {
@@ -144,27 +151,38 @@ const UpcomingMatchesPanel = (function() {
                 `;
 
                 // Attach filter button click handlers
-                _yourMatchesContainer.querySelectorAll('[data-filter-type]').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        const type = btn.dataset.filterType;
-                        _gameTypeFilter = _gameTypeFilter === type ? null : type;
-                        _render();
-                    });
-                });
+                _attachFilterHandlers(_yourMatchesContainer);
             } else {
-                _yourMatchesContainer.innerHTML = '';
+                // Show filter buttons even without user matches, if there are community matches
+                if (communityMatches.length > 0) {
+                    _yourMatchesContainer.innerHTML = `
+                        <div class="flex items-center justify-center gap-1 py-1">
+                            ${_renderFilterButton('official', 'OFFI')}
+                            ${_renderFilterButton('practice', 'PRAC')}
+                        </div>
+                    `;
+                    _attachFilterHandlers(_yourMatchesContainer);
+                } else {
+                    _yourMatchesContainer.innerHTML = '';
+                }
             }
         }
 
-        // Render "Upcoming" section (community matches)
+        // Render "Upcoming" section (community matches) — also filtered
         if (_upcomingContainer) {
             if (communityMatches.length > 0) {
+                const filteredCommunity = _gameTypeFilter
+                    ? communityMatches.filter(m => (m.gameType || 'official') === _gameTypeFilter)
+                    : communityMatches;
+
                 _upcomingContainer.innerHTML = `
                     <div class="upcoming-matches-section h-full overflow-y-auto">
                         <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 text-center sticky top-0 bg-card py-1">Upcoming</h3>
                         <div class="space-y-1.5">
-                            ${communityMatches.map(_renderMatchCard).join('')}
+                            ${filteredCommunity.length > 0
+                                ? filteredCommunity.map(_renderMatchCard).join('')
+                                : '<div class="text-xs text-muted-foreground text-center py-2 italic">No matches of this type</div>'
+                            }
                         </div>
                     </div>
                 `;
@@ -189,6 +207,21 @@ const UpcomingMatchesPanel = (function() {
                 }, 150);
             });
             card.addEventListener('click', () => _handleMatchCardClick(card));
+        });
+    }
+
+    function _attachFilterHandlers(container) {
+        container.querySelectorAll('[data-filter-type]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const type = btn.dataset.filterType;
+                _gameTypeFilter = _gameTypeFilter === type ? null : type;
+                // Notify other components (SidebarProposals) of filter change
+                window.dispatchEvent(new CustomEvent('game-type-filter-changed', {
+                    detail: { gameType: _gameTypeFilter }
+                }));
+                _render();
+            });
         });
     }
 

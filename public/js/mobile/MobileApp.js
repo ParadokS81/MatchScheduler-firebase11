@@ -107,7 +107,11 @@ const MobileApp = (function() {
 
     async function _showTeamSwitcher() {
         const user = AuthService.getCurrentUser();
-        if (!user) return;
+        if (!user) {
+            // Not logged in — open sign-in via OnboardingModal path
+            // (OnboardingModal requires auth, so let AuthService handle it)
+            return;
+        }
 
         const dropdown = document.getElementById('mobile-team-dropdown');
 
@@ -125,9 +129,15 @@ const MobileApp = (function() {
             return;
         }
 
-        if (userTeams.length <= 1) return;
+        // 0 teams: open OnboardingModal directly (no dropdown needed)
+        if (userTeams.length === 0) {
+            _openJoinCreateModal(user);
+            return;
+        }
 
         dropdown.innerHTML = '';
+
+        // Show existing teams
         userTeams.forEach(team => {
             const option = document.createElement('button');
             option.textContent = team.teamName || team.name;
@@ -144,7 +154,45 @@ const MobileApp = (function() {
             });
             dropdown.appendChild(option);
         });
+
+        // "Join Another Team" option (only if under 2-team limit)
+        if (userTeams.length < 2) {
+            const joinOption = document.createElement('button');
+            joinOption.textContent = '+ Join Another Team';
+            joinOption.className = 'mobile-team-option';
+            joinOption.style.cssText = 'color: var(--primary); font-weight: 500; border-top: 1px solid var(--border);';
+            joinOption.addEventListener('click', () => {
+                dropdown.classList.add('hidden');
+                _openJoinCreateModal(user);
+            });
+            dropdown.appendChild(joinOption);
+        }
+
         dropdown.classList.remove('hidden');
+    }
+
+    /** Open the join/create team modal, with profile setup if needed */
+    async function _openJoinCreateModal(user) {
+        if (typeof OnboardingModal === 'undefined') return;
+
+        // Fetch user profile from Firestore
+        let profile = null;
+        try {
+            const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+            const userDoc = await getDoc(doc(window.firebase.db, 'users', user.uid));
+            if (userDoc.exists()) profile = userDoc.data();
+        } catch (e) {
+            console.error('MobileApp: Failed to fetch user profile:', e);
+        }
+
+        // Check if user has a display name (profile setup required first)
+        if (!profile?.displayName && typeof ProfileModal !== 'undefined') {
+            ProfileModal.show(user, profile);
+            // OnboardingModal will open after profile-setup-complete event (handled by TeamInfo)
+            return;
+        }
+
+        OnboardingModal.show(user, profile);
     }
 
     /**
@@ -310,6 +358,34 @@ const MobileApp = (function() {
         window.addEventListener('auth-state-changed', onAuthChange);
         _eventCleanups.push(() => window.removeEventListener('auth-state-changed', onAuthChange));
 
+        // Profile setup complete → open OnboardingModal (2-step flow: ProfileModal first, then join/create)
+        const onProfileSetup = async (e) => {
+            const user = e.detail?.user || AuthService.getCurrentUser();
+            if (!user) return;
+            _openJoinCreateModal(user);
+        };
+        window.addEventListener('profile-setup-complete', onProfileSetup);
+        _eventCleanups.push(() => window.removeEventListener('profile-setup-complete', onProfileSetup));
+
+        // Team joined/created/left → reload team + refresh everything
+        const onTeamChange = async () => {
+            const user = AuthService.getCurrentUser();
+            if (!user) return;
+            await _loadUserTeam(user.uid);
+            _initHeader();
+            await _setupDataListeners(user.uid);
+            MobileCalendarGrid.reload();
+            MobileHomeContent.refresh();
+        };
+        window.addEventListener('team-joined', onTeamChange);
+        window.addEventListener('team-created', onTeamChange);
+        window.addEventListener('team-left', onTeamChange);
+        _eventCleanups.push(() => {
+            window.removeEventListener('team-joined', onTeamChange);
+            window.removeEventListener('team-created', onTeamChange);
+            window.removeEventListener('team-left', onTeamChange);
+        });
+
         // Close dropdown when tapping outside
         const onDocClick = (e) => {
             const dropdown = document.getElementById('mobile-team-dropdown');
@@ -384,5 +460,5 @@ const MobileApp = (function() {
         if (typeof MobileCompareContent !== 'undefined') MobileCompareContent.cleanup();
     }
 
-    return { init, getSelectedTeam, getSelectedTeamId, switchTab, cleanup };
+    return { init, getSelectedTeam, getSelectedTeamId, switchTab, cleanup, openJoinCreateModal: _openJoinCreateModal };
 })();

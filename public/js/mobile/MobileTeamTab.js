@@ -17,7 +17,7 @@ const MobileTeamTab = (function() {
         return div.innerHTML;
     }
 
-    function open() {
+    async function open() {
         _selectedUserId = null;
         const team = MobileApp.getSelectedTeam();
         const user = AuthService.getCurrentUser();
@@ -35,16 +35,34 @@ const MobileTeamTab = (function() {
             MobileBottomSheet.open(`
                 <div style="padding: 2rem 0; text-align: center;">
                     <p style="color: var(--muted-foreground); margin-bottom: 1rem;">Join a team to get started</p>
+                    <button id="mobile-join-create-btn" style="padding: 0.625rem 1.25rem; background: var(--primary); color: var(--primary-foreground); border: none; border-radius: 0.5rem; font-weight: 600; font-size: 0.9rem; cursor: pointer;">
+                        Join or Create Team
+                    </button>
                 </div>
             `, _onClose);
+            // Wire up the button
+            const joinBtn = document.getElementById('mobile-join-create-btn');
+            if (joinBtn) {
+                joinBtn.addEventListener('click', () => {
+                    MobileBottomSheet.close();
+                    MobileApp.openJoinCreateModal(user);
+                });
+            }
             return;
         }
 
-        MobileBottomSheet.open(_buildHtml(team), _onClose);
-        _attachListeners();
+        // Check if user can join another team (max 2)
+        let canJoinAnother = false;
+        try {
+            const userTeams = await TeamService.getUserTeams(user.uid);
+            canJoinAnother = userTeams.length < 2;
+        } catch (e) { /* ignore */ }
+
+        MobileBottomSheet.open(_buildHtml(team, canJoinAnother), _onClose);
+        _attachListeners(user, canJoinAnother);
     }
 
-    function _buildHtml(team) {
+    function _buildHtml(team, canJoinAnother) {
         const logoHtml = team.activeLogo?.urls?.medium
             ? `<img src="${team.activeLogo.urls.medium}" alt="${team.teamName}" style="width: 3.5rem; height: 3.5rem; border-radius: 0.5rem; object-fit: cover;">`
             : `<div style="width: 3.5rem; height: 3.5rem; border-radius: 0.5rem; background: var(--muted); display: flex; align-items: center; justify-content: center; font-weight: 700; color: var(--muted-foreground);">${team.teamTag || '?'}</div>`;
@@ -66,6 +84,14 @@ const MobileTeamTab = (function() {
                 </div>
             `;
         });
+
+        const joinAnotherHtml = canJoinAnother ? `
+                <div style="border-top: 1px solid var(--border); padding-top: 0.75rem;">
+                    <button id="mobile-join-another-btn" style="width: 100%; padding: 0.5rem; font-size: 0.85rem; font-weight: 500; color: var(--primary); background: none; border: 1px solid var(--border); border-radius: 0.375rem; cursor: pointer;">
+                        + Join Another Team
+                    </button>
+                </div>
+        ` : '';
 
         return `
             <div style="display: flex; flex-direction: column; gap: 0.75rem;">
@@ -89,13 +115,25 @@ const MobileTeamTab = (function() {
                     <div id="mobile-picker-column" style="width: 4.5rem; flex-shrink: 0; display: flex; flex-direction: column; justify-content: center; min-height: 8rem;">
                     </div>
                 </div>
+                ${joinAnotherHtml}
             </div>
         `;
     }
 
-    function _attachListeners() {
+    function _attachListeners(user, canJoinAnother) {
         const list = document.getElementById('mobile-roster-list');
         if (!list) return;
+
+        // "Join Another Team" button
+        if (canJoinAnother) {
+            const joinBtn = document.getElementById('mobile-join-another-btn');
+            if (joinBtn) {
+                joinBtn.addEventListener('click', () => {
+                    MobileBottomSheet.close();
+                    MobileApp.openJoinCreateModal(user);
+                });
+            }
+        }
 
         list.addEventListener('click', (e) => {
             const row = e.target.closest('.mobile-roster-row');

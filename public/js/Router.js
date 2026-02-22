@@ -5,7 +5,7 @@
  * Enables browser back/forward and deep-linking without page reloads.
  *
  * URL structure:
- *   #/calendar, #/teams, #/teams/{id}, #/teams/{id}/history,
+ *   #/matches, #/teams, #/teams/{id}, #/teams/{id}/history,
  *   #/teams/{id}/h2h, #/teams/{id}/h2h/{opponentId},
  *   #/players, #/players/by-team, #/matches, #/matches/{proposalId},
  *   #/tournament
@@ -18,7 +18,7 @@ const Router = (function() {
     let _currentHash = '';      // Track to avoid redundant pushes
 
     // Valid top-level tabs
-    const VALID_TABS = new Set(['matches', 'calendar', 'teams', 'players', 'tournament']);
+    const VALID_TABS = new Set(['matches', 'teams', 'players', 'tournament']);
     const VALID_SUB_TABS = new Set(['details', 'history', 'h2h']);
 
     // ========================================
@@ -40,8 +40,8 @@ const Router = (function() {
         // Set initial hash or restore from existing hash
         const hash = location.hash;
         if (!hash || hash === '#' || hash === '#/') {
-            _currentHash = '#/calendar';
-            history.replaceState(null, '', '#/calendar');
+            _currentHash = '#/matches';
+            history.replaceState(null, '', '#/matches');
         } else {
             _currentHash = hash;
             _restoreFromHash(hash);
@@ -64,7 +64,7 @@ const Router = (function() {
         try {
             const currentTab = typeof BottomPanelController !== 'undefined'
                 ? BottomPanelController.getActiveTab()
-                : 'calendar';
+                : 'matches';
 
             // Switch top-level tab if needed
             if (route.tab !== currentTab) {

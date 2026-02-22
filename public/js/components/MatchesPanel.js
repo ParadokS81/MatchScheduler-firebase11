@@ -273,7 +273,13 @@ const MatchesPanel = (function() {
 
         // ─── Scheduled matches (right column) ───────────────────
         const scheduledMatches = ScheduledMatchService.getUpcomingMatchesForTeams(_userTeamIds);
-        scheduledMatches.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
+        scheduledMatches.sort((a, b) => {
+            const dateCmp = (a.scheduledDate || '').localeCompare(b.scheduledDate || '');
+            if (dateCmp !== 0) return dateCmp;
+            const timeA = (a.slotId || '').split('_')[1] || '';
+            const timeB = (b.slotId || '').split('_')[1] || '';
+            return timeA.localeCompare(timeB);
+        });
 
         // ─── Build left column: proposals grouped by week ───────
         let leftColumnHtml = '';
@@ -345,11 +351,8 @@ const MatchesPanel = (function() {
                             </h3>
                             ${_canQuickAdd() ? `
                                 <button data-action="quick-add-match"
-                                        class="text-muted-foreground hover:text-primary transition-colors p-0.5 rounded hover:bg-muted/50"
-                                        title="Quick add a pre-arranged match">
-                                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                                    </svg>
+                                        class="text-xs text-muted-foreground hover:text-primary transition-colors px-2 py-1 rounded border border-border hover:border-primary/50 hover:bg-muted/50">
+                                    Add pre-scheduled match
                                 </button>
                             ` : ''}
                         </div>
@@ -463,7 +466,7 @@ const MatchesPanel = (function() {
                 <div class="proposal-card-header flex items-center gap-2 p-2.5 cursor-pointer"
                      data-action="toggle-expand" data-proposal-id="${proposal.id}">
                     ${proposerLogo ? `<img src="${proposerLogo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
-                    <span class="text-sm font-medium truncate min-w-0">${_escapeHtml(proposal.proposerTeamName)} vs ${_escapeHtml(proposal.opponentTeamName)}</span>
+                    <span class="text-sm font-medium truncate min-w-0">${_escapeHtml(proposal.proposerTeamName)} <span class="${proposal.gameType === 'practice' ? 'text-amber-400' : 'text-green-400'} font-semibold">vs</span> ${_escapeHtml(proposal.opponentTeamName)}</span>
                     ${opponentLogo ? `<img src="${opponentLogo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
                     <div class="flex items-center gap-1.5 shrink-0 ml-auto">
                         ${type === 'active' ? `<span class="text-xs bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">${slotCount}</span>` : ''}
@@ -528,11 +531,13 @@ const MatchesPanel = (function() {
         const standinSettings = proposal.gameType === 'practice'
             ? { proposerStandin: !!proposal.proposerStandin, opponentStandin: !!proposal.opponentStandin }
             : undefined;
+        // Use 4v3 gate so opponent sees slots where they could rally a 4th player
+        const gateFilter = { yourTeam: 4, opponent: 3 };
         const viableSlots = ProposalService.computeViableSlots(
             proposal.proposerTeamId,
             proposal.opponentTeamId,
             proposal.weekId,
-            proposal.minFilter,
+            gateFilter,
             standinSettings
         );
 
@@ -1217,15 +1222,16 @@ const MatchesPanel = (function() {
         const opponentTeamId = isProposerSide ? proposal.opponentTeamId : proposal.proposerTeamId;
         const opponentTeam = TeamService.getTeamFromCache(opponentTeamId);
 
-        // Compute viable slots for message (filtered for past, with standin)
+        // Compute viable slots for message (4v3 gate — show slots opponent could fill)
         const standinSettings = proposal.gameType === 'practice'
             ? { proposerStandin: !!proposal.proposerStandin, opponentStandin: !!proposal.opponentStandin }
             : undefined;
+        const gateFilter = { yourTeam: 4, opponent: 3 };
         const viableSlots = ProposalService.computeViableSlots(
             proposal.proposerTeamId,
             proposal.opponentTeamId,
             proposal.weekId,
-            proposal.minFilter,
+            gateFilter,
             standinSettings
         );
         const now = new Date();
@@ -1418,7 +1424,7 @@ const MatchesPanel = (function() {
                 </div>
             </div>
             <div class="match-tooltip-footer">
-                <a href="#/teams/${teamAId}/h2h/${teamBId}" class="match-tooltip-h2h-link">View Head-to-Head</a>
+                <a href="#/teams/${isUserTeamB && !isUserTeamA ? teamBId : teamAId}/h2h/${isUserTeamB && !isUserTeamA ? teamAId : teamBId}" class="match-tooltip-h2h-link">View Head-to-Head</a>
             </div>
         `;
 

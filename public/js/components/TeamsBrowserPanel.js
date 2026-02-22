@@ -2615,16 +2615,25 @@ const TeamsBrowserPanel = (function() {
     }
 
     /**
-     * Left-panel header row: period buttons + map filter + W/L record, aligned to data grid.
-     * Grid matches result rows: date | map | score | score | result
+     * Left-panel header row: period buttons + map filter + team logo badges as score column headers.
+     * Grid matches result rows: date | map | scoreA | scoreB (4 columns, no W/L column)
      */
     function _renderH2HLeftHeader(games) {
         const periods = [1, 3, 6];
 
-        const wins = (games || []).filter(g => g.result === 'W').length;
-        const losses = (games || []).filter(g => g.result === 'L').length;
-        const total = (games || []).length;
-        const winRate = total > 0 ? Math.round(wins / total * 100) : 0;
+        const teamAId = _getH2HTeamAId();
+        const teamBId = _h2hOpponentId;
+        const teamA = _allTeams.find(t => t.id === teamAId);
+        const teamB = _allTeams.find(t => t.id === teamBId);
+
+        const logoA = teamA?.activeLogo?.urls?.small;
+        const logoB = teamB?.activeLogo?.urls?.small;
+        const badgeA = logoA
+            ? `<img src="${logoA}" class="h2h-header-badge" alt="">`
+            : `<span class="h2h-header-badge-text">${_escapeHtml(teamA?.teamTag || '')}</span>`;
+        const badgeB = logoB
+            ? `<img src="${logoB}" class="h2h-header-badge" alt="">`
+            : `<span class="h2h-header-badge-text">${_escapeHtml(teamB?.teamTag || '')}</span>`;
 
         return `
             <div class="h2h-column-header">
@@ -2644,13 +2653,10 @@ const TeamsBrowserPanel = (function() {
                         </option>
                     `).join('')}
                 </select>
-                ${total > 0 ? `
-                    <span class="h2h-header-record">
-                        <span class="mh-result-win">${wins}W</span>
-                        <span class="mh-result-loss">${losses}L</span>
-                        <span class="text-xs text-muted-foreground">${winRate}%</span>
-                    </span>
-                ` : `<span></span><span></span><span></span>`}
+                <span class="h2h-header-record">
+                    ${teamAId ? badgeA : '<span></span>'}
+                    ${teamBId ? badgeB : '<span></span>'}
+                </span>
             </div>
         `;
     }
@@ -2750,6 +2756,8 @@ const TeamsBrowserPanel = (function() {
 
     /**
      * Render result rows for left panel.
+     * 4 columns: date | map | scoreA | scoreB
+     * Winning score colored green, losing score red.
      */
     function _renderH2HResultList(games) {
         if (games.length === 0) {
@@ -2758,10 +2766,17 @@ const TeamsBrowserPanel = (function() {
 
         return games.map(g => {
             const dateStr = new Date(g.playedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            const resultClass = g.result === 'W' ? 'mh-result-win'
-                              : g.result === 'L' ? 'mh-result-loss'
-                              : 'mh-result-draw';
             const isSelected = String(g.id) === _h2hSelectedId;
+
+            // Color the higher score green, lower red, equal neutral
+            let scoreAClass = '', scoreBClass = '';
+            if (g.teamAFrags > g.teamBFrags) {
+                scoreAClass = 'mh-score-win';
+                scoreBClass = 'mh-score-loss';
+            } else if (g.teamBFrags > g.teamAFrags) {
+                scoreAClass = 'mh-score-loss';
+                scoreBClass = 'mh-score-win';
+            }
 
             return `
                 <div class="mh-table-row ${isSelected ? 'selected' : ''}"
@@ -2771,9 +2786,8 @@ const TeamsBrowserPanel = (function() {
                      onclick="TeamsBrowserPanel.selectH2HResult('${g.id}')">
                     <span class="mh-td mh-td-date">${dateStr}</span>
                     <span class="mh-td mh-td-map">${g.map}</span>
-                    <span class="mh-td mh-td-score">${g.teamAFrags}</span>
-                    <span class="mh-td mh-td-score">${g.teamBFrags}</span>
-                    <span class="mh-td mh-td-result ${resultClass}">${g.result}</span>
+                    <span class="mh-td mh-td-score ${scoreAClass}">${g.teamAFrags}</span>
+                    <span class="mh-td mh-td-score ${scoreBClass}">${g.teamBFrags}</span>
                 </div>
             `;
         }).join('');
@@ -2864,7 +2878,7 @@ const TeamsBrowserPanel = (function() {
                 .filter(t => t.teamTag && t.id !== otherId)
                 .sort((a, b) => a.teamName.localeCompare(b.teamName));
             optionsHtml = teamOptions.map(t =>
-                `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${_escapeHtml(t.teamName)}</option>`
+                `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${_escapeHtml(t.teamName)} (${_escapeHtml(t.teamTag)})</option>`
             ).join('');
         }
 

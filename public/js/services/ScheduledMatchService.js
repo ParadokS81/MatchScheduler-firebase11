@@ -85,7 +85,8 @@ const ScheduledMatchService = (function() {
     /**
      * Get blocked slot IDs for a team in a specific week.
      * A slot is blocked when a scheduled match exists for that team + week + slot.
-     * Also blocks the next 30-min slot as buffer (matches last 1h+).
+     * Also blocks the previous and next 30-min slots as buffer (can't start a match
+     * 30 min before or after another one).
      *
      * @param {string} teamId
      * @param {string} weekId
@@ -99,8 +100,10 @@ const ScheduledMatchService = (function() {
                 match.status === 'upcoming' &&
                 match.blockedTeams?.includes(teamId)) {
                 blocked.add(match.blockedSlot);
-                const buffer = _nextSlot(match.blockedSlot);
-                if (buffer) blocked.add(buffer);
+                const before = _prevSlot(match.blockedSlot);
+                if (before) blocked.add(before);
+                const after = _nextSlot(match.blockedSlot);
+                if (after) blocked.add(after);
             }
         }
 
@@ -123,6 +126,26 @@ const ScheduledMatchService = (function() {
         if (m >= 60) { m = 0; h++; }
         if (h >= 24) { h = 0; dayIdx++; }
         if (dayIdx >= days.length) return null; // past end of week
+
+        return `${days[dayIdx]}_${String(h).padStart(2, '0')}${String(m).padStart(2, '0')}`;
+    }
+
+    /**
+     * Compute the previous 30-min slot before a given slotId.
+     * e.g. "thu_2300" → "thu_2230", "fri_0000" → "thu_2330"
+     * Returns null if it would wrap before Monday (start of week).
+     */
+    function _prevSlot(slotId) {
+        const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+        const [day, time] = slotId.split('_');
+        let h = parseInt(time.slice(0, 2));
+        let m = parseInt(time.slice(2));
+        let dayIdx = days.indexOf(day);
+
+        m -= 30;
+        if (m < 0) { m = 30; h--; }
+        if (h < 0) { h = 23; dayIdx--; }
+        if (dayIdx < 0) return null; // before start of week
 
         return `${days[dayIdx]}_${String(h).padStart(2, '0')}${String(m).padStart(2, '0')}`;
     }

@@ -514,6 +514,14 @@ const TeamInfo = (function() {
         // === Roster HTML for hover popup ===
         const rosterHTML = _buildRosterHTML(displayMode);
 
+        // "Join Another Team" link (only if under 2-team limit)
+        const joinAnotherHTML = _userTeams.length < 2 ? `
+            <div class="mt-2 pt-2 border-t border-border">
+                <button class="text-xs text-primary hover:text-primary/80 transition-colors cursor-pointer bg-transparent border-none"
+                        data-action="join-another">+ Join Another Team</button>
+            </div>
+        ` : '';
+
         _identityContainer.innerHTML = `
             <div class="team-identity-hover relative flex flex-col items-center text-center">
                 <!-- Logo row -->
@@ -524,27 +532,28 @@ const TeamInfo = (function() {
                     </div>
                     ${inactiveLogoHTML}
                 </div>
-                <!-- Team name — on mobile acts as roster toggle -->
-                <a href="#/teams/${_selectedTeamId}" class="text-xl font-semibold text-primary team-name-toggle hover:underline">${_selectedTeam.teamName}</a>
+                <!-- Team name + settings cogwheel (always visible) -->
+                <div class="flex items-center justify-center gap-2">
+                    <a href="#/teams/${_selectedTeamId}" class="text-xl font-semibold text-primary team-name-toggle hover:underline">${_selectedTeam.teamName}</a>
+                    <span class="team-settings-icon opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
+                          data-action="open-settings" title="Team Settings">
+                        <svg class="w-4 h-4 text-muted-foreground hover:text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </span>
+                </div>
 
-                <!-- Hover popup: tag + settings + roster + inline color picker -->
+                <!-- Hover popup: tag + roster + inline color picker -->
                 <div class="team-hover-popup">
-                    <div class="flex items-center justify-center gap-3 mb-2">
-                        <span class="text-sm text-muted-foreground">${_selectedTeam.teamTag || ''}</span>
-                        <span class="team-settings-icon opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
-                              data-action="open-settings" title="Team Settings">
-                            <svg class="w-4 h-4 text-muted-foreground hover:text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                            </svg>
-                        </span>
-                    </div>
+                    ${_selectedTeam.teamTag ? `<div class="text-sm text-muted-foreground mb-2">${_selectedTeam.teamTag}</div>` : ''}
                     <div class="space-y-0.5">
                         ${rosterHTML}
                     </div>
                     <div class="inline-color-picker"></div>
+                    ${joinAnotherHTML}
                 </div>
             </div>
         `;
@@ -836,6 +845,15 @@ const TeamInfo = (function() {
             icon.addEventListener('click', (e) => {
                 e.stopPropagation();
                 _handleTeamSettingsClick();
+            });
+        });
+
+        // "Join Another Team" button in hover popup
+        const joinAnotherBtns = document.querySelectorAll('[data-action="join-another"]');
+        joinAnotherBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                _handleJoinCreateTeam();
             });
         });
 

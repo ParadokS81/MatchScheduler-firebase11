@@ -61,7 +61,29 @@ const AdminPanel = (function() {
     async function _loadBotRegistrations() {
         try {
             const registrations = await BotRegistrationService.loadAllRegistrations();
-            _renderBotTable(registrations, _recordingCounts);
+
+            // Load leader Discord info for each team
+            const leaderInfo = {};
+            const { doc, getDoc } = await import(
+                'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js'
+            );
+            await Promise.all(registrations.map(async (r) => {
+                const team = typeof TeamService !== 'undefined' ? TeamService.getTeamFromCache(r.id) : null;
+                if (!team?.leaderId) return;
+                const leader = (team.playerRoster || []).find(p => p.role === 'leader');
+                try {
+                    const userDoc = await getDoc(doc(window.firebase.db, 'users', team.leaderId));
+                    leaderInfo[r.id] = {
+                        name: leader?.displayName || 'Unknown',
+                        discordUserId: userDoc.exists() ? userDoc.data().discordUserId || null : null,
+                        discordUsername: userDoc.exists() ? userDoc.data().discordUsername || null : null
+                    };
+                } catch {
+                    leaderInfo[r.id] = { name: leader?.displayName || 'Unknown', discordUserId: null, discordUsername: null };
+                }
+            }));
+
+            _renderBotTable(registrations, _recordingCounts, leaderInfo);
             _botTableRendered = true;
         } catch (error) {
             console.error('AdminPanel: Failed to load bot registrations', error);
@@ -134,7 +156,7 @@ const AdminPanel = (function() {
         }).join('');
     }
 
-    function _renderBotTable(registrations, recordingCounts) {
+    function _renderBotTable(registrations, recordingCounts, leaderInfo = {}) {
         const el = document.getElementById('admin-bot-table');
         if (!el) return;
 
@@ -152,6 +174,7 @@ const AdminPanel = (function() {
         el.innerHTML = `
             <div class="admin-bot-grid text-xs">
                 <div class="admin-bot-header">Team</div>
+                <div class="admin-bot-header">Leader</div>
                 <div class="admin-bot-header">Discord Server</div>
                 <div class="admin-bot-header">Status</div>
                 <div class="admin-bot-header text-right">Recordings</div>
@@ -159,8 +182,20 @@ const AdminPanel = (function() {
                     const count = recordingCounts[r.id] || 0;
                     const statusClass = r.status === 'active' ? 'text-green-400' : 'text-amber-400';
                     const knownCount = Object.keys(r.knownPlayers || {}).length;
+                    const leader = leaderInfo[r.id];
+                    const leaderName = leader?.name || '—';
+                    const leaderDmHtml = leader?.discordUserId
+                        ? `<button class="ml-1 text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer bg-transparent border-none p-0"
+                                   data-action="discord-dm" data-discord-id="${leader.discordUserId}"
+                                   title="DM ${_escapeHtml(leader.discordUsername || leaderName)} on Discord">
+                               <svg class="w-3.5 h-3.5 inline-block" fill="currentColor" viewBox="0 0 24 24">
+                                   <path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03z"/>
+                               </svg>
+                           </button>`
+                        : '';
                     return `
                         <div class="py-1.5">${_escapeHtml(r.teamName || r.teamTag || r.id)}</div>
+                        <div class="py-1.5">${_escapeHtml(leaderName)}${leaderDmHtml}</div>
                         <div class="py-1.5 text-muted-foreground">${_escapeHtml(r.guildName || '—')}</div>
                         <div class="py-1.5 ${statusClass}">${_escapeHtml(r.status || 'unknown')}${knownCount ? ` (${knownCount} players)` : ''}</div>
                         <div class="py-1.5 text-right">${count}</div>
@@ -198,7 +233,15 @@ const AdminPanel = (function() {
     }
 
     function _handleClick(e) {
-        // Future: click handlers for session cards, team rows, etc.
+        const dmBtn = e.target.closest('[data-action="discord-dm"]');
+        if (dmBtn) {
+            e.stopPropagation();
+            const discordId = dmBtn.dataset.discordId;
+            if (discordId) {
+                window.location.href = `discord://discord.com/users/${discordId}`;
+            }
+            return;
+        }
     }
 
     // ── Cleanup ──

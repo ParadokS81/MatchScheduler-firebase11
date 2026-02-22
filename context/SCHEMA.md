@@ -17,6 +17,8 @@ This document defines the authoritative data structures for all Firestore collec
 | `scheduledMatches` | Auto-generated | Confirmed scheduled matches |
 | `voiceRecordings` | `{demoSha256}` | Voice recording manifests for replay auto-load |
 | `botRegistrations` | `{teamId}` | Voice bot connection status per team |
+| `notifications` | Auto-generated | Challenge/match notification delivery to Discord |
+| `deletionRequests` | Auto-generated | Cross-system recording deletion coordination |
 | `weeklyStats` | `{weekId}` (YYYY-WW) | Weekly platform activity stats (admin-only) |
 | `recordingSessions` | Auto-generated | Voice recording session tracking (admin-only) |
 
@@ -80,6 +82,10 @@ interface UserDocument {
                                      // Max: 37 entries (48 total - 11 base)
                                      // Validated by updateProfile Cloud Function
 
+  // Phantom user support (Discord Roster Management)
+  isPhantom?: boolean;           // true = created by team leader, never logged in
+  phantomCreatedBy?: string;     // Firebase UID of the leader who created this phantom
+
   // Metadata
   createdAt: Timestamp;
   lastUpdatedAt: Timestamp;
@@ -90,6 +96,7 @@ interface UserDocument {
 - `teams` is an object/map, NOT an array
 - Check team membership: `userProfile.teams[teamId] === true`
 - Max 2 teams per user enforced at write time
+- Phantom users have a real Firebase Auth UID but `isPhantom: true`. When the real person logs in via Discord OAuth, the phantom is claimed in place (same UID, no migration)
 
 ---
 
@@ -187,6 +194,10 @@ interface PlayerEntry {
   photoURL: string | null;    // Denormalized for avatar display (128px, CSS handles sizing)
   joinedAt: Date;             // When they joined the team
   role: 'leader' | 'member';
+
+  // Phantom support (Discord Roster Management)
+  isPhantom?: boolean;        // true for leader-created phantoms (never logged in)
+  discordUserId?: string;     // Discord UID for cross-reference with guildMembers
 }
 
 interface TeamTagEntry {
@@ -490,6 +501,14 @@ interface VoiceRecordingDocument {
   uploadedAt: Timestamp;                           // When Quad uploaded the files
   uploadedBy: string;                              // "quad-bot"
   trackCount: number;                              // Convenience for UI (show "4 tracks")
+
+  // Recording Management fields (written by quad at upload time)
+  sessionId: string;                               // Recording session ULID (groups maps from same Discord session)
+  opponentTag: string;                             // Opponent team name from Hub API, lowercase (e.g., "pol")
+  teamFrags: number;                               // Our team's total frags for this map
+  opponentFrags: number;                           // Opponent's total frags for this map
+  gameId: number;                                  // QW Hub game ID for stats/demo cross-reference
+  mapOrder: number;                                // 0-based index within session (for chronological sorting)
 }
 
 interface VoiceTrack {
@@ -518,21 +537,73 @@ interface VoiceTrack {
 
 ## `/botRegistrations/{teamId}`
 
-Voice bot connection status per team. Created when a team leader initiates bot registration, activated when the Quad bot completes setup in their Discord server.
+Voice bot connection status per team. Created when a team leader initiates bot registration, activated when the Quad bot completes setup in their Discord server. This is the **primary bridge between MatchScheduler and quad** — both sides read and write to this document.
 
 ```typescript
 interface BotRegistrationDocument {
+  // Team identity (set by MatchScheduler at creation)
   teamId: string;                     // = document ID
   teamTag: string;
   teamName: string;
-  authorizedDiscordUserId: string;    // Leader's Discord ID — only this user can run /register
+
+  // Authorization
+  authorizedDiscordUserIds: string[]; // Discord IDs of leader + schedulers who can run /register
   registeredBy: string;               // Firebase UID of the leader
+
+  // Discord server info (set by quad on /register completion)
   guildId: string | null;             // null while pending, populated on completion
   guildName: string | null;
-  status: 'pending' | 'active';
+
+  // Status
+  status: 'pending' | 'active' | 'disconnecting';
+
+  // Player mapping — Discord UID → QW name for voice track resolution
+  // Updated by: quad on /register, addPhantomMember CF, recording pipeline
   knownPlayers: {
     [discordUserId: string]: string;  // Discord user ID → QW display name
   };
+
+  // Guild member cache — full Discord server member list (Discord Roster Management)
+  // Updated by: quad on /register, guildMemberAdd/Remove events, bot startup refresh
+  guildMembers: {
+    [discordUserId: string]: {
+      username: string;               // Discord username (unique handle)
+      displayName: string;            // Server nick or global display name
+      avatarUrl: string | null;       // Discord CDN URL (128px)
+      isBot: boolean;                 // true for bot accounts (filtered from UI)
+    };
+  };
+
+  // Discord channels the bot can post to (set by quad on /register + channel discovery)
+  availableChannels: Array<{
+    id: string;                       // Discord channel ID
+    name: string;                     // Channel name
+    canPost: boolean;                 // Bot has send message permission
+  }>;
+
+  // Notification settings (managed via MatchScheduler Discord tab)
+  notifications: {
+    enabled: boolean;                 // Default: true
+    channelId: string | null;         // Discord channel for challenge/match notifications
+    channelName: string | null;       // Denormalized channel name
+  };
+
+  // Schedule channel — where the availability canvas is posted
+  scheduleChannel: {
+    channelId: string | null;         // Discord channel for weekly schedule grid
+  };
+
+  // Auto-recording settings (managed via MatchScheduler Recordings tab)
+  autoRecord?: {
+    enabled: boolean;                 // Default: false
+    minPlayers: 3 | 4;               // Min players in voice to trigger recording
+    mode: 'all' | 'official' | 'practice';  // Which match types to auto-record
+  };
+
+  // Disconnect tracking
+  disconnectRequestedAt?: Timestamp;  // Set when leader clicks Disconnect
+
+  // Timestamps
   createdAt: Timestamp;
   activatedAt: Timestamp | null;
   updatedAt: Timestamp;
@@ -543,8 +614,99 @@ interface BotRegistrationDocument {
 - Document ID = `teamId` (one registration per team)
 - `status: 'pending'` until Quad bot activates in the Discord server
 - `knownPlayers` maps Discord user IDs to QW names for voice track resolution
-- Read: team leader only (via Firestore rules `get()` on team doc)
+- `guildMembers` is the cached Discord server member list — used by "Manage Players" UI
+- `availableChannels` populated by quad, consumed by MatchScheduler channel dropdowns
+- Read: team leader + schedulers (via Firestore rules `get()` on team doc)
 - Write: Admin SDK only (Cloud Function + Quad bot)
+
+---
+
+## `/notifications/{notificationId}`
+
+Challenge and match notification delivery to Discord. Created by MatchScheduler Cloud Functions, processed by quad bot.
+
+```typescript
+interface NotificationDocument {
+  // Notification type
+  type: 'challenge_proposed';        // Extensible for future notification types
+
+  // Source
+  proposalId: string;                // Reference to matchProposals/{proposalId}
+  createdBy: string;                 // Firebase UID of the proposer
+  proposerTeamId: string;
+  opponentTeamId: string;
+
+  // Denormalized display data
+  proposerTeamName: string;
+  proposerTeamTag: string;
+  opponentTeamName: string;
+  opponentTeamTag: string;
+  proposalUrl: string;               // Deep link to the proposal in MatchScheduler
+
+  // Delivery targets
+  delivery: {
+    opponent: {
+      botStatus: 'active' | 'not_registered';
+      channelId: string | null;      // From botRegistrations.notifications.channelId
+      guildId: string | null;
+    };
+    proposer: {
+      botStatus: 'active' | 'not_registered';
+      channelId: string | null;
+      guildId: string | null;
+    };
+  };
+
+  // Status tracking
+  status: 'pending' | 'delivered' | 'failed';
+  deliveryResult?: {                 // Set by quad after delivery attempt
+    opponent: { success: boolean; error?: string };
+    proposer: { success: boolean; error?: string };
+  };
+
+  // Timestamps
+  createdAt: Timestamp;
+  deliveredAt: Timestamp | null;
+}
+```
+
+**Key Points:**
+- Created by `createProposal` Cloud Function
+- Quad bot listens for `status == 'pending'`, delivers to Discord channels, updates status
+- Read: involved team members. Write: Cloud Function (create) + Admin SDK (quad delivery update)
+
+---
+
+## `/deletionRequests/{requestId}`
+
+Coordinates recording deletion across Firebase and quad server local storage. Created by MatchScheduler Cloud Function, processed by quad bot.
+
+```typescript
+interface DeletionRequestDocument {
+  demoSha256: string;                // Which recording to delete
+  teamId: string;                    // Team that owns the recording
+  sessionId: string;                 // Session ULID (for quad local path lookup)
+  mapName: string;                   // For logging/audit
+
+  requestedBy: string;               // Firebase UID of the team leader
+  requestedAt: Timestamp;
+
+  // Quad fills these in after processing
+  status: 'pending' | 'completed' | 'failed';
+  completedAt: Timestamp | null;
+  error: string | null;              // If status == 'failed', why
+}
+```
+
+**Lifecycle:**
+1. `deleteRecording` Cloud Function deletes Firebase Storage files + Firestore doc, creates this doc with `status: 'pending'`
+2. Quad bot Firestore listener picks up pending requests
+3. Quad deletes local processed files: `recordings/{sessionId}/processed/{segmentDir}/`
+4. Quad updates doc: `status: 'completed'`, `completedAt: now`
+5. If local files already gone, still marks `completed`
+
+**Key Points:**
+- Read: team members (filtered by teamId in rules). Write: Cloud Function (create) + Admin SDK (quad status update)
 
 ---
 
@@ -679,7 +841,9 @@ const docId = `${teamId}_${weekId}`;
 | `matchProposals` | Involved team members only | Cloud Functions only |
 | `scheduledMatches` | Authenticated users | Cloud Functions only |
 | `voiceRecordings` | Public if `visibility == 'public'` or legacy; private require team membership | Admin SDK only (Quad bot) |
-| `botRegistrations` | Team leader only | Admin SDK only (Cloud Function + Quad bot) |
+| `botRegistrations` | Team leader + schedulers | Admin SDK only (Cloud Function + Quad bot) |
+| `notifications` | Involved team members | Cloud Function (create) + Admin SDK (quad delivery) |
+| `deletionRequests` | Team members (by teamId) | Cloud Function (create) + Admin SDK (quad status) |
 | `weeklyStats` | Admin only (custom claim) | Admin SDK only (Cloud Function) |
 | `recordingSessions` | Admin only (custom claim) | Admin SDK only (Quad bot) |
 
@@ -702,3 +866,7 @@ const docId = `${teamId}_${weekId}`;
 - **2026-02-14**: Added origin, addedBy fields to scheduledMatches; MATCH_QUICK_ADDED event type (Slice 18.0)
 - **2026-02-14**: Voice replay Phase 2 — visibility + track identity fields on voiceRecordings, botRegistrations collection, teams.voiceSettings (Slice P3.1)
 - **2026-02-16**: Added weeklyStats and recordingSessions admin-only collections (Slice A1)
+- **2026-02-22**: Added Recording Management fields to voiceRecordings: sessionId, opponentTag, teamFrags, opponentFrags, gameId, mapOrder (Phase R1)
+- **2026-02-22**: Added notifications and deletionRequests collections (Phase R3-R5)
+- **2026-02-22**: Expanded botRegistrations with guildMembers, notifications, scheduleChannel, autoRecord, availableChannels fields
+- **2026-02-22**: Added phantom user support: isPhantom + phantomCreatedBy on users, isPhantom + discordUserId on PlayerEntry (Discord Roster Management)

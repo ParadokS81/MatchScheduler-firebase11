@@ -30,7 +30,27 @@ function nextSlot(slotId) {
 }
 
 /**
- * Get all blocked slots for a team in a week (match slots + 1-slot buffer after each).
+ * Compute the previous 30-min slot before a given slotId.
+ * e.g. "thu_2300" → "thu_2230", "fri_0000" → "thu_2330"
+ * Returns null if it would wrap before Monday.
+ */
+function prevSlot(slotId) {
+    const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    const [day, time] = slotId.split('_');
+    let h = parseInt(time.slice(0, 2));
+    let m = parseInt(time.slice(2));
+    let dayIdx = days.indexOf(day);
+
+    m -= 30;
+    if (m < 0) { m = 30; h--; }
+    if (h < 0) { h = 23; dayIdx--; }
+    if (dayIdx < 0) return null;
+
+    return `${days[dayIdx]}_${String(h).padStart(2, '0')}${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Get all blocked slots for a team in a week (match slot + 1-slot buffer before and after).
  */
 async function getBlockedSlotsForTeam(teamId, weekId) {
     const snapshot = await db.collection('scheduledMatches')
@@ -43,8 +63,10 @@ async function getBlockedSlotsForTeam(teamId, weekId) {
     snapshot.forEach(doc => {
         const slot = doc.data().blockedSlot;
         blocked.add(slot);
-        const buffer = nextSlot(slot);
-        if (buffer) blocked.add(buffer);
+        const before = prevSlot(slot);
+        if (before) blocked.add(before);
+        const after = nextSlot(slot);
+        if (after) blocked.add(after);
     });
     return blocked;
 }
@@ -265,11 +287,16 @@ exports.createProposal = functions
         }
 
         // Build confirmed slots with counts for notification
-        const confirmedSlotsWithCounts = slotsArray.map(slotId => ({
-            slotId,
-            proposerCount: (proposerAvail.slots?.[slotId] || []).length,
-            opponentCount: (opponentAvail.slots?.[slotId] || []).length
-        }));
+        // Include standin in counts so Discord embed shows effective strength (e.g., 4v4 not 3v3)
+        const confirmedSlotsWithCounts = slotsArray.map(slotId => {
+            const rawProposer = (proposerAvail.slots?.[slotId] || []).length;
+            const rawOpponent = (opponentAvail.slots?.[slotId] || []).length;
+            return {
+                slotId,
+                proposerCount: Math.min(4, rawProposer + (standinValue ? 1 : 0)),
+                opponentCount: rawOpponent
+            };
+        });
 
         // Create proposal
         const now = new Date();
@@ -318,22 +345,24 @@ exports.createProposal = functions
             delivery: {
                 opponent: {
                     botRegistered: opponentBot?.status === 'active',
-                    notificationsEnabled: opponentBot?.notifications?.enabled !== false,
-                    channelId: opponentBot?.notifications?.channelId || null,
-                    guildId: opponentBot?.guildId || null,
+                    notificationsEnabled: opponentBot?.notificationsEnabled ?? false,
+                    channelId: opponentBot?.notificationChannelId ?? null,
+                    guildId: opponentBot?.guildId ?? null,
                     leaderDiscordId: opponentLeaderDiscordId,
                     leaderDisplayName: opponentLeaderDisplayName
                 },
                 proposer: {
                     botRegistered: proposerBot?.status === 'active',
-                    notificationsEnabled: proposerBot?.notifications?.enabled !== false,
-                    channelId: proposerBot?.notifications?.channelId || null,
-                    guildId: proposerBot?.guildId || null
+                    notificationsEnabled: proposerBot?.notificationsEnabled ?? false,
+                    channelId: proposerBot?.notificationChannelId ?? null,
+                    guildId: proposerBot?.guildId ?? null
                 }
             },
             proposalUrl: `https://scheduler.quake.world/#/matches/${proposalRef.id}`,
             proposerLeaderDiscordId,
             proposerLeaderDisplayName,
+            proposerLogoUrl: proposerTeam.activeLogo?.urls?.small || null,
+            opponentLogoUrl: opponentTeam.activeLogo?.urls?.small || null,
             createdAt: now,
             deliveredAt: null
         };
@@ -569,6 +598,7 @@ exports.confirmSlot = functions
                 return {
                     matched,
                     scheduledMatchId,
+                    side,
                     matchDetails: {
                         proposerTeamTag: proposal.proposerTeamTag,
                         proposerTeamName: proposal.proposerTeamName,
@@ -584,8 +614,176 @@ exports.confirmSlot = functions
                     }
                 };
             }
-            return { matched, scheduledMatchId };
+            return { matched, scheduledMatchId, side };
         });
+
+        // ── Notification writes (post-transaction, best-effort) ──
+        try {
+            // Re-read the proposal to get current state + team IDs
+            const proposalDoc = await db.collection('matchProposals').doc(proposalId).get();
+            if (!proposalDoc.exists) {
+                console.error('⚠️ Proposal doc missing after transaction — skipping notifications');
+                return;
+            }
+            const proposal = proposalDoc.data();
+            const confirmingSide = result.side;
+
+            // Fetch delivery targets and team docs in parallel
+            const [proposerBotReg, opponentBotReg, proposerTeamDoc, opponentTeamDoc] = await Promise.all([
+                db.collection('botRegistrations').doc(proposal.proposerTeamId).get(),
+                db.collection('botRegistrations').doc(proposal.opponentTeamId).get(),
+                db.collection('teams').doc(proposal.proposerTeamId).get(),
+                db.collection('teams').doc(proposal.opponentTeamId).get()
+            ]);
+            const proposerBot = proposerBotReg.exists ? proposerBotReg.data() : null;
+            const opponentBot = opponentBotReg.exists ? opponentBotReg.data() : null;
+            const proposerTeam = proposerTeamDoc.data();
+            const opponentTeam = opponentTeamDoc.data();
+            if (!proposerTeam || !opponentTeam) {
+                console.error('⚠️ Team doc missing after transaction — skipping notifications');
+                return;
+            }
+
+            // Resolve confirmer and other side leader Discord info
+            const confirmingTeam = confirmingSide === 'proposer' ? proposerTeam : opponentTeam;
+            const otherTeam = confirmingSide === 'proposer' ? opponentTeam : proposerTeam;
+
+            let confirmerDiscordId = null;
+            let confirmerDisplayName = null;
+            const confirmerDoc = await db.collection('users').doc(userId).get();
+            if (confirmerDoc.exists) {
+                const d = confirmerDoc.data();
+                confirmerDiscordId = d.discordUserId || null;
+                confirmerDisplayName = d.displayName
+                    || confirmingTeam.playerRoster?.find(p => p.userId === userId)?.displayName
+                    || null;
+            }
+
+            let otherLeaderDiscordId = null;
+            let otherLeaderDisplayName = null;
+            if (otherTeam.leaderId) {
+                const leaderDoc = await db.collection('users').doc(otherTeam.leaderId).get();
+                if (leaderDoc.exists) {
+                    const d = leaderDoc.data();
+                    otherLeaderDiscordId = d.discordUserId || null;
+                    otherLeaderDisplayName = d.displayName || null;
+                }
+            }
+
+            // Logo URLs (small size for Discord embed icons)
+            const proposerLogoUrl = proposerTeam.activeLogo?.urls?.small || null;
+            const opponentLogoUrl = opponentTeam.activeLogo?.urls?.small || null;
+
+            // Determine naming for slot_confirmed notification
+            const recipientBot = confirmingSide === 'proposer' ? opponentBot : proposerBot;
+            const confirmingTeamName = confirmingSide === 'proposer' ? proposal.proposerTeamName : proposal.opponentTeamName;
+            const confirmingTeamTag = confirmingSide === 'proposer' ? proposal.proposerTeamTag : proposal.opponentTeamTag;
+            const recipientTeamName = confirmingSide === 'proposer' ? proposal.opponentTeamName : proposal.proposerTeamName;
+            const recipientTeamTag = confirmingSide === 'proposer' ? proposal.opponentTeamTag : proposal.proposerTeamTag;
+
+            // Write slot_confirmed notification (always — sent to OTHER side)
+            const slotNotifRef = db.collection('notifications').doc();
+            await slotNotifRef.set({
+                type: 'slot_confirmed',
+                status: 'pending',
+                proposalId,
+                slotId,
+                gameType,
+                weekId: proposal.weekId,
+                confirmedByTeamId: confirmingSide === 'proposer' ? proposal.proposerTeamId : proposal.opponentTeamId,
+                confirmedByTeamName: confirmingTeamName,
+                confirmedByTeamTag: confirmingTeamTag,
+                confirmedByUserId: userId,
+                confirmedByDisplayName: confirmerDisplayName,
+                confirmedByDiscordId: confirmerDiscordId,
+                recipientTeamId: confirmingSide === 'proposer' ? proposal.opponentTeamId : proposal.proposerTeamId,
+                recipientTeamName,
+                recipientTeamTag,
+                delivery: {
+                    botRegistered: recipientBot?.status === 'active',
+                    notificationsEnabled: recipientBot?.notificationsEnabled ?? false,
+                    channelId: recipientBot?.notificationChannelId ?? null,
+                    guildId: recipientBot?.guildId ?? null,
+                    leaderDiscordId: otherLeaderDiscordId,
+                    leaderDisplayName: otherLeaderDisplayName
+                },
+                proposerLogoUrl,
+                opponentLogoUrl,
+                proposalUrl: `https://scheduler.quake.world/#/matches/${proposalId}`,
+                createdAt: new Date(),
+                deliveredAt: null
+            });
+
+            // Write match_sealed notifications (only when both sides matched — sent to BOTH sides)
+            if (result.matched) {
+                const now = new Date();
+
+                const matchNotifProposer = db.collection('notifications').doc();
+                await matchNotifProposer.set({
+                    type: 'match_sealed',
+                    status: 'pending',
+                    proposalId,
+                    scheduledMatchId: result.scheduledMatchId,
+                    slotId,
+                    gameType,
+                    weekId: proposal.weekId,
+                    proposerTeamId: proposal.proposerTeamId,
+                    proposerTeamName: proposal.proposerTeamName,
+                    proposerTeamTag: proposal.proposerTeamTag,
+                    opponentTeamId: proposal.opponentTeamId,
+                    opponentTeamName: proposal.opponentTeamName,
+                    opponentTeamTag: proposal.opponentTeamTag,
+                    recipientTeamId: proposal.proposerTeamId,
+                    recipientTeamName: proposal.proposerTeamName,
+                    recipientTeamTag: proposal.proposerTeamTag,
+                    delivery: {
+                        botRegistered: proposerBot?.status === 'active',
+                        notificationsEnabled: proposerBot?.notificationsEnabled ?? false,
+                        channelId: proposerBot?.notificationChannelId ?? null,
+                        guildId: proposerBot?.guildId ?? null
+                    },
+                    proposerLogoUrl,
+                    opponentLogoUrl,
+                    proposalUrl: `https://scheduler.quake.world/#/matches/${proposalId}`,
+                    createdAt: now,
+                    deliveredAt: null
+                });
+
+                const matchNotifOpponent = db.collection('notifications').doc();
+                await matchNotifOpponent.set({
+                    type: 'match_sealed',
+                    status: 'pending',
+                    proposalId,
+                    scheduledMatchId: result.scheduledMatchId,
+                    slotId,
+                    gameType,
+                    weekId: proposal.weekId,
+                    proposerTeamId: proposal.proposerTeamId,
+                    proposerTeamName: proposal.proposerTeamName,
+                    proposerTeamTag: proposal.proposerTeamTag,
+                    opponentTeamId: proposal.opponentTeamId,
+                    opponentTeamName: proposal.opponentTeamName,
+                    opponentTeamTag: proposal.opponentTeamTag,
+                    recipientTeamId: proposal.opponentTeamId,
+                    recipientTeamName: proposal.opponentTeamName,
+                    recipientTeamTag: proposal.opponentTeamTag,
+                    delivery: {
+                        botRegistered: opponentBot?.status === 'active',
+                        notificationsEnabled: opponentBot?.notificationsEnabled ?? false,
+                        channelId: opponentBot?.notificationChannelId ?? null,
+                        guildId: opponentBot?.guildId ?? null
+                    },
+                    proposerLogoUrl,
+                    opponentLogoUrl,
+                    proposalUrl: `https://scheduler.quake.world/#/matches/${proposalId}`,
+                    createdAt: now,
+                    deliveredAt: null
+                });
+            }
+        } catch (notifError) {
+            // Notification failure must not fail the overall request — match is already scheduled
+            console.error('⚠️ Notification write failed (non-fatal):', notifError);
+        }
 
         console.log('✅ Slot confirmed:', { proposalId, slotId, matched: result.matched });
         return { success: true, matched: result.matched, scheduledMatchId: result.scheduledMatchId, matchDetails: result.matchDetails || null };

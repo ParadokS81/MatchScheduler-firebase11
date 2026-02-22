@@ -13,16 +13,14 @@ const MobileBottomBar = (function() {
 
     // SVG icon templates (lucide-style, 24x24 viewBox)
     const TAB_ICONS = {
-        calendar:   '<svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
         teams:      '<svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
         players:    '<svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
         tournament: '<svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>',
         matches:    '<svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 2.5 21 6l-3 3"/><path d="M21 6H3"/><path d="M6.5 21.5 3 18l3-3"/><path d="M3 18h18"/></svg>'
     };
 
-    // All content tabs (calendar stays with the group)
+    // Content tabs
     const TABS = [
-        { id: 'calendar',   label: 'Calendar' },
         { id: 'teams',      label: 'Teams' },
         { id: 'players',    label: 'Players' },
         { id: 'tournament', label: 'Tournament' },
@@ -44,7 +42,7 @@ const MobileBottomBar = (function() {
         // Subscribe to week changes for label updates
         _unsubWeekChange = WeekNavigation.onWeekChange(_updateWeekLabel);
 
-        // Set initial panel visibility (calendar is default) — mobile only
+        // Set initial panel visibility — mobile only
         if (MobileLayout.isMobile()) {
             _togglePanels(BottomPanelController.getActiveTab());
         }
@@ -300,24 +298,15 @@ const MobileBottomBar = (function() {
     }
 
     /**
-     * On mobile: Calendar tab shows panel-top-center, other tabs show panel-bottom-center
+     * On mobile: show panel-bottom-center for all tabs
      */
     function _togglePanels(tabId) {
         const topCenter = document.getElementById('panel-top-center');
         const bottomCenter = document.getElementById('panel-bottom-center');
         if (!topCenter || !bottomCenter) return;
 
-        if (tabId === 'calendar') {
-            topCenter.style.display = '';
-            bottomCenter.style.display = 'none';
-        } else {
-            topCenter.style.display = 'none';
-            bottomCenter.style.display = '';
-            // Hide floating action buttons when leaving calendar tab
-            document.dispatchEvent(new CustomEvent('grid-selection-change', {
-                detail: { gridId: null, selectedCells: [], bounds: null }
-            }));
-        }
+        topCenter.style.display = 'none';
+        bottomCenter.style.display = '';
     }
 
     function _updateWeekLabel(anchorWeek) {

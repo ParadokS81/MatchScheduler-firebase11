@@ -572,13 +572,29 @@ const ComparisonModal = (function() {
                         Propose
                     </button>`;
             } else {
+                // Group slots by day for visual separation
+                const dayColors = {
+                    Monday: 'text-blue-400', Tuesday: 'text-teal-400', Wednesday: 'text-violet-400',
+                    Thursday: 'text-amber-400', Friday: 'text-rose-400', Saturday: 'text-emerald-400', Sunday: 'text-orange-400'
+                };
+                let lastDay = '';
                 const slotItems = _viableSlots.map(slot => {
                     const checked = _selectedSlots.has(slot.slotId);
                     const display = TimezoneService.formatSlotForDisplay(slot.slotId, refDate);
-                    const shortDay = (display.dayLabel || '').slice(0, 3);
-                    return `<label class="cm-slot-item" data-slot-id="${slot.slotId}">
+                    const dayName = display.dayLabel || '';
+                    const dayColor = dayColors[dayName] || 'text-muted-foreground';
+
+                    // Insert day header when day changes
+                    let dayHeader = '';
+                    if (dayName !== lastDay) {
+                        const mt = lastDay ? 'mt-2' : '';
+                        dayHeader = `<div class="cm-slot-day-header ${mt} ${dayColor}">${dayName}</div>`;
+                        lastDay = dayName;
+                    }
+
+                    return `${dayHeader}<label class="cm-slot-item" data-slot-id="${slot.slotId}">
                         <span class="cm-slot-check">${checked ? '☑' : '☐'}</span>
-                        <span class="cm-slot-time">${shortDay} ${display.timeLabel}</span>
+                        <span class="cm-slot-time">${display.timeLabel}</span>
                         <span class="cm-slot-count">${slot.proposerCount}v${slot.opponentCount}</span>
                     </label>`;
                 }).join('');
@@ -653,14 +669,51 @@ const ComparisonModal = (function() {
     }
 
     /**
+     * Compute week-wide availability for a team's roster.
+     * A player is "available" if they appear in ANY slot this week.
+     * @param {string} teamId
+     * @param {string} weekId
+     * @param {Array} roster - playerRoster array from team data
+     * @returns {{ available: Array, unavailable: Array }}
+     */
+    function _getWeekWideAvailability(teamId, weekId, roster) {
+        const availData = AvailabilityService.getCachedData(teamId, weekId);
+        const allSlots = availData?.slots || {};
+
+        // Collect all unique player IDs available in ANY slot
+        const availableIds = new Set();
+        for (const playerList of Object.values(allSlots)) {
+            if (Array.isArray(playerList)) {
+                for (const id of playerList) availableIds.add(id);
+            }
+        }
+
+        return {
+            available: roster.filter(p => availableIds.has(p.userId)),
+            unavailable: roster.filter(p => !availableIds.has(p.userId))
+        };
+    }
+
+    /**
      * Render the full modal with VS layout
      */
     function _renderModal(weekId, slotId, userTeamInfo, matches, isLeader, leaderDiscordInfo, canSchedule) {
-        const formattedSlot = _formatSlot(slotId, _getRefDate(weekId));
         const selectedMatch = matches[_selectedOpponentIndex] || matches[0];
 
         // Get user's team ID from TeamService or userTeamInfo
         const userTeamId = userTeamInfo.teamId;
+
+        // Format week label for header (e.g., "Week 08")
+        const weekNum = weekId?.split('-')[1] || '?';
+
+        // Compute week-wide availability (player is green if available in ANY slot this week)
+        const userRoster = TeamService.getTeamFromCache(userTeamId)?.playerRoster || [];
+        const userWeekAvail = _getWeekWideAvailability(userTeamId, weekId, userRoster);
+
+        const opponentRoster = TeamService.getTeamFromCache(selectedMatch.teamId)?.playerRoster || [];
+        const opponentWeekAvail = selectedMatch.hideRosterNames
+            ? { available: selectedMatch.availablePlayers, unavailable: selectedMatch.unavailablePlayers }
+            : _getWeekWideAvailability(selectedMatch.teamId, weekId, opponentRoster);
 
         const html = `
             <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
@@ -670,7 +723,7 @@ const ComparisonModal = (function() {
                     <div class="flex items-center justify-between p-4 border-b border-border shrink-0">
                         <!-- Left: Match Details - single line -->
                         <h2 class="text-lg font-semibold text-foreground">
-                            Match Details <span class="text-muted-foreground font-normal">— ${formattedSlot}</span>
+                            Match Details <span class="text-muted-foreground font-normal">— Week ${weekNum}</span>
                         </h2>
                         <!-- Right: Opponent selector + close button -->
                         <div class="flex items-center gap-4">
@@ -693,8 +746,8 @@ const ComparisonModal = (function() {
                                 userTeamId,
                                 userTeamInfo.teamTag,
                                 userTeamInfo.teamName,
-                                userTeamInfo.availablePlayers,
-                                userTeamInfo.unavailablePlayers,
+                                userWeekAvail.available,
+                                userWeekAvail.unavailable,
                                 true,
                                 null,
                                 false,
@@ -711,8 +764,8 @@ const ComparisonModal = (function() {
                                 selectedMatch.teamId,
                                 selectedMatch.teamTag,
                                 selectedMatch.teamName,
-                                selectedMatch.availablePlayers,
-                                selectedMatch.unavailablePlayers,
+                                opponentWeekAvail.available,
+                                opponentWeekAvail.unavailable,
                                 false,
                                 isLeader ? leaderDiscordInfo[selectedMatch.leaderId] : null,
                                 isLeader && !canSchedule,

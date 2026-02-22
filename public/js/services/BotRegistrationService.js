@@ -6,8 +6,8 @@ const BotRegistrationService = (function() {
 
     // Bot client ID for Discord invite link
     const BOT_CLIENT_ID = '1470520759842640024';
-    // Permissions: View Channel + Send Messages + Attach Files + Connect + Speak + Move Members = 19958784
-    const BOT_PERMISSIONS = '19958784';
+    // Permissions: Manage Channels + View Channel + Send Messages + Attach Files + Connect + Speak + Move Members = 19958800
+    const BOT_PERMISSIONS = '19958800';
 
     let _initialized = false;
     let _db = null;
@@ -121,6 +121,25 @@ const BotRegistrationService = (function() {
         }
 
         return { success: false, error: result.data.error || 'Failed to update settings' };
+    }
+
+    /**
+     * Request bot to create a schedule channel in the Discord guild
+     * @param {string} teamId
+     * @param {string} channelName - Channel name (default: 'schedule')
+     */
+    async function createChannel(teamId, channelName = 'schedule') {
+        if (!_initialized || !_functions) {
+            throw new Error('BotRegistrationService not initialized');
+        }
+
+        const { httpsCallable } = await import(
+            'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js'
+        );
+
+        const manageBotRegistration = httpsCallable(_functions, 'manageBotRegistration');
+        const result = await manageBotRegistration({ action: 'createChannel', teamId, channelName });
+        return result.data;
     }
 
     /**
@@ -252,6 +271,7 @@ const BotRegistrationService = (function() {
         connectBot,
         disconnectBot,
         updateSettings,
+        createChannel,
         getRegistration,
         onRegistrationChange,
         getCachedRegistration,

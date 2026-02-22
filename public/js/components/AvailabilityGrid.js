@@ -1400,6 +1400,30 @@ const AvailabilityGrid = (function() {
         // ========================================
 
         let _scheduledMatchMap = new Map(); // UTC slotId → match object
+        const _DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+        /** Compute the adjacent 30-min UTC slot IDs (before + after) */
+        function _adjacentSlots(slotId) {
+            const [day, time] = slotId.split('_');
+            const h = parseInt(time.slice(0, 2));
+            const m = parseInt(time.slice(2));
+            let di = _DAYS.indexOf(day);
+            const result = [];
+
+            // Previous slot
+            let pm = m - 30, ph = h, pdi = di;
+            if (pm < 0) { pm = 30; ph--; }
+            if (ph < 0) { ph = 23; pdi--; }
+            if (pdi >= 0) result.push(`${_DAYS[pdi]}_${String(ph).padStart(2,'0')}${String(pm).padStart(2,'0')}`);
+
+            // Next slot
+            let nm = m + 30, nh = h, ndi = di;
+            if (nm >= 60) { nm = 0; nh++; }
+            if (nh >= 24) { nh = 0; ndi++; }
+            if (ndi < _DAYS.length) result.push(`${_DAYS[ndi]}_${String(nh).padStart(2,'0')}${String(nm).padStart(2,'0')}`);
+
+            return result;
+        }
 
         /**
          * Re-apply the scheduled match label to a cell after innerHTML was overwritten.
@@ -1452,13 +1476,21 @@ const AvailabilityGrid = (function() {
                 }
             }
 
+            // Build set of buffer UTC slot IDs (adjacent to match, not the match itself)
+            const bufferSlots = new Set();
+            for (const matchSlotId of _scheduledMatchMap.keys()) {
+                for (const adj of _adjacentSlots(matchSlotId)) {
+                    if (!_scheduledMatchMap.has(adj)) bufferSlots.add(adj);
+                }
+            }
+
             const allCells = _container.querySelectorAll('.grid-cell');
             allCells.forEach(cell => {
                 const cellId = cell.dataset.cellId;
                 if (!cellId) return;
 
-                // Remove existing scheduled match indicator
-                cell.classList.remove('has-scheduled-match');
+                // Remove existing indicators
+                cell.classList.remove('has-scheduled-match', 'match-buffer');
                 const existing = cell.querySelector('.scheduled-match-label');
                 if (existing) existing.remove();
 
@@ -1482,6 +1514,9 @@ const AvailabilityGrid = (function() {
 
                     label.innerHTML = `${logoA ? `<img src="${logoA}" class="sml-logo" alt="${tagA}">` : `<span class="sml-tag">${tagA}</span>`}<span class="sml-vs">vs</span>${logoB ? `<img src="${logoB}" class="sml-logo" alt="${tagB}">` : `<span class="sml-tag">${tagB}</span>`}`;
                     cell.appendChild(label);
+                } else if (bufferSlots.has(utcSlotId)) {
+                    // Adjacent buffer slot — fully dimmed like past slots
+                    cell.classList.add('match-buffer');
                 }
             });
         }
@@ -1495,7 +1530,7 @@ const AvailabilityGrid = (function() {
 
             const allCells = _container.querySelectorAll('.grid-cell');
             allCells.forEach(cell => {
-                cell.classList.remove('has-scheduled-match');
+                cell.classList.remove('has-scheduled-match', 'match-buffer');
                 const label = cell.querySelector('.scheduled-match-label');
                 if (label) label.remove();
             });

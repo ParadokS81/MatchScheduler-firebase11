@@ -5,7 +5,7 @@
 const BottomPanelController = (function() {
     'use strict';
 
-    let _activeTab = 'calendar';
+    let _activeTab = 'matches';
     let _weekDisplay2Ref = null;
     let _bottomPanel = null;
     let _initialized = false;
@@ -37,7 +37,7 @@ const BottomPanelController = (function() {
 
     /**
      * Switch to a different tab
-     * @param {string} tabId - Tab identifier ('calendar', 'teams', 'tournament')
+     * @param {string} tabId - Tab identifier ('matches', 'teams', 'tournament')
      * @param {Object} [options] - Options
      * @param {boolean} [options.force] - Force switch even if already on this tab (used by Router)
      */
@@ -72,9 +72,6 @@ const BottomPanelController = (function() {
 
         // Handle content switching
         switch(tabId) {
-            case 'calendar':
-                _showCalendarContent();
-                break;
             case 'teams':
                 _showTeamsBrowser('teams');
                 break;
@@ -105,25 +102,6 @@ const BottomPanelController = (function() {
                 detail: { active: isAdmin }
             }));
         }
-    }
-
-    /**
-     * Show the calendar (Week 2 grid) content
-     */
-    function _showCalendarContent() {
-        if (!_bottomPanel || !_weekDisplay2Ref) return;
-
-        // Clear any placeholder
-        if (_placeholderContent) {
-            _placeholderContent.remove();
-            _placeholderContent = null;
-        }
-
-        // Re-initialize the week display
-        _weekDisplay2Ref.init();
-
-        // Dispatch event so app.js can refresh availability data for the recreated grid
-        window.dispatchEvent(new CustomEvent('calendar-tab-shown'));
     }
 
     /**
@@ -222,14 +200,6 @@ const BottomPanelController = (function() {
     }
 
     /**
-     * Check if Calendar tab is active
-     * @returns {boolean}
-     */
-    function isCalendarActive() {
-        return _activeTab === 'calendar';
-    }
-
-    /**
      * Cleanup
      */
     function cleanup() {
@@ -250,7 +220,6 @@ const BottomPanelController = (function() {
         init,
         switchTab,
         getActiveTab,
-        isCalendarActive,
         cleanup
     };
 })();
