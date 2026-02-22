@@ -6,8 +6,8 @@ const BotRegistrationService = (function() {
 
     // Bot client ID for Discord invite link
     const BOT_CLIENT_ID = '1470520759842640024';
-    // Permissions: Connect + Speak + Use Slash Commands + Send Messages = 3148800
-    const BOT_PERMISSIONS = '3148800';
+    // Permissions: View Channel + Send Messages + Attach Files + Connect + Speak + Move Members = 19958784
+    const BOT_PERMISSIONS = '19958784';
 
     let _initialized = false;
     let _db = null;
@@ -90,6 +90,37 @@ const BotRegistrationService = (function() {
         }
 
         throw new Error(result.data.error || 'Failed to disconnect bot');
+    }
+
+    /**
+     * Call Cloud Function to update notification and auto-record settings
+     * @param {string} teamId
+     * @param {{ notifications?: object, autoRecord?: object }} settings
+     */
+    async function updateSettings(teamId, settings) {
+        if (!_initialized || !_functions) {
+            throw new Error('BotRegistrationService not initialized');
+        }
+
+        const { httpsCallable } = await import(
+            'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js'
+        );
+
+        const manageBotRegistration = httpsCallable(_functions, 'manageBotRegistration');
+        const result = await manageBotRegistration({ action: 'updateSettings', teamId, ...settings });
+
+        if (result.data.success) {
+            // Update local cache with new settings
+            if (_cache.has(teamId) && _cache.get(teamId)) {
+                const cached = _cache.get(teamId);
+                if (settings.notifications !== undefined) cached.notifications = settings.notifications;
+                if (settings.autoRecord !== undefined) cached.autoRecord = settings.autoRecord;
+                if (settings.scheduleChannel !== undefined) cached.scheduleChannel = settings.scheduleChannel;
+            }
+            return { success: true };
+        }
+
+        return { success: false, error: result.data.error || 'Failed to update settings' };
     }
 
     /**
@@ -220,6 +251,7 @@ const BotRegistrationService = (function() {
         getBotInviteUrl,
         connectBot,
         disconnectBot,
+        updateSettings,
         getRegistration,
         onRegistrationChange,
         getCachedRegistration,
