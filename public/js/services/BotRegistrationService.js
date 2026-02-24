@@ -62,8 +62,12 @@ const BotRegistrationService = (function() {
         const result = await manageBotRegistration({ action: 'connect', teamId });
 
         if (result.data.success) {
-            _cache.set(teamId, result.data.registration);
-            return result.data.registration;
+            const regData = {
+                ...result.data.registration,
+                botAlreadyInGuilds: result.data.botAlreadyInGuilds || [],
+            };
+            _cache.set(teamId, regData);
+            return regData;
         }
 
         throw new Error(result.data.error || 'Failed to connect bot');
@@ -93,9 +97,9 @@ const BotRegistrationService = (function() {
     }
 
     /**
-     * Call Cloud Function to update notification and auto-record settings
+     * Call Cloud Function to update auto-record and schedule channel settings
      * @param {string} teamId
-     * @param {{ notifications?: object, autoRecord?: object }} settings
+     * @param {{ autoRecord?: object, scheduleChannel?: object }} settings
      */
     async function updateSettings(teamId, settings) {
         if (!_initialized || !_functions) {
@@ -113,7 +117,6 @@ const BotRegistrationService = (function() {
             // Update local cache with new settings
             if (_cache.has(teamId) && _cache.get(teamId)) {
                 const cached = _cache.get(teamId);
-                if (settings.notifications !== undefined) cached.notifications = settings.notifications;
                 if (settings.autoRecord !== undefined) cached.autoRecord = settings.autoRecord;
                 if (settings.scheduleChannel !== undefined) cached.scheduleChannel = settings.scheduleChannel;
             }

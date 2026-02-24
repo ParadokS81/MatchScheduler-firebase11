@@ -345,16 +345,12 @@ exports.createProposal = functions
             delivery: {
                 opponent: {
                     botRegistered: opponentBot?.status === 'active',
-                    notificationsEnabled: opponentBot?.notificationsEnabled ?? false,
-                    channelId: opponentBot?.notificationChannelId ?? null,
                     guildId: opponentBot?.guildId ?? null,
                     leaderDiscordId: opponentLeaderDiscordId,
                     leaderDisplayName: opponentLeaderDisplayName
                 },
                 proposer: {
                     botRegistered: proposerBot?.status === 'active',
-                    notificationsEnabled: proposerBot?.notificationsEnabled ?? false,
-                    channelId: proposerBot?.notificationChannelId ?? null,
                     guildId: proposerBot?.guildId ?? null
                 }
             },
@@ -701,8 +697,6 @@ exports.confirmSlot = functions
                 recipientTeamTag,
                 delivery: {
                     botRegistered: recipientBot?.status === 'active',
-                    notificationsEnabled: recipientBot?.notificationsEnabled ?? false,
-                    channelId: recipientBot?.notificationChannelId ?? null,
                     guildId: recipientBot?.guildId ?? null,
                     leaderDiscordId: otherLeaderDiscordId,
                     leaderDisplayName: otherLeaderDisplayName
@@ -738,8 +732,6 @@ exports.confirmSlot = functions
                     recipientTeamTag: proposal.proposerTeamTag,
                     delivery: {
                         botRegistered: proposerBot?.status === 'active',
-                        notificationsEnabled: proposerBot?.notificationsEnabled ?? false,
-                        channelId: proposerBot?.notificationChannelId ?? null,
                         guildId: proposerBot?.guildId ?? null
                     },
                     proposerLogoUrl,
@@ -769,8 +761,6 @@ exports.confirmSlot = functions
                     recipientTeamTag: proposal.opponentTeamTag,
                     delivery: {
                         botRegistered: opponentBot?.status === 'active',
-                        notificationsEnabled: opponentBot?.notificationsEnabled ?? false,
-                        channelId: opponentBot?.notificationChannelId ?? null,
                         guildId: opponentBot?.guildId ?? null
                     },
                     proposerLogoUrl,
@@ -888,6 +878,7 @@ exports.cancelProposal = functions
             throw new functions.https.HttpsError('invalid-argument', 'proposalId is required');
         }
 
+        let cancelledProposalData = null;
         await db.runTransaction(async (transaction) => {
             // READ PHASE
             const proposalRef = db.collection('matchProposals').doc(proposalId);
@@ -916,6 +907,12 @@ exports.cancelProposal = functions
                 throw new functions.https.HttpsError('permission-denied', 'Only leaders or schedulers can cancel proposals');
             }
 
+            // Capture for post-transaction notification (can't access proposal outside transaction scope)
+            cancelledProposalData = {
+                proposerTeamId: proposal.proposerTeamId,
+                opponentTeamId: proposal.opponentTeamId,
+            };
+
             // WRITE PHASE
             const now = new Date();
 
@@ -943,6 +940,20 @@ exports.cancelProposal = functions
                 }
             });
         });
+
+        // Notify connected bots to delete the original announcement messages
+        if (cancelledProposalData) {
+            await db.collection('notifications').add({
+                type: 'proposal_cancelled',
+                status: 'pending',
+                proposalId,
+                proposerTeamId: cancelledProposalData.proposerTeamId,
+                opponentTeamId: cancelledProposalData.opponentTeamId,
+                cancelledBy: userId,
+                createdAt: new Date(),
+                deliveredAt: null,
+            });
+        }
 
         console.log('✅ Proposal cancelled:', proposalId);
         return { success: true };

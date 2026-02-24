@@ -118,13 +118,42 @@ async function _handleConnect(userId, teamId, team) {
 
     console.log('✅ Bot registration created (pending):', { teamId, teamName: team.teamName, authorizedDiscordUserIds });
 
+    // Check if bot is already in servers this user belongs to
+    const botAlreadyInGuilds = [];
+    try {
+        const activeRegs = await db.collection('botRegistrations')
+            .where('status', '==', 'active')
+            .get();
+
+        const userDiscordId = user.discordUserId;
+        const seenGuilds = new Set(); // Deduplicate by guildId (multiple teams per guild)
+
+        for (const regDoc of activeRegs.docs) {
+            const regData = regDoc.data();
+            if (!regData.guildId || seenGuilds.has(regData.guildId)) continue;
+
+            // Check if user's Discord ID is in this guild's member cache
+            if (regData.guildMembers && regData.guildMembers[userDiscordId]) {
+                botAlreadyInGuilds.push({
+                    guildId: regData.guildId,
+                    guildName: regData.guildName || 'Unknown Server',
+                });
+                seenGuilds.add(regData.guildId);
+            }
+        }
+    } catch (err) {
+        // Non-fatal — just don't show the hint
+        console.warn('Failed to check existing guild memberships:', err.message);
+    }
+
     return {
         success: true,
         registration: {
             ...registration,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-        }
+        },
+        botAlreadyInGuilds,
     };
 }
 
@@ -142,19 +171,8 @@ async function _handleUpdateSettings(data, teamId) {
         throw new functions.https.HttpsError('failed-precondition', 'Bot must be active to update settings');
     }
 
-    const { notifications, autoRecord, scheduleChannel } = data;
+    const { autoRecord, scheduleChannel } = data;
     const updateData = { updatedAt: FieldValue.serverTimestamp() };
-
-    if (notifications !== undefined) {
-        if (typeof notifications.enabled !== 'boolean') {
-            throw new functions.https.HttpsError('invalid-argument', 'notifications.enabled must be a boolean');
-        }
-        updateData.notifications = {
-            enabled: notifications.enabled,
-            channelId: notifications.channelId ?? null,
-            channelName: notifications.channelName ?? null,
-        };
-    }
 
     if (autoRecord !== undefined) {
         if (typeof autoRecord.enabled !== 'boolean') {

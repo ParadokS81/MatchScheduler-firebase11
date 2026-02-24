@@ -338,7 +338,8 @@ type EventType =
   | 'SLOT_CONFIRMED'
   | 'MATCH_SCHEDULED'
   | 'PROPOSAL_CANCELLED'
-  | 'MATCH_QUICK_ADDED';           // Slice 18.0: Match added via quick-add (no proposal)
+  | 'MATCH_QUICK_ADDED'            // Slice 18.0: Match added via quick-add (no proposal)
+  | 'MATCH_BIG4_IMPORTED';          // Big4 Sync: Match imported from TheBig4.se API
 ```
 
 **Event ID Format:** `{date}-{time}-{teamName}-{type}_{randomId}`
@@ -451,10 +452,14 @@ interface ScheduledMatchDocument {
   teamARoster: string[];           // userIds available at confirmation
   teamBRoster: string[];           // userIds available at confirmation
 
-  // Origin (Slice 18.0: Quick Add Match)
-  origin: 'proposal' | 'quick_add';  // How the match was created (missing = 'proposal' for legacy docs)
-  proposalId: string | null;         // Reference back to matchProposal (null for quick_add)
-  addedBy: string | null;            // userId who quick-added (null for proposal-created)
+  // Origin (Slice 18.0: Quick Add Match, Big4 Sync)
+  origin: 'proposal' | 'quick_add' | 'big4_import';  // How the match was created (missing = 'proposal' for legacy docs)
+  proposalId: string | null;         // Reference back to matchProposal (null for quick_add/big4_import)
+  addedBy: string | null;            // userId who quick-added (null for proposal/big4_import)
+
+  // Big4 integration (only present when origin === 'big4_import')
+  big4FixtureId?: number;            // Fixture ID from Big4 API — primary dedup key
+  big4Division?: string;             // "Division 1", "Division 2", "Division 3"
 
   // Status
   status: 'upcoming' | 'completed' | 'cancelled';
@@ -476,7 +481,8 @@ interface ScheduledMatchDocument {
 - `scheduledDate` computed from weekId + slotId for display
 - Roster snapshots preserve who was available at confirmation time (empty `[]` for quick_add)
 - `gameType` is required - user must explicitly choose 'official' or 'practice' when confirming
-- `origin` field: `'proposal'` for matches created via proposal workflow, `'quick_add'` for direct adds. Legacy docs without this field are treated as `'proposal'`
+- `origin` field: `'proposal'` for matches created via proposal workflow, `'quick_add'` for direct adds, `'big4_import'` for games synced from TheBig4.se API. Legacy docs without this field are treated as `'proposal'`
+- `big4FixtureId`: Only set on imported matches. Used for idempotent re-sync (skip if fixture already imported)
 - All matches are publicly readable (community feed + public API for QWHub)
 - Document ID: auto-generated
 
@@ -581,12 +587,10 @@ interface BotRegistrationDocument {
     canPost: boolean;                 // Bot has send message permission
   }>;
 
-  // Notification settings (managed via MatchScheduler Discord tab)
-  notifications: {
-    enabled: boolean;                 // Default: true
-    channelId: string | null;         // Discord channel for challenge/match notifications
-    channelName: string | null;       // Denormalized channel name
-  };
+  // DEPRECATED: Notification channel settings removed.
+  // Quad bot now posts events as "last 3 events" in #schedule channel instead.
+  // Existing docs may still have this field from before cleanup.
+  // notifications?: { enabled: boolean; channelId: string | null; channelName: string | null; };
 
   // Schedule channel — where the availability canvas is posted
   scheduleChannel: {
@@ -646,13 +650,11 @@ interface NotificationDocument {
   // Delivery targets
   delivery: {
     opponent: {
-      botStatus: 'active' | 'not_registered';
-      channelId: string | null;      // From botRegistrations.notifications.channelId
+      botRegistered: boolean;         // Whether opponent team has active bot registration
       guildId: string | null;
     };
     proposer: {
-      botStatus: 'active' | 'not_registered';
-      channelId: string | null;
+      botRegistered: boolean;         // Whether proposer team has active bot registration
       guildId: string | null;
     };
   };
@@ -866,6 +868,7 @@ const docId = `${teamId}_${weekId}`;
 - **2026-02-14**: Added origin, addedBy fields to scheduledMatches; MATCH_QUICK_ADDED event type (Slice 18.0)
 - **2026-02-14**: Voice replay Phase 2 — visibility + track identity fields on voiceRecordings, botRegistrations collection, teams.voiceSettings (Slice P3.1)
 - **2026-02-16**: Added weeklyStats and recordingSessions admin-only collections (Slice A1)
+- **2026-02-23**: Added big4_import origin, big4FixtureId, big4Division fields to scheduledMatches; MATCH_BIG4_IMPORTED event type (Big4 Sync)
 - **2026-02-22**: Added Recording Management fields to voiceRecordings: sessionId, opponentTag, teamFrags, opponentFrags, gameId, mapOrder (Phase R1)
 - **2026-02-22**: Added notifications and deletionRequests collections (Phase R3-R5)
 - **2026-02-22**: Expanded botRegistrations with guildMembers, notifications, scheduleChannel, autoRecord, availableChannels fields

@@ -30,8 +30,9 @@ const TeamManagementModal = (function() {
     /**
      * Show the team management modal
      * @param {string} teamId - The team ID
+     * @param {string} [tab] - Optional tab to open: 'settings', 'discord', 'recordings'
      */
-    function show(teamId) {
+    function show(teamId, tab) {
         _teamId = teamId;
         _teamData = TeamService.getTeamFromCache(teamId);
         _currentUserId = window.firebase?.auth?.currentUser?.uid;
@@ -57,6 +58,14 @@ const TeamManagementModal = (function() {
         _recordingsInitialized = false;
         _renderModal();
         _attachListeners();
+
+        // Deep link: switch to requested tab if specified
+        if (tab && tab !== 'settings') {
+            _handleTabSwitch(tab);
+        } else if (typeof Router !== 'undefined') {
+            // Push settings URL when opened via gear icon (no tab specified)
+            Router.pushSettingsTab('settings');
+        }
     }
 
     /**
@@ -730,6 +739,45 @@ const TeamManagementModal = (function() {
                 ? BotRegistrationService.getBotInviteUrl()
                 : '#';
 
+            const alreadyInGuilds = _botRegistration.botAlreadyInGuilds || [];
+
+            let instructionsHtml;
+            if (alreadyInGuilds.length > 0) {
+                // Variant B: Bot already in server(s) the user is in
+                const guildList = alreadyInGuilds
+                    .map(g => `<li class="text-foreground font-medium">${_escapeHtml(g.guildName)}</li>`)
+                    .join('');
+
+                instructionsHtml = `
+                    <p class="text-xs text-foreground mb-2">The bot is already in:</p>
+                    <ul class="text-xs mb-2 list-disc list-inside">${guildList}</ul>
+                    <p class="text-xs text-muted-foreground">
+                        Run <code class="bg-muted px-1 py-0.5 rounded text-foreground">/register</code>
+                        in your team's channel to link this squad.
+                    </p>
+                    <div class="mt-2 pt-2 border-t border-border">
+                        <p class="text-xs text-muted-foreground">
+                            Or invite to a different server:
+                            <a href="${inviteUrl}" target="_blank" rel="noopener noreferrer"
+                               class="text-primary hover:underline ml-1">Invite Bot &rarr;</a>
+                        </p>
+                    </div>
+                `;
+            } else {
+                // Variant A: Bot not in any of user's servers
+                instructionsHtml = `
+                    <p class="text-xs text-foreground">Complete setup in Discord:</p>
+                    <ol class="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
+                        <li>
+                            Add the bot to your server
+                            <a href="${inviteUrl}" target="_blank" rel="noopener noreferrer"
+                               class="text-primary hover:underline ml-1">Invite Bot &rarr;</a>
+                        </li>
+                        <li>Run <code class="bg-muted px-1 py-0.5 rounded text-foreground">/register</code> in your team's channel</li>
+                    </ol>
+                `;
+            }
+
             return `
                 <div id="voice-bot-section">
                     <div class="flex items-center justify-between">
@@ -737,15 +785,7 @@ const TeamManagementModal = (function() {
                         <span class="text-xs text-amber-500 font-medium">Pending</span>
                     </div>
                     <div class="mt-1 p-3 bg-muted/50 border border-border rounded-lg space-y-2">
-                        <p class="text-xs text-foreground">Complete setup in Discord:</p>
-                        <ol class="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
-                            <li>
-                                Add the bot to your server
-                                <a href="${inviteUrl}" target="_blank" rel="noopener noreferrer"
-                                   class="text-primary hover:underline ml-1">Invite Bot &rarr;</a>
-                            </li>
-                            <li>Run <code class="bg-muted px-1 py-0.5 rounded text-foreground">/register</code> in any channel</li>
-                        </ol>
+                        ${instructionsHtml}
                     </div>
                     <button id="voice-bot-cancel-btn"
                             class="mt-2 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors">
@@ -760,6 +800,10 @@ const TeamManagementModal = (function() {
             ? _escapeHtml(_botRegistration.guildName)
             : 'Discord server';
 
+        const channelInfo = _botRegistration.registeredCategoryName
+            ? `<p class="text-xs text-muted-foreground">Scoped to: ${_escapeHtml(_botRegistration.registeredCategoryName)}</p>`
+            : '';
+
         return `
             <div id="voice-bot-section">
                 <div class="flex items-center justify-between">
@@ -770,6 +814,7 @@ const TeamManagementModal = (function() {
                     <div>
                         <p class="text-sm text-foreground">${guildName}</p>
                         <p class="text-xs text-muted-foreground">Discord server</p>
+                        ${channelInfo}
                     </div>
                     <button id="voice-bot-disconnect-btn"
                             class="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors shrink-0">
@@ -777,7 +822,6 @@ const TeamManagementModal = (function() {
                     </button>
                 </div>
                 ${_renderPlayerMappingSection()}
-                ${_renderNotificationSettingsSection()}
                 ${_renderScheduleChannelSection()}
             </div>
         `;
@@ -840,65 +884,6 @@ const TeamManagementModal = (function() {
         `;
     }
 
-    /**
-     * Render notification settings section — toggle + channel dropdown
-     */
-    function _renderNotificationSettingsSection() {
-        const notifications = _botRegistration?.notifications;
-        const isEnabled = notifications?.enabled !== false; // default true
-        const selectedChannelId = notifications?.channelId || null;
-        const availableChannels = _botRegistration?.availableChannels || [];
-
-        const channelOptions = availableChannels.map(ch => {
-            const canPost = ch.canPost !== false; // treat missing as true (backward compat)
-            return `<option value="${_escapeHtml(ch.id)}" ${ch.id === selectedChannelId ? 'selected' : ''}
-                        ${!canPost ? 'class="text-muted-foreground"' : ''}>
-                ${!canPost ? '🔒 ' : '# '}${_escapeHtml(ch.name)}${!canPost ? ' (no permission)' : ''}
-            </option>`;
-        }).join('');
-
-        // Check if currently selected channel lacks post permission
-        const selectedChannel = availableChannels.find(ch => ch.id === selectedChannelId);
-        const selectedCanPost = !selectedChannel || selectedChannel.canPost !== false;
-
-        const channelDropdown = availableChannels.length > 0 ? `
-            <div class="mt-2">
-                <p class="text-sm text-foreground mb-1">Post in channel:</p>
-                <select id="notification-channel-select"
-                        class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground"
-                        ${!isEnabled ? 'disabled' : ''}>
-                    <option value="">— DM team leader (fallback) —</option>
-                    ${channelOptions}
-                </select>
-                <p id="channel-permission-warning"
-                   class="text-xs text-amber-400 mt-1 ${selectedCanPost ? 'hidden' : ''}">
-                    ⚠ Bot needs "Send Messages" permission in this channel
-                </p>
-            </div>
-        ` : '';
-
-        return `
-            <div class="pt-3 border-t border-border">
-                <label class="text-sm font-medium text-foreground">Notifications</label>
-                <div class="mt-2 flex items-center justify-between gap-3">
-                    <div>
-                        <p class="text-sm text-foreground">Challenge notifications</p>
-                        <p class="text-xs text-muted-foreground">Get notified when opponents challenge you</p>
-                    </div>
-                    <button class="notifications-enabled-toggle relative w-9 h-5 rounded-full transition-colors shrink-0
-                                ${isEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}"
-                            data-enabled="${isEnabled}">
-                        <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
-                              style="left: ${isEnabled ? '1.125rem' : '0.125rem'}"></span>
-                    </button>
-                </div>
-                ${channelDropdown}
-                <p class="text-xs text-muted-foreground mt-1.5">
-                    ⓘ Bot must have access to the selected channel
-                </p>
-            </div>
-        `;
-    }
 
     /**
      * Render schedule channel section — dropdown to select where bot posts availability grid
@@ -1061,13 +1046,6 @@ const TeamManagementModal = (function() {
         const disconnectBtn = document.getElementById('voice-bot-disconnect-btn');
         disconnectBtn?.addEventListener('click', _handleVoiceBotDisconnect);
 
-        // New: notification settings
-        const notificationsToggle = document.querySelector('.notifications-enabled-toggle');
-        notificationsToggle?.addEventListener('click', _handleNotificationsToggle);
-
-        const notificationChannelSelect = document.getElementById('notification-channel-select');
-        notificationChannelSelect?.addEventListener('change', _handleNotificationChannelChange);
-
         const scheduleChannelSelect = document.getElementById('schedule-channel-select');
         scheduleChannelSelect?.addEventListener('change', _handleScheduleChannelChange);
 
@@ -1171,105 +1149,6 @@ const TeamManagementModal = (function() {
             }
             btn.disabled = false;
             btn.textContent = originalText;
-        }
-    }
-
-    /**
-     * Handle notifications enabled toggle click
-     */
-    async function _handleNotificationsToggle() {
-        const btn = document.querySelector('.notifications-enabled-toggle');
-        if (!btn) return;
-
-        const currentlyEnabled = btn.dataset.enabled === 'true';
-        const newEnabled = !currentlyEnabled;
-
-        // Read current channel selection before optimistic update
-        const channelSelect = document.getElementById('notification-channel-select');
-        const channelId = channelSelect?.value || null;
-        const availableChannels = _botRegistration?.availableChannels || [];
-        const channelEntry = availableChannels.find(ch => ch.id === channelId);
-
-        const newNotifications = {
-            enabled: newEnabled,
-            channelId: channelId || null,
-            channelName: channelEntry?.name || null,
-        };
-
-        // Optimistic update
-        btn.dataset.enabled = String(newEnabled);
-        btn.classList.toggle('bg-primary', newEnabled);
-        btn.classList.toggle('bg-muted-foreground/30', !newEnabled);
-        const knob = btn.querySelector('span');
-        if (knob) knob.style.left = newEnabled ? '1.125rem' : '0.125rem';
-        if (channelSelect) channelSelect.disabled = !newEnabled;
-
-        // Persist saved state for rollback
-        const prevNotifications = _botRegistration?.notifications;
-
-        // Apply optimistically to local state
-        if (_botRegistration) _botRegistration.notifications = newNotifications;
-
-        try {
-            const result = await BotRegistrationService.updateSettings(_teamId, { notifications: newNotifications });
-            if (result.success) {
-                ToastService.showSuccess(newEnabled ? 'Notifications enabled' : 'Notifications disabled');
-            } else {
-                // Rollback
-                if (_botRegistration) _botRegistration.notifications = prevNotifications;
-                _rerenderVoiceBotSection();
-                ToastService.showError(result.error || 'Failed to update notifications');
-            }
-        } catch (error) {
-            console.error('❌ Error updating notification settings:', error);
-            if (_botRegistration) _botRegistration.notifications = prevNotifications;
-            _rerenderVoiceBotSection();
-            ToastService.showError('Network error - please try again');
-        }
-    }
-
-    /**
-     * Handle notification channel selection change
-     */
-    async function _handleNotificationChannelChange() {
-        const channelSelect = document.getElementById('notification-channel-select');
-        if (!channelSelect) return;
-
-        const channelId = channelSelect.value || null;
-        const availableChannels = _botRegistration?.availableChannels || [];
-        const channelEntry = availableChannels.find(ch => ch.id === channelId);
-
-        // Toggle permission warning
-        const warning = document.getElementById('channel-permission-warning');
-        if (warning) {
-            const canPost = !channelEntry || channelEntry.canPost !== false;
-            warning.classList.toggle('hidden', canPost);
-        }
-
-        const isEnabled = _botRegistration?.notifications?.enabled !== false;
-        const newNotifications = {
-            enabled: isEnabled,
-            channelId: channelId,
-            channelName: channelEntry?.name || null,
-        };
-
-        const prevNotifications = _botRegistration?.notifications;
-        if (_botRegistration) _botRegistration.notifications = newNotifications;
-
-        try {
-            const result = await BotRegistrationService.updateSettings(_teamId, { notifications: newNotifications });
-            if (!result.success) {
-                if (_botRegistration) _botRegistration.notifications = prevNotifications;
-                _rerenderVoiceBotSection();
-                ToastService.showError(result.error || 'Failed to update channel');
-            } else {
-                ToastService.showSuccess('Notification channel updated');
-            }
-        } catch (error) {
-            console.error('❌ Error updating notification channel:', error);
-            if (_botRegistration) _botRegistration.notifications = prevNotifications;
-            _rerenderVoiceBotSection();
-            ToastService.showError('Network error - please try again');
         }
     }
 
@@ -1560,9 +1439,15 @@ const TeamManagementModal = (function() {
         };
         document.addEventListener('keydown', _keydownHandler);
 
-        // Tab switching (leader only)
+        // Tab switching + URL sync
         document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => _handleTabSwitch(btn.dataset.tab));
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                _handleTabSwitch(tab);
+                if (typeof Router !== 'undefined') {
+                    Router.pushSettingsTab(tab);
+                }
+            });
         });
 
         // Copy join code
@@ -2795,6 +2680,11 @@ const TeamManagementModal = (function() {
      * Close the modal
      */
     function close() {
+        // Restore URL back to team view (if we were on a settings route)
+        if (typeof Router !== 'undefined' && _teamId && location.hash.startsWith('#/settings')) {
+            Router.pushTeamSubTab(_teamId, 'details');
+        }
+
         const modalContainer = document.getElementById('modal-container');
         modalContainer.innerHTML = '';
         modalContainer.classList.add('hidden');
