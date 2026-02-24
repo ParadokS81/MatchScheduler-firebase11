@@ -301,7 +301,7 @@ const UpcomingMatchesPanel = (function() {
                 <div class="flex items-center justify-center gap-0">
                     ${logoAHtml}
                     <span class="text-sm font-semibold inline-block w-[4ch] text-right truncate">${_escapeHtml(tagA)}</span>
-                    <span class="text-muted-foreground/40 mx-3">·</span>
+                    <span class="text-[0.6rem] text-muted-foreground/50 font-medium mx-2">vs</span>
                     <span class="text-sm font-semibold inline-block w-[4ch] text-left truncate">${_escapeHtml(tagB)}</span>
                     ${logoBHtml}
                 </div>
