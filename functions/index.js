@@ -15,9 +15,11 @@ const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
 const { updateFavorites } = require('./favorites');
 const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler, updateProposalSettings, quickAddMatch } = require('./match-proposals');
 const { getScheduledGames } = require('./scheduled-games-api');
+const { syncBig4Matches, scheduledBig4Sync } = require('./big4-sync');
 const { submitFeedback, getFeedbackCount } = require('./feedback');
 const { manageBotRegistration } = require('./bot-registration');
 const { expireProposals } = require('./expire-proposals');
+const { expireScheduledMatches } = require('./expire-scheduled-matches');
 
 // Export Cloud Functions
 exports.processLogoUpload = processLogoUpload;
@@ -75,8 +77,13 @@ exports.getFeedbackCount = getFeedbackCount;
 // Bot registration functions (Phase 1a)
 exports.manageBotRegistration = manageBotRegistration;
 
+// Big4 integration
+exports.syncBig4Matches = syncBig4Matches;
+exports.scheduledBig4Sync = scheduledBig4Sync;
+
 // Scheduled cleanup
 exports.expireProposals = expireProposals;
+exports.expireScheduledMatches = expireScheduledMatches;
 
 // Admin functions
 const { computeWeeklyStats } = require('./compute-weekly-stats');

@@ -7,6 +7,7 @@
  * URL structure:
  *   #/matches, #/teams, #/teams/{id}, #/teams/{id}/history,
  *   #/teams/{id}/h2h, #/teams/{id}/h2h/{opponentId},
+ *   #/settings, #/settings/{tab},
  *   #/players, #/players/by-team, #/matches, #/matches/{proposalId},
  *   #/tournament
  */
@@ -18,8 +19,9 @@ const Router = (function() {
     let _currentHash = '';      // Track to avoid redundant pushes
 
     // Valid top-level tabs
-    const VALID_TABS = new Set(['matches', 'teams', 'players', 'tournament']);
+    const VALID_TABS = new Set(['matches', 'teams', 'players', 'tournament', 'settings']);
     const VALID_SUB_TABS = new Set(['details', 'history', 'h2h']);
+    const VALID_SETTINGS_TABS = new Set(['settings', 'discord', 'recordings']);
 
     // ========================================
     // Initialization
@@ -28,8 +30,9 @@ const Router = (function() {
     function init() {
         if (_initialized) return;
 
-        // Listen for browser back/forward
+        // Listen for browser back/forward and programmatic hash changes
         window.addEventListener('popstate', _handlePopState);
+        window.addEventListener('hashchange', _handlePopState);
 
         // Listen for navigation events from existing components
         window.addEventListener('bottom-tab-changed', _handleTabChanged);
@@ -53,6 +56,8 @@ const Router = (function() {
     // ========================================
 
     function _handlePopState() {
+        // Deduplicate: both popstate and hashchange fire on back/forward
+        if (location.hash === _currentHash) return;
         _currentHash = location.hash;
         _restoreFromHash(location.hash);
     }
@@ -66,8 +71,8 @@ const Router = (function() {
                 ? BottomPanelController.getActiveTab()
                 : 'matches';
 
-            // Switch top-level tab if needed
-            if (route.tab !== currentTab) {
+            // Switch top-level tab if needed (settings is a modal overlay, not a real tab)
+            if (route.tab !== 'settings' && route.tab !== currentTab) {
                 if (typeof BottomPanelController !== 'undefined') {
                     BottomPanelController.switchTab(route.tab, { force: true });
                 }
@@ -96,6 +101,18 @@ const Router = (function() {
                         TeamsBrowserPanel.deselectTeam();
                     }
                 }
+            }
+
+            // Deep state: settings modal
+            if (route.tab === 'settings') {
+                setTimeout(() => {
+                    const team = typeof MatchSchedulerApp !== 'undefined'
+                        ? MatchSchedulerApp.getSelectedTeam()
+                        : null;
+                    if (team && typeof TeamManagementModal !== 'undefined') {
+                        TeamManagementModal.show(team.id, route.settingsTab);
+                    }
+                }, 500);
             }
 
             // Deep state: match proposal expansion
@@ -129,6 +146,11 @@ const Router = (function() {
         if (segments.length === 0) return { tab: 'matches' };
 
         const tab = VALID_TABS.has(segments[0]) ? segments[0] : 'matches';
+
+        if (tab === 'settings') {
+            const settingsTab = VALID_SETTINGS_TABS.has(segments[1]) ? segments[1] : 'settings';
+            return { tab: 'settings', settingsTab };
+        }
 
         if (tab === 'teams' && segments.length >= 2) {
             const subTab = VALID_SUB_TABS.has(segments[2]) ? segments[2] : 'details';
@@ -208,6 +230,15 @@ const Router = (function() {
         }
     }
 
+    /**
+     * Called by TeamManagementModal when settings tabs are switched.
+     */
+    function pushSettingsTab(tabName) {
+        if (_isRestoring) return;
+        const suffix = (tabName && tabName !== 'settings') ? `/${tabName}` : '';
+        _pushHash(`#/settings${suffix}`);
+    }
+
     function _pushHash(hash) {
         if (hash === _currentHash) return;
         _currentHash = hash;
@@ -220,6 +251,7 @@ const Router = (function() {
 
     function cleanup() {
         window.removeEventListener('popstate', _handlePopState);
+        window.removeEventListener('hashchange', _handlePopState);
         window.removeEventListener('bottom-tab-changed', _handleTabChanged);
         window.removeEventListener('team-browser-detail-select', _handleTeamSelect);
         _initialized = false;
@@ -231,6 +263,7 @@ const Router = (function() {
         pushTeamSubTab,
         pushH2HOpponent,
         pushPlayerSort,
-        pushProposal
+        pushProposal,
+        pushSettingsTab
     };
 })();

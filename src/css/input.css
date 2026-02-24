@@ -1258,6 +1258,7 @@ body {
   filter: grayscale(100%) opacity(0.6);
   position: relative;
   margin-left: 0.125rem;
+  min-width: 1.1rem;
 }
 
 /* Red prohibition circle + slash overlay (⊘ style: line from bottom-left to top-right) */
@@ -1282,6 +1283,9 @@ body {
 @media (max-height: 800px) {
   .player-badge.unavailable::after {
     border-width: 1px;
+  }
+  .player-badge.unavailable {
+    min-width: 0.8rem;
   }
 }
 
@@ -5449,7 +5453,8 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  max-height: 85vh;
+  min-height: 70vh;
+  max-height: 92vh;
   background: var(--card);
   border-radius: 0.75rem 0.75rem 0 0;
   z-index: 93;

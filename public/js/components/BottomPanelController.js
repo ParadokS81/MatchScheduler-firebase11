@@ -31,6 +31,10 @@ const BottomPanelController = (function() {
             btn.addEventListener('click', () => switchTab(btn.dataset.tab));
         });
 
+        // Initialize the default tab (matches) — replace the placeholder grid
+        // with MatchesPanel so proposal deep-links and sidebar clicks work immediately
+        _showMatchesPanel();
+
         _initialized = true;
         console.log('🎛️ BottomPanelController initialized');
     }

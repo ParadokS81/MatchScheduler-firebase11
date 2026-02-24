@@ -60,7 +60,8 @@ const ScheduledMatchService = (function() {
     /**
      * Check if a scheduled match's time has passed.
      * Uses scheduledDate (ISO date) + slotId (UTC time like "thu_2200").
-     * Match is considered past 90 minutes after slot start (match duration buffer).
+     * Match is considered past 30 minutes after slot start (one timeslot).
+     * Mirrors: functions/expire-scheduled-matches.js isMatchPast()
      */
     function _isMatchPast(match) {
         if (!match.scheduledDate || !match.slotId) return false;
@@ -74,8 +75,8 @@ const ScheduledMatchService = (function() {
         const matchDate = new Date(match.scheduledDate + 'T00:00:00Z');
         matchDate.setUTCHours(hours, minutes, 0, 0);
 
-        // Add 90 min buffer — match lasts ~60 min, give extra margin
-        const expiryTime = matchDate.getTime() + 90 * 60 * 1000;
+        // 30 min buffer — one timeslot. Match at 20:00 expires at 20:30.
+        const expiryTime = matchDate.getTime() + 30 * 60 * 1000;
 
         return Date.now() > expiryTime;
     }

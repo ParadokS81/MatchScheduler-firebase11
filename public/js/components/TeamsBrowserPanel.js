@@ -629,11 +629,82 @@ const TeamsBrowserPanel = (function() {
                     ` : ''}
                     <div class="team-details-upcoming">
                         <div class="team-details-upcoming-header">Upcoming</div>
-                        <div class="text-xs text-muted-foreground">No scheduled games</div>
+                        <div class="team-details-upcoming-games">
+                            ${_renderTeamUpcomingMatches(team)}
+                        </div>
                     </div>
                 </div>
             </div>
         `;
+    }
+
+    // ========================================
+    // Team Upcoming Matches (Details tab)
+    // ========================================
+
+    function _renderTeamUpcomingMatches(team) {
+        if (typeof ScheduledMatchService === 'undefined') {
+            return '<div class="text-xs text-muted-foreground">No scheduled games</div>';
+        }
+
+        const teamId = team.id || _selectedTeamId;
+        if (!teamId) {
+            return '<div class="text-xs text-muted-foreground">No scheduled games</div>';
+        }
+
+        const matches = ScheduledMatchService.getUpcomingMatchesForTeams([teamId])
+            .sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || '') || (a.slotId || '').localeCompare(b.slotId || ''));
+
+        if (matches.length === 0) {
+            return '<div class="text-xs text-muted-foreground">No scheduled games</div>';
+        }
+
+        return matches.map(match => {
+            // Determine opponent
+            const isTeamA = match.teamAId === teamId;
+            const opponentId = isTeamA ? match.teamBId : match.teamAId;
+            const opponent = typeof TeamService !== 'undefined' ? TeamService.getTeamFromCache(opponentId) : null;
+            const opponentTag = opponent?.teamTag || (isTeamA ? match.teamBName : match.teamAName) || '?';
+            const opponentLogo = opponent?.activeLogo?.urls?.small || '';
+
+            // Format date + time
+            let dateStr = '';
+            if (match.scheduledDate) {
+                const today = new Date();
+                const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                if (match.scheduledDate === todayStr) {
+                    dateStr = 'Today';
+                } else {
+                    const d = new Date(match.scheduledDate + 'T00:00:00');
+                    const dayNum = d.getDate();
+                    const suffix = ['th','st','nd','rd'][(dayNum % 100 > 10 && dayNum % 100 < 14) ? 0 : dayNum % 10] || 'th';
+                    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                    dateStr = `${dayName} ${dayNum}${suffix}`;
+                }
+            }
+            let timeStr = '';
+            if (typeof TimezoneService !== 'undefined' && TimezoneService.formatSlotForDisplay && match.slotId) {
+                const formatted = TimezoneService.formatSlotForDisplay(match.slotId);
+                timeStr = formatted.timeLabel || '';
+            }
+
+            const gameType = match.gameType || 'official';
+            const gameTypeLabel = gameType === 'practice' ? 'PRAC' : 'OFFI';
+            const gameTypeColor = gameType === 'practice' ? 'text-amber-400/80' : 'text-green-400/80';
+
+            const logoHtml = opponentLogo
+                ? `<img src="${opponentLogo}" class="w-4 h-4 rounded-sm object-cover shrink-0" alt="">`
+                : '';
+
+            return `
+                <div class="team-upcoming-match flex items-center gap-1.5 text-xs py-0.5">
+                    ${logoHtml}
+                    <span class="font-medium">${_escapeHtml(opponentTag)}</span>
+                    <span class="${gameTypeColor} text-[0.6rem] font-medium">${gameTypeLabel}</span>
+                    <span class="text-muted-foreground ml-auto">${dateStr} ${timeStr}</span>
+                </div>
+            `;
+        }).join('');
     }
 
     // ========================================

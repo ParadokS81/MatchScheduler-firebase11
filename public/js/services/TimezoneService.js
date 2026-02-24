@@ -502,7 +502,7 @@ const TimezoneService = (function() {
                 timezones: [
                     { id: 'Europe/London', label: 'London (GMT/BST)' },
                     { id: 'Europe/Stockholm', label: 'Stockholm (CET/CEST)' },
-                    { id: 'Europe/Berlin', label: 'Berlin (CET/CEST)' },
+                    { id: 'Europe/Warsaw', label: 'Warsaw (CET/CEST)' },
                     { id: 'Europe/Paris', label: 'Paris (CET/CEST)' },
                     { id: 'Europe/Helsinki', label: 'Helsinki (EET/EEST)' },
                     { id: 'Europe/Moscow', label: 'Moscow (MSK)' },
