@@ -2905,10 +2905,20 @@ const TeamsBrowserPanel = (function() {
         if (matches.length === 0) return '';
 
         const timesHtml = matches.map(match => {
+            const gameType = match.gameType || 'official';
+            const gameTypeLabel = gameType === 'practice' ? 'PRAC' : 'OFFI';
+            const gameTypeColor = gameType === 'practice' ? 'text-amber-400/80' : 'text-green-400/80';
+
             let dateStr = '';
             if (match.scheduledDate) {
-                const d = new Date(match.scheduledDate + 'T00:00:00');
-                dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                const today = new Date();
+                const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                if (match.scheduledDate === todayStr) {
+                    dateStr = 'Today';
+                } else {
+                    const d = new Date(match.scheduledDate + 'T00:00:00');
+                    dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }
             }
             let timeStr = '';
             if (typeof TimezoneService !== 'undefined' && TimezoneService.formatSlotForDisplay && match.slotId) {
@@ -2917,8 +2927,7 @@ const TeamsBrowserPanel = (function() {
             }
             return `
                 <div class="h2h-scheduled-match">
-                    <span class="h2h-scheduled-date">${dateStr}</span>
-                    <span class="h2h-scheduled-time">${timeStr}</span>
+                    <span class="h2h-scheduled-date ${gameTypeColor} font-medium">${gameTypeLabel} · ${dateStr} ${timeStr}</span>
                 </div>
             `;
         }).join('');
