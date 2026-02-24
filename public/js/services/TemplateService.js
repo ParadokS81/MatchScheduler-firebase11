@@ -1,16 +1,13 @@
-// TemplateService.js - Template data management
+// TemplateService.js - Single template data management
 // Following CLAUDE.md architecture: Cache + Listeners pattern
 
 const TemplateService = (function() {
     'use strict';
 
-    const MAX_TEMPLATES = 3;
-    const MAX_NAME_LENGTH = 20;
-
     let _initialized = false;
     let _db = null;
     let _functions = null;
-    let _cache = new Map(); // Key: templateId, Value: template data
+    let _template = null;  // Single template object or null
     let _unsubscribe = null;
 
     async function init() {
@@ -28,75 +25,54 @@ const TemplateService = (function() {
     }
 
     /**
-     * Load user's templates from Firestore
-     * Sets up real-time listener for updates
-     * @returns {Promise<Array>} Array of templates
+     * Load user's template from Firestore.
+     * Sets up real-time listener on the user doc's template field.
+     * @returns {Promise<Object|null>} Template object or null
      */
-    async function loadUserTemplates() {
+    async function loadTemplate() {
         const userId = window.firebase.auth.currentUser?.uid;
         if (!userId) {
             console.warn('TemplateService: No user logged in');
-            return [];
+            return null;
         }
 
-        const { collection, query, onSnapshot, orderBy } = await import(
+        const { doc, onSnapshot } = await import(
             'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js'
         );
 
-        // Clean up existing listener
         if (_unsubscribe) {
             _unsubscribe();
         }
 
-        const templatesRef = collection(_db, 'users', userId, 'templates');
-        const q = query(templatesRef, orderBy('createdAt', 'desc'));
+        const userRef = doc(_db, 'users', userId);
 
         return new Promise((resolve) => {
-            _unsubscribe = onSnapshot(q, (snapshot) => {
-                _cache.clear();
-                const templates = [];
+            _unsubscribe = onSnapshot(userRef, (snapshot) => {
+                const data = snapshot.data();
+                _template = data?.template || null;
 
-                snapshot.forEach(doc => {
-                    const data = { id: doc.id, ...doc.data() };
-                    _cache.set(doc.id, data);
-                    templates.push(data);
-                });
+                console.log(`📋 Template: ${_template ? _template.slots.length + ' slots' : 'none'}`);
 
-                console.log(`📋 Loaded ${templates.length} templates`);
-
-                // Dispatch event for UI updates
-                window.dispatchEvent(new CustomEvent('templates-updated', {
-                    detail: { templates }
+                window.dispatchEvent(new CustomEvent('template-updated', {
+                    detail: { template: _template }
                 }));
 
-                resolve(templates);
+                resolve(_template);
             }, (error) => {
                 console.error('Template listener error:', error);
-                resolve([]);
+                resolve(null);
             });
         });
     }
 
     /**
-     * Save a new template
-     * @param {string} name - Template name (1-20 chars)
-     * @param {string[]} slots - Array of slot IDs
-     * @returns {Promise<{success: boolean, templateId?: string, error?: string}>}
+     * Save (or overwrite) the user's template.
+     * @param {string[]} slots - Array of UTC slot IDs
+     * @returns {Promise<{success: boolean, error?: string}>}
      */
-    async function saveTemplate(name, slots) {
+    async function saveTemplate(slots) {
         if (!_initialized) await init();
 
-        // Validate name
-        if (!name || name.length === 0 || name.length > MAX_NAME_LENGTH) {
-            return { success: false, error: `Name must be 1-${MAX_NAME_LENGTH} characters` };
-        }
-
-        // Check template limit
-        if (_cache.size >= MAX_TEMPLATES) {
-            return { success: false, error: `Maximum ${MAX_TEMPLATES} templates allowed. Delete one first.` };
-        }
-
-        // Validate slots
         if (!Array.isArray(slots) || slots.length === 0) {
             return { success: false, error: 'Select at least one slot before saving' };
         }
@@ -106,15 +82,13 @@ const TemplateService = (function() {
                 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js'
             );
             const saveFn = httpsCallable(_functions, 'saveTemplate');
-
-            const result = await saveFn({ name: name.trim(), slots });
+            const result = await saveFn({ slots });
 
             if (!result.data.success) {
                 throw new Error(result.data.error || 'Failed to save template');
             }
 
-            return { success: true, templateId: result.data.templateId };
-
+            return { success: true };
         } catch (error) {
             console.error('Failed to save template:', error);
             return { success: false, error: error.message };
@@ -122,127 +96,100 @@ const TemplateService = (function() {
     }
 
     /**
-     * Delete a template
-     * @param {string} templateId - Template ID to delete
+     * Clear the user's template.
      * @returns {Promise<{success: boolean, error?: string}>}
      */
-    async function deleteTemplate(templateId) {
+    async function clearTemplate() {
         if (!_initialized) await init();
 
         try {
             const { httpsCallable } = await import(
                 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js'
             );
-            const deleteFn = httpsCallable(_functions, 'deleteTemplate');
-
-            const result = await deleteFn({ templateId });
+            const clearFn = httpsCallable(_functions, 'clearTemplate');
+            const result = await clearFn({});
 
             if (!result.data.success) {
-                throw new Error(result.data.error || 'Failed to delete template');
+                throw new Error(result.data.error || 'Failed to clear template');
             }
 
             return { success: true };
-
         } catch (error) {
-            console.error('Failed to delete template:', error);
+            console.error('Failed to clear template:', error);
             return { success: false, error: error.message };
         }
     }
 
     /**
-     * Rename a template
-     * @param {string} templateId - Template ID to rename
-     * @param {string} newName - New template name
-     * @returns {Promise<{success: boolean, error?: string}>}
+     * Get the current template from cache.
+     * @returns {Object|null} { slots: string[], recurring: boolean, ... } or null
      */
-    async function renameTemplate(templateId, newName) {
-        if (!_initialized) await init();
-
-        // Validate name
-        if (!newName || newName.length === 0 || newName.length > MAX_NAME_LENGTH) {
-            return { success: false, error: `Name must be 1-${MAX_NAME_LENGTH} characters` };
-        }
-
-        try {
-            const { httpsCallable } = await import(
-                'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js'
-            );
-            const renameFn = httpsCallable(_functions, 'renameTemplate');
-
-            const result = await renameFn({ templateId, name: newName.trim() });
-
-            if (!result.data.success) {
-                throw new Error(result.data.error || 'Failed to rename template');
-            }
-
-            return { success: true };
-
-        } catch (error) {
-            console.error('Failed to rename template:', error);
-            return { success: false, error: error.message };
-        }
+    function getTemplate() {
+        return _template;
     }
 
     /**
-     * Get a template from cache
-     * @param {string} templateId - Template ID
-     * @returns {Object|undefined} Template data or undefined
-     */
-    function getTemplate(templateId) {
-        return _cache.get(templateId);
-    }
-
-    /**
-     * Get all templates from cache
-     * @returns {Array} Array of template objects
-     */
-    function getTemplates() {
-        return Array.from(_cache.values());
-    }
-
-    /**
-     * Check if user can save more templates
+     * Check if user has a saved template.
      * @returns {boolean}
      */
-    function canSaveMore() {
-        return _cache.size < MAX_TEMPLATES;
+    function hasTemplate() {
+        return _template !== null && _template.slots && _template.slots.length > 0;
     }
 
     /**
-     * Get current template count
-     * @returns {number}
+     * Check if recurring is enabled.
+     * @returns {boolean}
      */
-    function getTemplateCount() {
-        return _cache.size;
+    function isRecurring() {
+        return _template?.recurring || false;
     }
 
     /**
-     * Cleanup - remove listeners and clear cache
+     * Toggle recurring auto-apply for the template.
+     * @param {boolean} recurring - true to enable, false to disable
+     * @returns {Promise<{success: boolean, applied?: number, error?: string}>}
      */
+    async function setRecurring(recurring) {
+        if (!_initialized) await init();
+
+        try {
+            const { httpsCallable } = await import(
+                'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js'
+            );
+            const setRecurringFn = httpsCallable(_functions, 'setRecurring');
+            const result = await setRecurringFn({ recurring });
+
+            if (!result.data.success) {
+                throw new Error(result.data.error || 'Failed to update recurring');
+            }
+
+            return { success: true, applied: result.data.applied };
+        } catch (error) {
+            console.error('Failed to set recurring:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
     function cleanup() {
         if (_unsubscribe) {
             _unsubscribe();
             _unsubscribe = null;
         }
-        _cache.clear();
+        _template = null;
         console.log('🧹 TemplateService cleaned up');
     }
 
     return {
         init,
-        loadUserTemplates,
+        loadTemplate,
         saveTemplate,
-        deleteTemplate,
-        renameTemplate,
+        clearTemplate,
+        setRecurring,
         getTemplate,
-        getTemplates,
-        canSaveMore,
-        getTemplateCount,
+        hasTemplate,
+        isRecurring,
         cleanup,
-        MAX_TEMPLATES,
-        MAX_NAME_LENGTH
     };
 })();
 
-// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', TemplateService.init);

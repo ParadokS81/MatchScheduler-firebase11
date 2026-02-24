@@ -838,6 +838,105 @@ const AvailabilityService = (function() {
     }
 
     // ---------------------------------------------------------------
+    // Phase A3: Repeat Last Week
+    // ---------------------------------------------------------------
+
+    /**
+     * Copy current user's availability from source week to target week.
+     * Only adds slots — does not remove existing target week availability.
+     * Skips slots where user is already present.
+     * Also removes user from unavailable for copied slots (mutual exclusion).
+     *
+     * @param {string} teamId
+     * @param {string} sourceWeekId - e.g., "2026-09" (current week)
+     * @param {string} targetWeekId - e.g., "2026-10" (next week)
+     * @returns {Promise<{success: boolean, slotsCopied: number, error?: string}>}
+     */
+    async function repeatLastWeek(teamId, sourceWeekId, targetWeekId) {
+        const userId = window.firebase.auth.currentUser?.uid;
+        if (!userId) return { success: false, slotsCopied: 0, error: 'Not signed in' };
+
+        const { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, serverTimestamp }
+            = await import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js');
+
+        // Read source week
+        const sourceCacheKey = `${teamId}_${sourceWeekId}`;
+        let sourceData = _cache.get(sourceCacheKey);
+        if (!sourceData) {
+            const sourceSnap = await getDoc(doc(_db, 'availability', sourceCacheKey));
+            sourceData = sourceSnap.exists()
+                ? { id: sourceSnap.id, ...sourceSnap.data() }
+                : { slots: {} };
+            if (sourceSnap.exists()) _cache.set(sourceCacheKey, sourceData);
+        }
+
+        // Collect all slot IDs where userId is present in source week
+        const sourceSlots = sourceData.slots || {};
+        const slotsToCopy = Object.keys(sourceSlots).filter(slotId =>
+            Array.isArray(sourceSlots[slotId]) && sourceSlots[slotId].includes(userId)
+        );
+
+        if (slotsToCopy.length === 0) {
+            return { success: false, slotsCopied: 0, error: 'No availability to copy' };
+        }
+
+        // Read target week to check which slots are already present
+        const targetCacheKey = `${teamId}_${targetWeekId}`;
+        let targetData = _cache.get(targetCacheKey);
+        if (!targetData) {
+            const targetSnap = await getDoc(doc(_db, 'availability', targetCacheKey));
+            targetData = targetSnap.exists()
+                ? { id: targetSnap.id, ...targetSnap.data() }
+                : null;
+            if (targetData) _cache.set(targetCacheKey, targetData);
+        }
+
+        const targetSlots = targetData?.slots || {};
+        const newSlots = slotsToCopy.filter(slotId =>
+            !Array.isArray(targetSlots[slotId]) || !targetSlots[slotId].includes(userId)
+        );
+
+        // Use batched write for atomicity
+        const targetDocRef = doc(_db, 'availability', targetCacheKey);
+
+        // Ensure target doc exists
+        if (!targetData) {
+            await setDoc(targetDocRef, {
+                teamId,
+                weekId: targetWeekId,
+                slots: {},
+                unavailable: {},
+                lastUpdated: serverTimestamp()
+            });
+        }
+
+        if (newSlots.length > 0) {
+            const updateData = { lastUpdated: serverTimestamp() };
+            newSlots.forEach(slotId => {
+                updateData[`slots.${slotId}`] = arrayUnion(userId);
+                updateData[`unavailable.${slotId}`] = arrayRemove(userId);
+            });
+            await updateDoc(targetDocRef, updateData);
+        }
+
+        // Update target cache optimistically
+        const updatedTarget = _cache.get(targetCacheKey) || { teamId, weekId: targetWeekId, slots: {}, unavailable: {} };
+        if (!updatedTarget.slots) updatedTarget.slots = {};
+        if (!updatedTarget.unavailable) updatedTarget.unavailable = {};
+        newSlots.forEach(slotId => {
+            if (!updatedTarget.slots[slotId]) updatedTarget.slots[slotId] = [];
+            if (!updatedTarget.slots[slotId].includes(userId)) updatedTarget.slots[slotId].push(userId);
+            if (updatedTarget.unavailable[slotId]) {
+                updatedTarget.unavailable[slotId] = updatedTarget.unavailable[slotId].filter(id => id !== userId);
+            }
+        });
+        _cache.set(targetCacheKey, updatedTarget);
+
+        console.log(`🔁 Repeat Last Week: copied ${newSlots.length} new slots (${slotsToCopy.length} total in source)`);
+        return { success: true, slotsCopied: newSlots.length };
+    }
+
+    // ---------------------------------------------------------------
     // Community-wide loading (Slice 16.0a — Find Standin)
     // ---------------------------------------------------------------
 
@@ -943,6 +1042,8 @@ const AvailabilityService = (function() {
         removePlayerUnavailable,
         getCachedData,
         updateCache,
+        // Phase A3: Repeat Last Week
+        repeatLastWeek,
         // Community-wide loading (Slice 16.0a — Find Standin)
         loadAllTeamAvailability,
         getCommunityAvailability,

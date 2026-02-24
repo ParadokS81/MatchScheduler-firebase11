@@ -332,85 +332,13 @@ const GridActionButtons = (function() {
         const slots = selectedCells.map(cell => cell.slotId);
         const uniqueSlots = [...new Set(slots)];
 
-        _showTemplateNameModal(async (name) => {
-            if (!name) return;
+        const result = await TemplateService.saveTemplate(uniqueSlots);
 
-            const result = await TemplateService.saveTemplate(name, uniqueSlots);
-
-            if (result.success) {
-                ToastService.showSuccess(`Template "${name}" saved!`);
-            } else {
-                ToastService.showError(result.error || 'Failed to save template');
-            }
-        });
-    }
-
-    function _showTemplateNameModal(callback, existingName = '') {
-        const modal = document.createElement('div');
-        modal.className = 'fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4 backdrop-blur-sm';
-        modal.innerHTML = `
-            <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm">
-                <div class="p-4 border-b border-border">
-                    <h3 class="text-lg font-semibold">${existingName ? 'Rename Template' : 'Save Template'}</h3>
-                </div>
-                <div class="p-4">
-                    <label class="block text-sm font-medium mb-2">Template Name</label>
-                    <input type="text"
-                           id="template-name-input"
-                           class="w-full px-3 py-2 bg-input border border-border rounded text-sm"
-                           placeholder="e.g., Weekday Evenings"
-                           maxlength="${TemplateService.MAX_NAME_LENGTH}"
-                           value="${_escapeHtml(existingName)}">
-                    <p class="text-xs text-muted-foreground mt-1">Max ${TemplateService.MAX_NAME_LENGTH} characters</p>
-                </div>
-                <div class="flex justify-end gap-2 p-4 border-t border-border">
-                    <button id="template-cancel-btn" class="btn-secondary px-4 py-2 rounded text-sm">Cancel</button>
-                    <button id="template-save-btn" class="btn-primary px-4 py-2 rounded text-sm">Save</button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        const input = document.getElementById('template-name-input');
-        const saveBtn = document.getElementById('template-save-btn');
-        const cancelBtn = document.getElementById('template-cancel-btn');
-
-        input.focus();
-        input.select();
-
-        const cleanup = () => modal.remove();
-
-        saveBtn.addEventListener('click', () => {
-            const name = input.value.trim();
-            if (name) {
-                cleanup();
-                callback(name);
-            }
-        });
-
-        cancelBtn.addEventListener('click', () => {
-            cleanup();
-            callback(null);
-        });
-
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && input.value.trim()) {
-                e.preventDefault();
-                cleanup();
-                callback(input.value.trim());
-            } else if (e.key === 'Escape') {
-                cleanup();
-                callback(null);
-            }
-        });
-
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                cleanup();
-                callback(null);
-            }
-        });
+        if (result.success) {
+            ToastService.showSuccess('Template saved!');
+        } else {
+            ToastService.showError(result.error || 'Failed to save template');
+        }
     }
 
     // ---------------------------------------------------------------

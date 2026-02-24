@@ -11,7 +11,8 @@ const { googleSignIn, createProfile, updateProfile, getProfile, deleteAccount } 
 const { discordOAuthExchange } = require('./discord-auth');
 const { createTeam, joinTeam, regenerateJoinCode, leaveTeam, updateTeamSettings, kickPlayer, transferLeadership, updateRosterInitials, updateTeamTags, updateRecordingVisibility, deleteRecording, addPhantomMember, removePhantomMember } = require('./team-operations');
 const { updateAvailability } = require('./availability');
-const { saveTemplate, deleteTemplate, renameTemplate } = require('./templates');
+const { saveTemplate, clearTemplate } = require('./templates');
+const { setRecurring, applyRecurringTemplates } = require('./recurring');
 const { updateFavorites } = require('./favorites');
 const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler, updateProposalSettings, quickAddMatch } = require('./match-proposals');
 const { getScheduledGames } = require('./scheduled-games-api');
@@ -51,8 +52,9 @@ exports.updateAvailability = updateAvailability;
 
 // Template functions
 exports.saveTemplate = saveTemplate;
-exports.deleteTemplate = deleteTemplate;
-exports.renameTemplate = renameTemplate;
+exports.clearTemplate = clearTemplate;
+exports.setRecurring = setRecurring;
+exports.applyRecurringTemplates = applyRecurringTemplates;
 
 // Favorites functions
 exports.updateFavorites = updateFavorites;

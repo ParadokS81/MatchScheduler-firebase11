@@ -1,4 +1,5 @@
 // TemplatesModal.js - Modal for managing availability templates
+// Phase A2: Simplified single-template model (was multi-template with names)
 const TemplatesModal = (function() {
     'use strict';
 
@@ -13,8 +14,7 @@ const TemplatesModal = (function() {
         _onClearAll = options.onClearAll;
         _getSelectedCells = options.getSelectedCells;
 
-        // Listen for template updates
-        window.addEventListener('templates-updated', _render);
+        window.addEventListener('template-updated', _render);
     }
 
     function show() {
@@ -28,7 +28,6 @@ const TemplatesModal = (function() {
         _modal.classList.remove('hidden');
         document.body.classList.add('modal-open');
 
-        // ESC key handler
         _escHandler = (e) => {
             if (e.key === 'Escape') hide();
         };
@@ -46,7 +45,6 @@ const TemplatesModal = (function() {
         }
         document.body.classList.remove('modal-open');
 
-        // Remove ESC handler
         if (_escHandler) {
             document.removeEventListener('keydown', _escHandler);
             _escHandler = null;
@@ -62,7 +60,7 @@ const TemplatesModal = (function() {
         _modal.innerHTML = `
             <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-md">
                 <div class="p-4 border-b border-border flex items-center justify-between">
-                    <h2 class="text-lg font-semibold">Availability Templates</h2>
+                    <h2 class="text-lg font-semibold">Template</h2>
                     <button class="modal-close text-muted-foreground hover:text-foreground text-xl leading-none" aria-label="Close">&times;</button>
                 </div>
                 <div class="templates-modal-body p-4">
@@ -78,7 +76,6 @@ const TemplatesModal = (function() {
             document.body.appendChild(_modal);
         }
 
-        // Close handlers
         _modal.querySelector('.modal-close')?.addEventListener('click', hide);
         _modal.addEventListener('click', (e) => {
             if (e.target === _modal) hide();
@@ -89,148 +86,143 @@ const TemplatesModal = (function() {
         const body = _modal?.querySelector('.templates-modal-body');
         if (!body) return;
 
-        const templates = typeof TemplateService !== 'undefined'
-            ? TemplateService.getTemplates()
-            : [];
-        const canSaveMore = typeof TemplateService !== 'undefined'
-            ? TemplateService.canSaveMore()
-            : false;
+        const template = typeof TemplateService !== 'undefined'
+            ? TemplateService.getTemplate()
+            : null;
         const hasSelection = _getSelectedCells ? _getSelectedCells().length > 0 : false;
+        const hasCurrentWeekAvailability = _hasCurrentWeekAvailability();
 
-        const templatesHtml = templates.length > 0
-            ? templates.map(t => _renderTemplateRow(t)).join('')
-            : '<p class="text-sm text-muted-foreground text-center py-4">No templates saved yet</p>';
+        if (template) {
+            const slotCount = template.slots ? template.slots.length : 0;
+            const recurring = template.recurring || false;
 
-        const saveButtonHtml = canSaveMore
-            ? `<button id="templates-save-btn"
-                       class="w-full px-3 py-2 text-sm rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-                       ${!hasSelection ? 'disabled' : ''}>
-                   + Save Current Selection as Template
-               </button>`
-            : '<p class="text-xs text-muted-foreground text-center">Maximum 3 templates reached</p>';
+            body.innerHTML = `
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-muted-foreground">${slotCount} slot${slotCount !== 1 ? 's' : ''} saved</span>
+                        <button id="templates-update-btn"
+                                class="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                                ${!hasSelection ? 'disabled' : ''}>
+                            Update
+                        </button>
+                    </div>
 
-        body.innerHTML = `
-            <div class="space-y-3">
-                <div class="space-y-2">
-                    ${templatesHtml}
+                    <div class="border-t border-border pt-3">
+                        <p class="text-xs text-muted-foreground mb-2">Load to:</p>
+                        <div class="flex gap-2">
+                            <button id="templates-load-w1-btn"
+                                    class="flex-1 px-3 py-1.5 text-sm rounded bg-secondary hover:bg-secondary/80">
+                                Week 1
+                            </button>
+                            <button id="templates-load-w2-btn"
+                                    class="flex-1 px-3 py-1.5 text-sm rounded bg-secondary hover:bg-secondary/80">
+                                Week 2
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-border pt-3 flex items-center justify-between">
+                        <span class="text-sm">Auto-fill weekly</span>
+                        <button id="templates-recurring-btn"
+                                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${recurring ? 'bg-primary' : 'bg-muted'}"
+                                role="switch"
+                                aria-checked="${recurring}"
+                                title="Toggle auto-fill weekly">
+                            <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${recurring ? 'translate-x-6' : 'translate-x-1'}"></span>
+                        </button>
+                    </div>
+
+                    <div class="border-t border-border pt-3">
+                        <button id="templates-repeat-btn"
+                                class="w-full px-3 py-2 text-sm rounded border border-border text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                                ${!hasCurrentWeekAvailability ? 'disabled title="No availability this week to copy"' : ''}>
+                            Repeat Last Week → W2
+                        </button>
+                    </div>
+
+                    <div class="border-t border-border pt-3 flex gap-2">
+                        <button id="templates-clear-btn"
+                                class="flex-1 px-3 py-2 text-sm rounded bg-destructive/10 text-destructive hover:bg-destructive/20">
+                            Clear Template
+                        </button>
+                        <button id="templates-clear-all-btn"
+                                class="flex-1 px-3 py-2 text-sm rounded bg-muted text-muted-foreground hover:bg-muted/80">
+                            Clear Availability
+                        </button>
+                    </div>
                 </div>
-
-                <div class="pt-2">
-                    ${saveButtonHtml}
-                </div>
-
-                <div class="border-t border-border pt-3">
-                    <button id="templates-clear-all-btn"
-                            class="w-full px-3 py-2 text-sm rounded bg-destructive/10 text-destructive hover:bg-destructive/20">
-                        Clear All Availability
+            `;
+        } else {
+            body.innerHTML = `
+                <div class="space-y-3">
+                    <p class="text-sm text-muted-foreground">No template saved</p>
+                    <button id="templates-save-btn"
+                            class="w-full px-3 py-2 text-sm rounded border border-dashed border-border text-muted-foreground hover:border-primary hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                            ${!hasSelection ? 'disabled' : ''}>
+                        Save Current Selection
                     </button>
+                    <div class="border-t border-border pt-3">
+                        <button id="templates-repeat-btn"
+                                class="w-full px-3 py-2 text-sm rounded border border-border text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                                ${!hasCurrentWeekAvailability ? 'disabled title="No availability this week to copy"' : ''}>
+                            Repeat Last Week → W2
+                        </button>
+                    </div>
+                    <div class="border-t border-border pt-3">
+                        <button id="templates-clear-all-btn"
+                                class="w-full px-3 py-2 text-sm rounded bg-muted text-muted-foreground hover:bg-muted/80">
+                            Clear Availability
+                        </button>
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
+        }
 
         _attachEventListeners();
-    }
-
-    function _renderTemplateRow(template) {
-        return `
-            <div class="template-row group flex items-center gap-2 p-2 rounded bg-muted/50 hover:bg-muted"
-                 data-template-id="${template.id}">
-                <span class="template-name flex-1 text-sm font-medium truncate">${_escapeHtml(template.name)}</span>
-                <div class="flex items-center gap-1">
-                    <button class="template-load-w1 px-2 py-1 text-xs rounded bg-primary/10 text-primary hover:bg-primary/20"
-                            title="Load to Week 1">W1</button>
-                    <button class="template-load-w2 px-2 py-1 text-xs rounded bg-primary/10 text-primary hover:bg-primary/20"
-                            title="Load to Week 2">W2</button>
-                    <button class="template-rename p-1 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100"
-                            title="Rename">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                        </svg>
-                    </button>
-                    <button class="template-delete p-1 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100"
-                            title="Delete">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-
-    function _escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
     }
 
     function _attachEventListeners() {
         const body = _modal?.querySelector('.templates-modal-body');
         if (!body) return;
 
-        // Save button
-        const saveBtn = body.querySelector('#templates-save-btn');
-        if (saveBtn) {
-            saveBtn.addEventListener('click', _handleSaveTemplate);
-        }
-
-        // Clear all button
-        const clearAllBtn = body.querySelector('#templates-clear-all-btn');
-        if (clearAllBtn) {
-            clearAllBtn.addEventListener('click', _handleClearAll);
-        }
-
-        // Template row actions
-        const templateRows = body.querySelectorAll('.template-row');
-        templateRows.forEach(row => {
-            const templateId = row.dataset.templateId;
-
-            row.querySelector('.template-load-w1')?.addEventListener('click', () => {
-                _handleLoadTemplate(templateId, 0);
-            });
-
-            row.querySelector('.template-load-w2')?.addEventListener('click', () => {
-                _handleLoadTemplate(templateId, 1);
-            });
-
-            row.querySelector('.template-rename')?.addEventListener('click', () => {
-                _handleRenameTemplate(templateId, row);
-            });
-
-            row.querySelector('.template-delete')?.addEventListener('click', () => {
-                _handleDeleteTemplate(templateId);
-            });
-        });
+        body.querySelector('#templates-save-btn')?.addEventListener('click', _handleSaveTemplate);
+        body.querySelector('#templates-update-btn')?.addEventListener('click', _handleSaveTemplate);
+        body.querySelector('#templates-load-w1-btn')?.addEventListener('click', () => _handleLoadTemplate(0));
+        body.querySelector('#templates-load-w2-btn')?.addEventListener('click', () => _handleLoadTemplate(1));
+        body.querySelector('#templates-recurring-btn')?.addEventListener('click', _handleToggleRecurring);
+        body.querySelector('#templates-clear-btn')?.addEventListener('click', _handleClearTemplate);
+        body.querySelector('#templates-clear-all-btn')?.addEventListener('click', _handleClearAll);
+        body.querySelector('#templates-repeat-btn')?.addEventListener('click', _handleRepeatLastWeek);
     }
 
-    function _handleSaveTemplate() {
+    async function _handleSaveTemplate() {
         const selectedCells = _getSelectedCells ? _getSelectedCells() : [];
         if (selectedCells.length === 0) return;
 
-        // Extract just the slot IDs (templates store slots, not week info)
-        const slots = selectedCells.map(cell => cell.slotId || cell);
+        const slots = [...new Set(selectedCells.map(cell => cell.slotId || cell))];
 
-        _showNameModal(null, async (name) => {
-            try {
-                await TemplateService.saveTemplate(name, slots);
+        try {
+            const result = await TemplateService.saveTemplate(slots);
+            if (result.success) {
                 if (typeof ToastService !== 'undefined') {
-                    ToastService.show('Template saved', 'success');
+                    ToastService.showSuccess('Template saved');
                 }
-            } catch (error) {
-                console.error('Failed to save template:', error);
+            } else {
                 if (typeof ToastService !== 'undefined') {
-                    ToastService.show('Failed to save template', 'error');
+                    ToastService.showError(result.error || 'Failed to save template');
                 }
             }
-        });
+        } catch (error) {
+            console.error('Failed to save template:', error);
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showError('Failed to save template');
+            }
+        }
     }
 
-    function _handleLoadTemplate(templateId, weekIndex) {
+    function _handleLoadTemplate(weekIndex) {
         const template = typeof TemplateService !== 'undefined'
-            ? TemplateService.getTemplates().find(t => t.id === templateId)
+            ? TemplateService.getTemplate()
             : null;
 
         if (template && _onLoadTemplate) {
@@ -239,39 +231,59 @@ const TemplatesModal = (function() {
         }
     }
 
-    function _handleRenameTemplate(templateId, row) {
-        const nameEl = row.querySelector('.template-name');
-        const currentName = nameEl?.textContent || '';
+    async function _handleToggleRecurring() {
+        if (typeof TemplateService === 'undefined') return;
 
-        _showNameModal(currentName, async (newName) => {
-            if (newName === currentName) return;
+        const current = TemplateService.isRecurring();
 
-            try {
-                await TemplateService.renameTemplate(templateId, newName);
-                if (typeof ToastService !== 'undefined') {
-                    ToastService.show('Template renamed', 'success');
-                }
-            } catch (error) {
-                console.error('Failed to rename template:', error);
-                if (typeof ToastService !== 'undefined') {
-                    ToastService.show('Failed to rename template', 'error');
-                }
+        // Visually disable the toggle during the async call
+        const btn = document.getElementById('templates-recurring-btn');
+        if (btn) {
+            btn.style.opacity = '0.5';
+            btn.style.pointerEvents = 'none';
+        }
+
+        const result = await TemplateService.setRecurring(!current);
+
+        if (btn) {
+            btn.style.opacity = '';
+            btn.style.pointerEvents = '';
+        }
+
+        if (result.success && !current) {
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showSuccess('Recurring ON — applied to current + next week');
             }
-        });
+        } else if (result.success) {
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showSuccess('Recurring OFF');
+            }
+        } else {
+            if (typeof ToastService !== 'undefined') {
+                ToastService.showError(result.error || 'Failed to update recurring');
+            }
+        }
+        // On success, TemplateService listener fires template-updated → _render() re-renders toggle
     }
 
-    async function _handleDeleteTemplate(templateId) {
-        if (!confirm('Delete this template?')) return;
+    async function _handleClearTemplate() {
+        if (!confirm('Clear your saved template?')) return;
 
         try {
-            await TemplateService.deleteTemplate(templateId);
-            if (typeof ToastService !== 'undefined') {
-                ToastService.show('Template deleted', 'success');
+            const result = await TemplateService.clearTemplate();
+            if (result.success) {
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showSuccess('Template cleared');
+                }
+            } else {
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showError(result.error || 'Failed to clear template');
+                }
             }
         } catch (error) {
-            console.error('Failed to delete template:', error);
+            console.error('Failed to clear template:', error);
             if (typeof ToastService !== 'undefined') {
-                ToastService.show('Failed to delete template', 'error');
+                ToastService.showError('Failed to clear template');
             }
         }
     }
@@ -285,64 +297,82 @@ const TemplatesModal = (function() {
         }
     }
 
-    function _showNameModal(existingName, callback) {
-        const modal = document.createElement('div');
-        modal.className = 'fixed inset-0 bg-black bg-opacity-75 z-[60] flex items-center justify-center p-4 backdrop-blur-sm';
-        modal.innerHTML = `
-            <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm">
-                <div class="p-4 border-b border-border">
-                    <h3 class="text-lg font-semibold">${existingName ? 'Rename Template' : 'Save Template'}</h3>
-                </div>
-                <div class="p-4">
-                    <label class="block text-sm font-medium mb-2">Template Name</label>
-                    <input type="text"
-                           id="template-name-input"
-                           class="w-full px-3 py-2 bg-input border border-border rounded text-sm"
-                           placeholder="e.g., Weekday Evenings"
-                           maxlength="${typeof TemplateService !== 'undefined' ? TemplateService.MAX_NAME_LENGTH : 20}"
-                           value="${_escapeHtml(existingName || '')}">
-                </div>
-                <div class="flex justify-end gap-2 p-4 border-t border-border">
-                    <button id="template-cancel-btn" class="btn-secondary px-4 py-2 rounded text-sm">Cancel</button>
-                    <button id="template-save-btn" class="btn-primary px-4 py-2 rounded text-sm">Save</button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        const input = modal.querySelector('#template-name-input');
-        const saveBtn = modal.querySelector('#template-save-btn');
-        const cancelBtn = modal.querySelector('#template-cancel-btn');
-
-        // Focus input
-        setTimeout(() => input?.focus(), 0);
-
-        const closeModal = () => {
-            modal.remove();
+    function _getWeekIds() {
+        const weekNum = WeekNavigation.getCurrentWeekNumber();
+        const nextWeekNum = WeekNavigation.getSecondWeekNumber();
+        const year1 = DateUtils.getISOWeekYear(DateUtils.getMondayOfWeek(weekNum));
+        const year2 = DateUtils.getISOWeekYear(DateUtils.getMondayOfWeek(nextWeekNum));
+        return {
+            sourceWeekId: `${year1}-${String(weekNum).padStart(2, '0')}`,
+            targetWeekId: `${year2}-${String(nextWeekNum).padStart(2, '0')}`
         };
+    }
 
-        const handleSave = () => {
-            const name = input?.value.trim();
-            if (name) {
-                closeModal();
-                callback(name);
+    function _hasCurrentWeekAvailability() {
+        const teamId = (typeof MatchSchedulerApp !== 'undefined')
+            ? MatchSchedulerApp.getSelectedTeam()?.id
+            : null;
+        if (!teamId) return false;
+
+        const userId = window.firebase?.auth?.currentUser?.uid;
+        if (!userId) return false;
+
+        const { sourceWeekId } = _getWeekIds();
+        const data = (typeof AvailabilityService !== 'undefined')
+            ? AvailabilityService.getCachedData(teamId, sourceWeekId)
+            : null;
+        if (!data?.slots) return false;
+
+        return Object.values(data.slots).some(users =>
+            Array.isArray(users) && users.includes(userId)
+        );
+    }
+
+    async function _handleRepeatLastWeek() {
+        const teamId = (typeof MatchSchedulerApp !== 'undefined')
+            ? MatchSchedulerApp.getSelectedTeam()?.id
+            : null;
+        if (!teamId) {
+            if (typeof ToastService !== 'undefined') ToastService.showError('No team selected');
+            return;
+        }
+
+        const btn = document.getElementById('templates-repeat-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Copying...';
+        }
+
+        try {
+            const { sourceWeekId, targetWeekId } = _getWeekIds();
+            const result = await AvailabilityService.repeatLastWeek(teamId, sourceWeekId, targetWeekId);
+
+            if (result.success) {
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showSuccess(`Copied ${result.slotsCopied} slot${result.slotsCopied !== 1 ? 's' : ''} to Week 2`);
+                }
+                hide();
+            } else {
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showError(result.error || 'Failed to copy');
+                }
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Repeat Last Week → W2';
+                }
             }
-        };
-
-        saveBtn?.addEventListener('click', handleSave);
-        cancelBtn?.addEventListener('click', closeModal);
-        input?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') handleSave();
-            if (e.key === 'Escape') closeModal();
-        });
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
+        } catch (error) {
+            console.error('Failed to repeat last week:', error);
+            if (typeof ToastService !== 'undefined') ToastService.showError('Failed to copy');
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Repeat Last Week → W2';
+            }
+        }
     }
 
     function cleanup() {
-        window.removeEventListener('templates-updated', _render);
+        window.removeEventListener('template-updated', _render);
         if (_escHandler) {
             document.removeEventListener('keydown', _escHandler);
             _escHandler = null;

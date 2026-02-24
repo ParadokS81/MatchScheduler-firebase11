@@ -39,24 +39,23 @@ const MobileGridTools = (function() {
             modeHtml += `<button class="mgt-mode-btn" data-mode="${m.id}" style="padding: 0.4rem 0.75rem; border-radius: 0.375rem; border: none; cursor: pointer; font-size: 0.75rem; font-weight: 600; ${bg}"><span ${colorStyle ? `style="${colorStyle}"` : ''}>${m.label}</span></button>`;
         });
 
-        // Templates
+        // Template (single)
         let templatesHtml = '';
         if (typeof TemplateService !== 'undefined') {
-            const templates = TemplateService.getTemplates();
-            if (templates.length > 0) {
-                templates.forEach(t => {
-                    templatesHtml += `
-                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.35rem 0;">
-                            <span style="font-size: 0.8rem; color: var(--foreground);">${t.name}</span>
-                            <div style="display: flex; gap: 0.5rem;">
-                                <button class="mgt-load-tpl" data-id="${t.id}" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 0.25rem; background: var(--primary); color: var(--primary-foreground); border: none; cursor: pointer;">Load</button>
-                                <button class="mgt-del-tpl" data-id="${t.id}" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 0.25rem; background: var(--muted); color: var(--destructive); border: none; cursor: pointer;">Del</button>
-                            </div>
+            const tpl = TemplateService.getTemplate();
+            if (tpl) {
+                const slotCount = tpl.slots ? tpl.slots.length : 0;
+                templatesHtml = `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.35rem 0;">
+                        <span style="font-size: 0.8rem; color: var(--foreground);">${slotCount} slot${slotCount !== 1 ? 's' : ''} saved</span>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="mgt-load-tpl" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 0.25rem; background: var(--primary); color: var(--primary-foreground); border: none; cursor: pointer;">Load</button>
+                            <button class="mgt-del-tpl" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 0.25rem; background: var(--muted); color: var(--destructive); border: none; cursor: pointer;">Del</button>
                         </div>
-                    `;
-                });
+                    </div>
+                `;
             } else {
-                templatesHtml = '<div style="font-size: 0.75rem; color: var(--muted-foreground); padding: 0.25rem 0;">No saved templates</div>';
+                templatesHtml = '<div style="font-size: 0.75rem; color: var(--muted-foreground); padding: 0.25rem 0;">No saved template</div>';
             }
         }
 
@@ -122,7 +121,7 @@ const MobileGridTools = (function() {
         // Load template
         content.querySelectorAll('.mgt-load-tpl').forEach(btn => {
             btn.addEventListener('click', async () => {
-                const tpl = TemplateService.getTemplate(btn.dataset.id);
+                const tpl = typeof TemplateService !== 'undefined' ? TemplateService.getTemplate() : null;
                 if (!tpl) return;
 
                 const teamId = MobileApp.getSelectedTeamId();
@@ -138,7 +137,7 @@ const MobileGridTools = (function() {
                 try {
                     const result = await AvailabilityService.addMeToSlots(teamId, weekId, tpl.slots);
                     if (result.success) {
-                        ToastService.showSuccess(`"${tpl.name}" loaded`);
+                        ToastService.showSuccess('Template loaded');
                         MobileBottomSheet.close();
                     } else {
                         ToastService.showError(result.error || 'Failed to load template');
@@ -152,17 +151,22 @@ const MobileGridTools = (function() {
             });
         });
 
-        // Delete template
+        // Clear template
         content.querySelectorAll('.mgt-del-tpl').forEach(btn => {
             btn.addEventListener('click', async () => {
                 btn.textContent = '...';
                 try {
-                    await TemplateService.deleteTemplate(btn.dataset.id);
-                    ToastService.showSuccess('Template deleted');
-                    MobileBottomSheet.updateContent(_render());
-                    _attachEvents();
+                    const result = await TemplateService.clearTemplate();
+                    if (result.success) {
+                        ToastService.showSuccess('Template cleared');
+                        MobileBottomSheet.updateContent(_render());
+                        _attachEvents();
+                    } else {
+                        ToastService.showError(result.error || 'Failed to clear');
+                        btn.textContent = 'Del';
+                    }
                 } catch (e) {
-                    ToastService.showError('Failed to delete');
+                    ToastService.showError('Failed to clear');
                     btn.textContent = 'Del';
                 }
             });

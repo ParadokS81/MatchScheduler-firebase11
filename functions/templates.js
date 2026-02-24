@@ -1,164 +1,84 @@
-// /functions/templates.js - Template management Cloud Functions
+// /functions/templates.js - Single template management
 const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
-const MAX_TEMPLATES = 3;
-const MAX_NAME_LENGTH = 20;
+const MAX_SLOTS = 63; // 7 days × 9 slots = 63 theoretical max
 
-// Valid slot pattern: day_time format in UTC (e.g., "mon_1800", "tue_0200")
-// Any hour 00-23 valid since different timezones map to different UTC hours
+// Valid slot pattern: day_time format in UTC
 const VALID_SLOT_PATTERN = /^(mon|tue|wed|thu|fri|sat|sun)_(0[0-9]|1[0-9]|2[0-3])(00|30)$/;
 
 /**
- * Save a new availability template
+ * Save (or overwrite) the user's single template.
+ * Expects: { slots: string[] }
  */
 const saveTemplate = functions
     .region('europe-west3')
     .https.onCall(async (data, context) => {
-    const db = getFirestore();
-
-    // Validate authentication
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
     }
 
-    const userId = context.auth.uid;
-    const { name, slots } = data;
+    const { slots } = data;
 
-    // Validate name
-    if (!name || typeof name !== 'string') {
-        throw new functions.https.HttpsError('invalid-argument', 'Template name is required');
-    }
-
-    const trimmedName = name.trim();
-    if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
-        throw new functions.https.HttpsError('invalid-argument', `Name must be 1-${MAX_NAME_LENGTH} characters`);
-    }
-
-    // Validate slots
     if (!Array.isArray(slots) || slots.length === 0) {
         throw new functions.https.HttpsError('invalid-argument', 'At least one slot is required');
     }
 
-    // Validate slot format
+    if (slots.length > MAX_SLOTS) {
+        throw new functions.https.HttpsError('invalid-argument', `Maximum ${MAX_SLOTS} slots allowed`);
+    }
+
     for (const slot of slots) {
         if (typeof slot !== 'string' || !VALID_SLOT_PATTERN.test(slot)) {
             throw new functions.https.HttpsError('invalid-argument', `Invalid slot format: ${slot}`);
         }
     }
 
-    // Remove duplicates
     const uniqueSlots = [...new Set(slots)];
-
-    // Check template count
-    const templatesRef = db.collection('users').doc(userId).collection('templates');
-    const existingTemplates = await templatesRef.count().get();
-
-    if (existingTemplates.data().count >= MAX_TEMPLATES) {
-        throw new functions.https.HttpsError(
-            'resource-exhausted',
-            `Maximum ${MAX_TEMPLATES} templates allowed. Delete one first.`
-        );
-    }
-
-    // Create template
-    const templateData = {
-        name: trimmedName,
-        slots: uniqueSlots,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp()
-    };
-
-    const docRef = await templatesRef.add(templateData);
-
-    console.log(`Template created: ${docRef.id} for user ${userId}`);
-
-    return { success: true, templateId: docRef.id };
-});
-
-/**
- * Delete a user's template
- */
-const deleteTemplate = functions
-    .region('europe-west3')
-    .https.onCall(async (data, context) => {
     const db = getFirestore();
-
-    // Validate authentication
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
-    }
-
     const userId = context.auth.uid;
-    const { templateId } = data;
+    const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
 
-    if (!templateId || typeof templateId !== 'string') {
-        throw new functions.https.HttpsError('invalid-argument', 'Template ID is required');
+    if (!userDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'User not found');
     }
 
-    // Verify template exists and belongs to user (subcollection ensures ownership)
-    const templateRef = db.collection('users').doc(userId).collection('templates').doc(templateId);
-    const templateDoc = await templateRef.get();
+    // Preserve existing recurring/lastAppliedWeekId if they exist
+    const existing = userDoc.data().template || {};
 
-    if (!templateDoc.exists) {
-        throw new functions.https.HttpsError('not-found', 'Template not found');
-    }
-
-    // Delete template
-    await templateRef.delete();
-
-    console.log(`Template deleted: ${templateId} for user ${userId}`);
-
-    return { success: true };
-});
-
-/**
- * Rename a user's template
- */
-const renameTemplate = functions
-    .region('europe-west3')
-    .https.onCall(async (data, context) => {
-    const db = getFirestore();
-
-    // Validate authentication
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
-    }
-
-    const userId = context.auth.uid;
-    const { templateId, name } = data;
-
-    if (!templateId || typeof templateId !== 'string') {
-        throw new functions.https.HttpsError('invalid-argument', 'Template ID is required');
-    }
-
-    // Validate name
-    if (!name || typeof name !== 'string') {
-        throw new functions.https.HttpsError('invalid-argument', 'Template name is required');
-    }
-
-    const trimmedName = name.trim();
-    if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
-        throw new functions.https.HttpsError('invalid-argument', `Name must be 1-${MAX_NAME_LENGTH} characters`);
-    }
-
-    // Verify template exists and belongs to user (subcollection ensures ownership)
-    const templateRef = db.collection('users').doc(userId).collection('templates').doc(templateId);
-    const templateDoc = await templateRef.get();
-
-    if (!templateDoc.exists) {
-        throw new functions.https.HttpsError('not-found', 'Template not found');
-    }
-
-    // Update template
-    await templateRef.update({
-        name: trimmedName,
-        updatedAt: FieldValue.serverTimestamp()
+    await userRef.update({
+        template: {
+            slots: uniqueSlots,
+            recurring: existing.recurring || false,
+            lastAppliedWeekId: existing.lastAppliedWeekId || '',
+            updatedAt: FieldValue.serverTimestamp(),
+        },
     });
 
-    console.log(`Template renamed: ${templateId} to "${trimmedName}" for user ${userId}`);
+    console.log(`Template saved for user ${userId}: ${uniqueSlots.length} slots`);
+    return { success: true, slotCount: uniqueSlots.length };
+});
 
+/**
+ * Clear the user's template entirely.
+ */
+const clearTemplate = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+    }
+
+    const db = getFirestore();
+    const userId = context.auth.uid;
+
+    await db.collection('users').doc(userId).update({
+        template: FieldValue.delete(),
+    });
+
+    console.log(`Template cleared for user ${userId}`);
     return { success: true };
 });
 
-module.exports = { saveTemplate, deleteTemplate, renameTemplate };
+module.exports = { saveTemplate, clearTemplate };

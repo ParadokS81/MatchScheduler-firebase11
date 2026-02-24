@@ -142,7 +142,7 @@ const UserProfile = (function() {
 
                 // Load user's templates (only if profile is complete)
                 if (hasPlayerProfile && typeof TemplateService !== 'undefined') {
-                    TemplateService.loadUserTemplates();
+                    TemplateService.loadTemplate();
                 }
 
                 // Initialize FavoritesService with user's favorites (Slice 3.2)

@@ -328,77 +328,95 @@ const MobileBottomBar = (function() {
             return;
         }
 
-        const templates = typeof TemplateService !== 'undefined' ? TemplateService.getTemplates() : [];
-        const canSaveMore = typeof TemplateService !== 'undefined' ? TemplateService.canSaveMore() : false;
+        const template = typeof TemplateService !== 'undefined' ? TemplateService.getTemplate() : null;
 
         const popup = document.createElement('div');
         popup.className = 'mobile-template-popup';
         popup.id = 'mobile-template-popup';
 
-        // Template list
-        if (templates.length > 0) {
-            templates.forEach(t => {
-                const row = document.createElement('div');
-                row.className = 'mobile-template-row';
+        if (template) {
+            const slotCount = template.slots ? template.slots.length : 0;
 
-                const name = document.createElement('span');
-                name.className = 'mobile-template-name';
-                name.textContent = t.name;
+            // Status row
+            const statusRow = document.createElement('div');
+            statusRow.className = 'mobile-template-row';
+            const statusText = document.createElement('span');
+            statusText.className = 'mobile-template-name';
+            statusText.textContent = `${slotCount} slot${slotCount !== 1 ? 's' : ''} saved`;
+            statusRow.appendChild(statusText);
+            popup.appendChild(statusRow);
 
-                const w1Btn = document.createElement('button');
-                w1Btn.className = 'mobile-template-week-btn';
-                w1Btn.textContent = 'W1';
-                w1Btn.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    _loadTemplate(t.id, 0);
-                    _dismissTemplatePopup();
-                });
+            // Load buttons row
+            const loadRow = document.createElement('div');
+            loadRow.className = 'mobile-template-row';
 
-                const w2Btn = document.createElement('button');
-                w2Btn.className = 'mobile-template-week-btn';
-                w2Btn.textContent = 'W2';
-                w2Btn.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    _loadTemplate(t.id, 1);
-                    _dismissTemplatePopup();
-                });
-
-                const delBtn = document.createElement('button');
-                delBtn.className = 'mobile-template-del-btn';
-                delBtn.textContent = '✕';
-                delBtn.title = 'Delete';
-                delBtn.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    _deleteTemplate(t.id, t.name);
-                });
-
-                row.appendChild(name);
-                row.appendChild(w1Btn);
-                row.appendChild(w2Btn);
-                row.appendChild(delBtn);
-                popup.appendChild(row);
+            const w1Btn = document.createElement('button');
+            w1Btn.className = 'mobile-template-week-btn';
+            w1Btn.textContent = 'W1';
+            w1Btn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                _loadTemplate(0);
+                _dismissTemplatePopup();
             });
+
+            const w2Btn = document.createElement('button');
+            w2Btn.className = 'mobile-template-week-btn';
+            w2Btn.textContent = 'W2';
+            w2Btn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                _loadTemplate(1);
+                _dismissTemplatePopup();
+            });
+
+            const clearBtn = document.createElement('button');
+            clearBtn.className = 'mobile-template-del-btn';
+            clearBtn.textContent = '✕';
+            clearBtn.title = 'Clear template';
+            clearBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                _clearTemplate();
+            });
+
+            loadRow.appendChild(w1Btn);
+            loadRow.appendChild(w2Btn);
+            loadRow.appendChild(clearBtn);
+            popup.appendChild(loadRow);
+
+            // Update (save) button
+            const updateBtn = document.createElement('button');
+            updateBtn.className = 'mobile-template-save-btn';
+            updateBtn.textContent = '↑ Update Template';
+            updateBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                _dismissTemplatePopup();
+                if (typeof GridActionButtons !== 'undefined') {
+                    GridActionButtons.saveTemplate();
+                }
+            });
+            popup.appendChild(updateBtn);
+
+            // Repeat Last Week button
+            popup.appendChild(_createRepeatBtn());
         } else {
             const empty = document.createElement('div');
             empty.className = 'mobile-template-empty';
-            empty.textContent = 'No templates saved';
+            empty.textContent = 'No template saved';
             popup.appendChild(empty);
-        }
 
-        // Save button
-        if (canSaveMore) {
             const saveBtn = document.createElement('button');
             saveBtn.className = 'mobile-template-save-btn';
             saveBtn.textContent = '+ Save Template';
             saveBtn.addEventListener('click', (ev) => {
                 ev.stopPropagation();
                 _dismissTemplatePopup();
-                // Delegate to GridActionButtons save
                 if (typeof GridActionButtons !== 'undefined') {
                     GridActionButtons.saveTemplate();
                 }
             });
             popup.appendChild(saveBtn);
+
+            // Repeat Last Week button
+            popup.appendChild(_createRepeatBtn());
         }
 
         // Position above the anchor button
@@ -418,9 +436,88 @@ const MobileBottomBar = (function() {
         if (existing) existing.remove();
     }
 
-    function _loadTemplate(templateId, weekIndex) {
+    function _getRepeatWeekIds() {
+        const weekNum = WeekNavigation.getCurrentWeekNumber();
+        const nextWeekNum = WeekNavigation.getSecondWeekNumber();
+        const year1 = DateUtils.getISOWeekYear(DateUtils.getMondayOfWeek(weekNum));
+        const year2 = DateUtils.getISOWeekYear(DateUtils.getMondayOfWeek(nextWeekNum));
+        return {
+            sourceWeekId: `${year1}-${String(weekNum).padStart(2, '0')}`,
+            targetWeekId: `${year2}-${String(nextWeekNum).padStart(2, '0')}`
+        };
+    }
+
+    function _hasCurrentWeekAvailability() {
+        const teamId = _getUserTeamId();
+        if (!teamId) return false;
+
+        const userId = window.firebase?.auth?.currentUser?.uid;
+        if (!userId) return false;
+
+        const { sourceWeekId } = _getRepeatWeekIds();
+        const data = (typeof AvailabilityService !== 'undefined')
+            ? AvailabilityService.getCachedData(teamId, sourceWeekId)
+            : null;
+        if (!data?.slots) return false;
+
+        return Object.values(data.slots).some(users =>
+            Array.isArray(users) && users.includes(userId)
+        );
+    }
+
+    function _createRepeatBtn() {
+        const hasAvailability = _hasCurrentWeekAvailability();
+        const btn = document.createElement('button');
+        btn.className = 'mobile-template-save-btn';
+        btn.textContent = '↻ Repeat W1 → W2';
+        btn.disabled = !hasAvailability;
+        if (!hasAvailability) {
+            btn.title = 'No availability this week to copy';
+            btn.style.opacity = '0.5';
+            btn.style.cursor = 'not-allowed';
+        }
+        btn.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            if (btn.disabled) return;
+
+            btn.disabled = true;
+            btn.textContent = 'Copying...';
+
+            const teamId = _getUserTeamId();
+            if (!teamId) {
+                if (typeof ToastService !== 'undefined') ToastService.showError('No team selected');
+                return;
+            }
+
+            try {
+                const { sourceWeekId, targetWeekId } = _getRepeatWeekIds();
+                const result = await AvailabilityService.repeatLastWeek(teamId, sourceWeekId, targetWeekId);
+
+                if (result.success) {
+                    if (typeof ToastService !== 'undefined') {
+                        ToastService.showSuccess(`Copied ${result.slotsCopied} slot${result.slotsCopied !== 1 ? 's' : ''} to Week 2`);
+                    }
+                    _dismissTemplatePopup();
+                } else {
+                    if (typeof ToastService !== 'undefined') {
+                        ToastService.showError(result.error || 'Failed to copy');
+                    }
+                    btn.disabled = false;
+                    btn.textContent = '↻ Repeat W1 → W2';
+                }
+            } catch (error) {
+                console.error('Failed to repeat last week:', error);
+                if (typeof ToastService !== 'undefined') ToastService.showError('Failed to copy');
+                btn.disabled = false;
+                btn.textContent = '↻ Repeat W1 → W2';
+            }
+        });
+        return btn;
+    }
+
+    function _loadTemplate(weekIndex) {
         if (typeof TemplateService === 'undefined') return;
-        const template = TemplateService.getTemplate(templateId);
+        const template = TemplateService.getTemplate();
         if (!template) {
             if (typeof ToastService !== 'undefined') ToastService.showError('Template not found');
             return;
@@ -429,19 +526,19 @@ const MobileBottomBar = (function() {
             detail: { slots: template.slots, weekIndex }
         }));
         if (typeof ToastService !== 'undefined') {
-            ToastService.showSuccess(`Loaded "${template.name}" to Week ${weekIndex + 1}`);
+            ToastService.showSuccess(`Template loaded to Week ${weekIndex + 1}`);
         }
     }
 
-    async function _deleteTemplate(templateId, name) {
+    async function _clearTemplate() {
         if (typeof TemplateService === 'undefined') return;
-        if (confirm(`Delete template "${name}"?`)) {
-            const result = await TemplateService.deleteTemplate(templateId);
+        if (confirm('Clear your saved template?')) {
+            const result = await TemplateService.clearTemplate();
             if (result.success) {
-                if (typeof ToastService !== 'undefined') ToastService.showSuccess('Template deleted');
-                // Popup will be rebuilt next time it opens
+                if (typeof ToastService !== 'undefined') ToastService.showSuccess('Template cleared');
+                _dismissTemplatePopup();
             } else {
-                if (typeof ToastService !== 'undefined') ToastService.showError(result.error || 'Failed to delete');
+                if (typeof ToastService !== 'undefined') ToastService.showError(result.error || 'Failed to clear');
             }
         }
     }
