@@ -574,7 +574,7 @@ const ProfileModal = (function() {
         const isDiscordAuth = _userProfile?.authProvider === 'discord';
         const hasLinkedDiscord = _userProfile?.discordUserId && !isDiscordAuth;
 
-        // Case 1: User signed in with Discord - read-only display (compact)
+        // Case 1: User signed in with Discord - display with Re-link button
         if (isDiscordAuth) {
             return `
                 <div class="flex items-center justify-between">
@@ -588,9 +588,13 @@ const ProfileModal = (function() {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                         </svg>
                     </div>
+                    <button type="button" id="relink-discord-btn"
+                        class="text-xs text-muted-foreground hover:text-primary transition-colors">
+                        Re-link
+                    </button>
                 </div>
-                <input type="hidden" name="discordUsername" value="${_userProfile?.discordUsername || ''}">
-                <input type="hidden" name="discordUserId" value="${_userProfile?.discordUserId || ''}">
+                <input type="hidden" name="discordUsername" id="discordUsername" value="${_userProfile?.discordUsername || ''}">
+                <input type="hidden" name="discordUserId" id="discordUserId" value="${_userProfile?.discordUserId || ''}">
             `;
         }
 
@@ -652,6 +656,7 @@ const ProfileModal = (function() {
     function _attachDiscordEventListeners() {
         const linkBtn = document.getElementById('link-discord-btn');
         const unlinkBtn = document.getElementById('unlink-discord-btn');
+        const relinkBtn = document.getElementById('relink-discord-btn');
 
         if (linkBtn) {
             linkBtn.addEventListener('click', _handleLinkDiscord);
@@ -659,6 +664,10 @@ const ProfileModal = (function() {
 
         if (unlinkBtn) {
             unlinkBtn.addEventListener('click', _handleUnlinkDiscord);
+        }
+
+        if (relinkBtn) {
+            relinkBtn.addEventListener('click', _handleRelinkDiscord);
         }
     }
 
@@ -747,6 +756,49 @@ const ProfileModal = (function() {
             if (btn) {
                 btn.disabled = false;
                 btn.textContent = 'Unlink';
+            }
+        }
+    }
+
+    // Handle re-link Discord click (Discord-primary users switching to a different Discord account)
+    async function _handleRelinkDiscord() {
+        if (!confirm('Link a different Discord account? This will replace your current Discord identity.')) {
+            return;
+        }
+
+        const btn = document.getElementById('relink-discord-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Linking...';
+        }
+
+        try {
+            const result = await AuthService.relinkDiscordAccount();
+
+            if (result.success) {
+                // Update cached profile with new Discord data
+                _userProfile = {
+                    ..._userProfile,
+                    discordUsername: result.user.discordUsername,
+                    discordUserId: result.user.discordUserId,
+                    discordAvatarHash: result.user.discordAvatarHash,
+                    photoURL: result.user.photoURL
+                };
+
+                // Re-render Discord section with new data
+                _rerenderDiscordSection();
+
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showSuccess('Discord account updated!');
+                }
+            }
+        } catch (error) {
+            console.error('Discord re-link failed:', error);
+            _showError(error.message || 'Failed to re-link Discord account');
+
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Re-link';
             }
         }
     }

@@ -489,6 +489,28 @@ const AuthService = (function() {
         });
     }
 
+    /**
+     * Re-link Discord account for Discord-primary users.
+     * Opens OAuth popup to authenticate with a different Discord account,
+     * then updates user profile with new Discord data.
+     * Reuses the linkOnly flow in discordOAuthExchange.
+     */
+    async function relinkDiscordAccount() {
+        if (_isDevMode) {
+            console.log('🔧 DEV MODE: Simulating Discord re-link');
+            return {
+                success: true,
+                user: {
+                    discordUsername: 'relinked-discord-user',
+                    discordUserId: '999888777666555444',
+                    discordAvatarHash: null
+                }
+            };
+        }
+
+        return linkDiscordAccount();
+    }
+
     // Sign out
     async function signOutUser() {
         try {
@@ -736,6 +758,7 @@ const AuthService = (function() {
         signInWithGoogle,
         signInWithDiscord,
         linkDiscordAccount,
+        relinkDiscordAccount,
         signOutUser,
         createProfile,
         updateProfile,
