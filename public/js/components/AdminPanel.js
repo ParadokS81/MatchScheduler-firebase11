@@ -198,7 +198,11 @@ const AdminPanel = (function() {
                         <div class="py-1.5">${_escapeHtml(leaderName)}${leaderDmHtml}</div>
                         <div class="py-1.5 text-muted-foreground">${_escapeHtml(r.guildName || '—')}</div>
                         <div class="py-1.5 ${statusClass}">${_escapeHtml(r.status || 'unknown')}${knownCount ? ` (${knownCount} players)` : ''}</div>
-                        <div class="py-1.5 text-right">${count}</div>
+                        <div class="py-1.5 text-right">${count > 0
+                            ? `<button class="text-primary hover:text-primary/80 hover:underline transition-colors cursor-pointer bg-transparent border-none p-0 font-inherit"
+                                       data-action="view-recordings" data-team-id="${r.id}">${count}</button>`
+                            : `<span class="text-muted-foreground">0</span>`
+                        }</div>
                     `;
                 }).join('')}
             </div>
@@ -239,6 +243,16 @@ const AdminPanel = (function() {
             const discordId = dmBtn.dataset.discordId;
             if (discordId) {
                 window.location.href = `discord://discord.com/users/${discordId}`;
+            }
+            return;
+        }
+
+        const recBtn = e.target.closest('[data-action="view-recordings"]');
+        if (recBtn) {
+            e.stopPropagation();
+            const teamId = recBtn.dataset.teamId;
+            if (teamId && typeof TeamManagementModal !== 'undefined') {
+                TeamManagementModal.show(teamId, 'recordings');
             }
             return;
         }

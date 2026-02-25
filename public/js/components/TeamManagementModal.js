@@ -2005,6 +2005,95 @@ const TeamManagementModal = (function() {
     }
 
     /**
+     * Calculate integrity summary across all recordings.
+     * Returns null if no integrity issues exist.
+     */
+    function _getIntegritySummary(recordings) {
+        let repairedMaps = 0;
+        let totalErrors = 0;
+
+        for (const rec of recordings) {
+            if (rec.integrity) {
+                if (rec.integrity.repairedCount > 0) repairedMaps++;
+                totalErrors += rec.integrity.totalErrors || 0;
+            }
+        }
+
+        if (repairedMaps === 0 && totalErrors === 0) return null;
+        return { repairedMaps, totalErrors };
+    }
+
+    /**
+     * Check if any map in a series has integrity issues
+     */
+    function _seriesHasIntegrityIssues(series) {
+        return series.maps.some(map => map.integrity &&
+            (map.integrity.repairedCount > 0 || map.integrity.totalErrors > 0));
+    }
+
+    /**
+     * Render integrity summary banner for recordings list header
+     */
+    function _renderIntegritySummaryBanner(recordings) {
+        const summary = _getIntegritySummary(recordings);
+        if (!summary) return '';
+
+        const parts = [];
+        if (summary.repairedMaps > 0) {
+            parts.push(`${summary.repairedMaps} map${summary.repairedMaps !== 1 ? 's' : ''} repaired`);
+        }
+        if (summary.totalErrors > 0) {
+            parts.push(`${summary.totalErrors.toLocaleString()} decode errors`);
+        }
+
+        return `
+            <div class="flex items-center gap-1.5 mb-2 px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20">
+                <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+                </svg>
+                <span class="text-xs text-amber-400">${parts.join(' &middot; ')}</span>
+            </div>
+        `;
+    }
+
+    /**
+     * Render per-map integrity badge (shown in expanded map rows)
+     */
+    function _renderMapIntegrityBadge(map) {
+        if (!map.integrity) return '';
+
+        const { repairedCount, totalErrors } = map.integrity;
+        if (!repairedCount && !totalErrors) return '';
+
+        // Build tooltip with per-track details
+        const trackDetails = (map.tracks || [])
+            .filter(t => t.verifyErrors || t.repaired)
+            .map(t => {
+                const parts = [t.playerName || 'unknown'];
+                if (t.repaired) parts.push('repaired');
+                if (t.verifyErrors) parts.push(`${t.verifyErrors} errors`);
+                return parts.join(': ');
+            })
+            .join(' | ');
+
+        const tooltipParts = [];
+        if (repairedCount) tooltipParts.push(`${repairedCount} track${repairedCount !== 1 ? 's' : ''} re-encoded`);
+        if (totalErrors) tooltipParts.push(`${totalErrors} decode errors`);
+        if (trackDetails) tooltipParts.push('— ' + trackDetails);
+
+        return `
+            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400"
+                  title="${_escapeHtml(tooltipParts.join(' · '))}">
+                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                </svg>
+                <span class="text-xs">${repairedCount ? `${repairedCount}R` : ''}${repairedCount && totalErrors ? ' ' : ''}${totalErrors ? `${totalErrors}E` : ''}</span>
+            </span>
+        `;
+    }
+
+    /**
      * Calculate series score (map wins for each side)
      */
     function _getSeriesScore(maps) {
@@ -2174,6 +2263,7 @@ const TeamManagementModal = (function() {
                     <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recordings</span>
                     <span class="text-xs text-muted-foreground">${_recordings.length} recording${_recordings.length !== 1 ? 's' : ''}</span>
                 </div>
+                ${_renderIntegritySummaryBanner(_recordings)}
                 <div class="space-y-2 max-h-[28rem] overflow-y-auto scrollbar-thin" id="recordings-list">
                     ${cardsHtml}
                 </div>
@@ -2264,6 +2354,13 @@ const TeamManagementModal = (function() {
                         <span class="text-sm font-medium text-foreground">${_escapeHtml(opponentTag)}</span>
                         ${opponentLogoHtml}
                         <span class="text-xs text-muted-foreground">(${teamWins}-${opponentWins})</span>
+                        ${_seriesHasIntegrityIssues(series) ? `
+                            <span class="inline-flex items-center" title="Audio integrity issues detected">
+                                <svg class="w-3 h-3 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                </svg>
+                            </span>
+                        ` : ''}
                     </div>
                     ${controlsHtml}
                 </div>
@@ -2335,6 +2432,7 @@ const TeamManagementModal = (function() {
                     <span class="text-sm font-mono font-medium text-foreground w-24 truncate">${_escapeHtml(map.mapName || '—')}</span>
                     <span class="text-xs text-muted-foreground">${trackCount} tracks</span>
                     ${teamFrags || opponentFrags ? `<span class="text-xs text-muted-foreground">${teamFrags}-${opponentFrags}</span>` : ''}
+                    ${_renderMapIntegrityBadge(map)}
                 </div>
                 <div class="flex items-center gap-1.5">
                     ${_isLeader ? `

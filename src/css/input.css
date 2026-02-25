@@ -1253,22 +1253,18 @@ body {
   min-width: auto;
 }
 
-/* Unavailable badge: greyscale + red prohibition overlay (Slice 15.0) */
+/* Unavailable badge: greyscale + red diagonal slash (Slice 15.0) */
 .player-badge.unavailable {
-  filter: grayscale(100%) opacity(0.6);
+  filter: grayscale(100%) opacity(0.55);
   position: relative;
-  margin-left: 0.125rem;
-  min-width: 1.1rem;
 }
 
-/* Red prohibition circle + slash overlay (⊘ style: line from bottom-left to top-right) */
+/* Red diagonal slash overlay — no circle, just the strike-through line */
 .player-badge.unavailable::after {
   content: '';
   position: absolute;
-  inset: -1px;
-  border: 1.5px solid var(--destructive);
-  border-radius: 50%;
-  /* Diagonal line: bottom-left to top-right (⊘ direction) */
+  inset: 0;
+  /* Diagonal line: bottom-left to top-right */
   background: linear-gradient(
     to bottom right,
     transparent calc(50% - 0.75px),
@@ -1279,13 +1275,16 @@ body {
   pointer-events: none;
 }
 
-/* Smaller prohibition on small screens */
+/* Thinner slash on small screens */
 @media (max-height: 800px) {
   .player-badge.unavailable::after {
-    border-width: 1px;
-  }
-  .player-badge.unavailable {
-    min-width: 0.8rem;
+    background: linear-gradient(
+      to bottom right,
+      transparent calc(50% - 0.5px),
+      var(--destructive) calc(50% - 0.5px),
+      var(--destructive) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px)
+    );
   }
 }
 

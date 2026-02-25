@@ -491,6 +491,12 @@ interface VoiceRecordingDocument {
   opponentFrags: number;                           // Opponent's total frags for this map
   gameId: number;                                  // QW Hub game ID for stats/demo cross-reference
   mapOrder: number;                                // 0-based index within session (for chronological sorting)
+
+  // DAVE integrity (optional — only present if audio issues found during processing)
+  integrity?: {
+    repairedCount: number;                         // How many tracks were re-encoded due to decode failures
+    totalErrors: number;                           // Total decode errors across all tracks
+  };
 }
 
 interface VoiceTrack {
@@ -502,6 +508,10 @@ interface VoiceTrack {
   storagePath: string;                   // "voice-recordings/{teamId}/{sha256}/{discordUserId}.ogg"
   size: number;                          // File size in bytes
   duration: number | null;               // Audio duration in seconds (if known)
+
+  // DAVE integrity (optional — only on tracks with issues)
+  verifyErrors?: number;                 // Number of decode verification errors for this track
+  repaired?: boolean;                    // true if track was re-encoded to fix decode issues
 }
 ```
 

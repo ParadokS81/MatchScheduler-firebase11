@@ -4,13 +4,28 @@
 const TeamBrowserState = (function() {
     'use strict';
 
+    const STORAGE_KEY = 'matchscheduler_browser_filters';
+
     // Selection state
     let _selectedTeams = new Set();
 
-    // Filter state
+    // Filter state — restored from localStorage below
     let _searchQuery = '';
     let _divisionFilters = new Set(); // Empty = all, or contains 'D1', 'D2', 'D3'
     let _favoritesFilterActive = false;
+
+    // Restore persisted filters on load
+    try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        if (saved) {
+            if (Array.isArray(saved.divisions)) {
+                _divisionFilters = new Set(saved.divisions.filter(d => ['D1', 'D2', 'D3'].includes(d)));
+            }
+            if (typeof saved.favorites === 'boolean') {
+                _favoritesFilterActive = saved.favorites;
+            }
+        }
+    } catch { /* localStorage unavailable or corrupt */ }
 
     // Callbacks for state changes
     let _onSelectionChange = null;
@@ -23,8 +38,19 @@ const TeamBrowserState = (function() {
         }));
     }
 
+    // Persist division + favorites filters to localStorage
+    function _saveFilters() {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                divisions: Array.from(_divisionFilters),
+                favorites: _favoritesFilterActive
+            }));
+        } catch { /* localStorage unavailable */ }
+    }
+
     // Dispatch filter change event for cross-component communication (Slice A4)
     function _dispatchFilterChange() {
+        _saveFilters();
         if (_onFilterChange) {
             _onFilterChange({ search: _searchQuery, divisions: _divisionFilters });
         }
@@ -194,6 +220,7 @@ const TeamBrowserState = (function() {
         _favoritesFilterActive = false;
         _onSelectionChange = null;
         _onFilterChange = null;
+        // Note: intentionally NOT clearing localStorage — filters should persist across resets
     }
 
     // Public API
