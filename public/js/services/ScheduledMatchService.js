@@ -186,6 +186,21 @@ const ScheduledMatchService = (function() {
         }
     }
 
+    /**
+     * Reschedule an existing match to a new time slot.
+     * @param {string} matchId
+     * @param {string} dateTime - ISO 8601 UTC datetime
+     * @returns {Promise<{success: boolean, newSlotId?: string, error?: string}>}
+     */
+    async function rescheduleMatch(matchId, dateTime) {
+        try {
+            return await TeamService.callFunction('rescheduleMatch', { matchId, dateTime });
+        } catch (error) {
+            console.error('rescheduleMatch error:', error);
+            return { success: false, error: error.message || 'Unknown error' };
+        }
+    }
+
     // ─── Public API ────────────────────────────────────────────────────
 
     return {
@@ -196,6 +211,7 @@ const ScheduledMatchService = (function() {
         clearCache,
         getBlockedSlotsForTeam,
         getUpcomingMatchesForTeams,
-        quickAddMatch
+        quickAddMatch,
+        rescheduleMatch
     };
 })();

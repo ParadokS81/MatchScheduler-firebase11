@@ -19,17 +19,27 @@ const MatchSealedModal = (function() {
      * e.g. "2026-02-12" + "thu_2200" → "Feb 12 Thu 22:00"
      */
     function _formatMatchDateTime(scheduledDate, slotId) {
-        const [, time] = slotId.split('_');
-        const timeFormatted = `${time.slice(0, 2)}:${time.slice(2)}`;
+        // Convert UTC slot to user's local time (same as the proposal list display)
+        const [utcDay, utcTime] = slotId.split('_');
+        const local = TimezoneService.utcToLocalSlot(utcDay, utcTime);
+        const timeFormatted = local.displayTime;
 
-        // Parse date
-        const [year, month, day] = scheduledDate.split('-').map(Number);
-        const date = new Date(year, month - 1, day);
+        // Compute the calendar date using the local day (timezone shift may change the day)
+        const dayOffsets = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
+        const [year, month] = scheduledDate.split('-').map(Number);
+        const utcDayOffset = dayOffsets[utcDay];
+        const localDayOffset = dayOffsets[local.day];
+        const dayDelta = localDayOffset - utcDayOffset; // -1, 0, or +1
+
+        // Start from scheduledDate (which is the UTC date for the utcDay)
+        const [, , utcDayNum] = scheduledDate.split('-').map(Number);
+        const localDate = new Date(Date.UTC(year, month - 1, utcDayNum + dayDelta));
+
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
             'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dayNames = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
 
-        return `${monthNames[date.getMonth()]} ${day} ${dayNames[date.getDay()]} ${timeFormatted}`;
+        return `${monthNames[localDate.getUTCMonth()]} ${localDate.getUTCDate()} ${dayNames[local.day]} ${timeFormatted}`;
     }
 
     /**

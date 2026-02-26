@@ -413,6 +413,8 @@ const UpcomingMatchesPanel = (function() {
         const isUserTeamA = _userTeamIds.includes(teamAId);
         const isUserTeamB = _userTeamIds.includes(teamBId);
 
+        const userTeamId = isUserTeamA ? teamAId : (isUserTeamB ? teamBId : null);
+
         const html = `
             <div class="match-tooltip-grid">
                 <div class="match-column user-team-column">
@@ -436,6 +438,7 @@ const UpcomingMatchesPanel = (function() {
             </div>
             <div class="match-tooltip-footer">
                 <a href="#/teams/${isUserTeamB && !isUserTeamA ? teamBId : teamAId}/h2h/${isUserTeamB && !isUserTeamA ? teamAId : teamBId}" class="match-tooltip-h2h-link">View Head-to-Head</a>
+                ${userTeamId ? `<button class="match-tooltip-standin-btn" data-team-id="${userTeamId}" data-week-id="${weekId}" data-slot-id="${slotId}">Find standin</button>` : ''}
             </div>
         `;
 
@@ -444,7 +447,7 @@ const UpcomingMatchesPanel = (function() {
             _rosterTooltip.className = 'match-tooltip';
             document.body.appendChild(_rosterTooltip);
 
-            // Keep tooltip visible when hovering over it (so links are clickable)
+            // Keep tooltip visible when hovering over it (so links/buttons are clickable)
             _rosterTooltip.addEventListener('mouseenter', () => {
                 if (_rosterTooltipHideTimeout) {
                     clearTimeout(_rosterTooltipHideTimeout);
@@ -455,6 +458,19 @@ const UpcomingMatchesPanel = (function() {
                 _rosterTooltipHideTimeout = setTimeout(() => {
                     if (_rosterTooltip) _rosterTooltip.style.display = 'none';
                 }, 150);
+            });
+            _rosterTooltip.addEventListener('click', (e) => {
+                const btn = e.target.closest('.match-tooltip-standin-btn');
+                if (!btn) return;
+                const btnTeamId = btn.dataset.teamId;
+                const btnWeekId = btn.dataset.weekId;
+                const btnSlotId = btn.dataset.slotId;
+                const team = typeof TeamService !== 'undefined' ? TeamService.getTeamFromCache(btnTeamId) : null;
+                const divisions = team?.divisions || [];
+                const defaultDiv = divisions[0] || 'D1';
+                StandinFinderService.activate(btnWeekId, [btnSlotId], defaultDiv);
+                BottomPanelController.switchTab('players', { force: true });
+                if (_rosterTooltip) _rosterTooltip.style.display = 'none';
             });
         }
 

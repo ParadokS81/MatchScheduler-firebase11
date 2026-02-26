@@ -14,7 +14,7 @@ const { updateAvailability } = require('./availability');
 const { saveTemplate, clearTemplate } = require('./templates');
 const { setRecurring, applyRecurringTemplates } = require('./recurring');
 const { updateFavorites } = require('./favorites');
-const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler, updateProposalSettings, quickAddMatch } = require('./match-proposals');
+const { createProposal, confirmSlot, withdrawConfirmation, cancelProposal, cancelScheduledMatch, toggleScheduler, updateProposalSettings, quickAddMatch, rescheduleMatch } = require('./match-proposals');
 const { getScheduledGames } = require('./scheduled-games-api');
 const { syncBig4Matches, scheduledBig4Sync } = require('./big4-sync');
 const { submitFeedback, getFeedbackCount } = require('./feedback');
@@ -68,6 +68,7 @@ exports.cancelScheduledMatch = cancelScheduledMatch;
 exports.toggleScheduler = toggleScheduler;
 exports.updateProposalSettings = updateProposalSettings;
 exports.quickAddMatch = quickAddMatch;
+exports.rescheduleMatch = rescheduleMatch;
 
 // Public API (unauthenticated)
 exports.getScheduledGames = getScheduledGames;

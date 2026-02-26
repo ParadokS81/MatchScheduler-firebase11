@@ -52,7 +52,7 @@ function prevSlot(slotId) {
 /**
  * Get all blocked slots for a team in a week (match slot + 1-slot buffer before and after).
  */
-async function getBlockedSlotsForTeam(teamId, weekId) {
+async function getBlockedSlotsForTeam(teamId, weekId, excludeMatchId = null) {
     const snapshot = await db.collection('scheduledMatches')
         .where('blockedTeams', 'array-contains', teamId)
         .where('weekId', '==', weekId)
@@ -61,6 +61,7 @@ async function getBlockedSlotsForTeam(teamId, weekId) {
 
     const blocked = new Set();
     snapshot.forEach(doc => {
+        if (excludeMatchId && doc.id === excludeMatchId) return;
         const slot = doc.data().blockedSlot;
         blocked.add(slot);
         const before = prevSlot(slot);
@@ -1218,6 +1219,16 @@ exports.updateProposalSettings = functions
                 updates.proposerStandin = false;
                 updates.opponentStandin = false;
             }
+
+            // Cascade gameType to all confirmed slots
+            const proposerSlots = proposal.proposerConfirmedSlots || {};
+            for (const slotId of Object.keys(proposerSlots)) {
+                updates[`proposerConfirmedSlots.${slotId}.gameType`] = gameType;
+            }
+            const opponentSlots = proposal.opponentConfirmedSlots || {};
+            for (const slotId of Object.keys(opponentSlots)) {
+                updates[`opponentConfirmedSlots.${slotId}.gameType`] = gameType;
+            }
         }
 
         // Update standin if provided (only for practice)
@@ -1231,6 +1242,15 @@ exports.updateProposalSettings = functions
         }
 
         await proposalRef.update(updates);
+
+        // Cascade gameType to linked scheduledMatch if proposal is confirmed
+        if (gameType !== undefined && proposal.scheduledMatchId) {
+            await db.collection('scheduledMatches').doc(proposal.scheduledMatchId).update({
+                gameType,
+                gameTypeSetBy: userId,
+                updatedAt: new Date()
+            });
+        }
 
         console.log('✅ Proposal settings updated:', proposalId, updates);
         return { success: true };
@@ -1399,5 +1419,226 @@ exports.quickAddMatch = functions
         console.error('❌ Error in quickAddMatch:', error);
         if (error instanceof functions.https.HttpsError) throw error;
         throw new functions.https.HttpsError('internal', 'Failed to add match');
+    }
+});
+
+// ─── rescheduleMatch ───────────────────────────────────────────────────────
+
+/**
+ * Reschedule a scheduled match to a new time slot.
+ * Good-faith operation — no opponent confirmation required.
+ * Updates match in-place, unblocks old slot, blocks new slot.
+ */
+exports.rescheduleMatch = functions
+    .region('europe-west3')
+    .https.onCall(async (data, context) => {
+    try {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+        }
+
+        const userId = context.auth.uid;
+        const { matchId, dateTime } = data;
+
+        if (!matchId || typeof matchId !== 'string') {
+            throw new functions.https.HttpsError('invalid-argument', 'matchId is required');
+        }
+        if (!dateTime || typeof dateTime !== 'string') {
+            throw new functions.https.HttpsError('invalid-argument', 'dateTime is required');
+        }
+
+        const parsedDate = new Date(dateTime);
+        if (isNaN(parsedDate.getTime())) {
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid dateTime');
+        }
+        if (parsedDate <= new Date()) {
+            throw new functions.https.HttpsError('invalid-argument', 'New time must be in the future');
+        }
+
+        // Derive new slot info (same pattern as quickAddMatch)
+        const newSlotId = computeSlotId(parsedDate);
+        const newWeekYear = getISOWeekYear(parsedDate);
+        const newWeekNum = getISOWeekNumber(parsedDate);
+        const newWeekId = `${newWeekYear}-${String(newWeekNum).padStart(2, '0')}`;
+        const newScheduledDate = parsedDate.toISOString().split('T')[0];
+
+        let txResult = {};
+
+        await db.runTransaction(async (transaction) => {
+            // READ PHASE
+            const matchRef = db.collection('scheduledMatches').doc(matchId);
+            const matchDoc = await transaction.get(matchRef);
+
+            if (!matchDoc.exists) {
+                throw new functions.https.HttpsError('not-found', 'Match not found');
+            }
+            const matchData = matchDoc.data();
+
+            if (matchData.status !== 'upcoming') {
+                throw new functions.https.HttpsError('failed-precondition', 'Only upcoming matches can be rescheduled');
+            }
+
+            // Authorization — either team's leader/scheduler
+            const [teamADoc, teamBDoc] = await Promise.all([
+                transaction.get(db.collection('teams').doc(matchData.teamAId)),
+                transaction.get(db.collection('teams').doc(matchData.teamBId))
+            ]);
+
+            const teamAData = teamADoc.data();
+            const teamBData = teamBDoc.data();
+
+            if (!isAuthorized(teamAData, userId) && !isAuthorized(teamBData, userId)) {
+                throw new functions.https.HttpsError('permission-denied', 'Only leaders or schedulers can reschedule matches');
+            }
+
+            // Read parent proposal if exists
+            let proposalRef = null;
+            let proposalDoc = null;
+            if (matchData.proposalId) {
+                proposalRef = db.collection('matchProposals').doc(matchData.proposalId);
+                proposalDoc = await transaction.get(proposalRef);
+            }
+
+            // Check blocked slots — exclude THIS match from the check
+            const [teamABlocked, teamBBlocked] = await Promise.all([
+                getBlockedSlotsForTeam(matchData.teamAId, newWeekId, matchId),
+                getBlockedSlotsForTeam(matchData.teamBId, newWeekId, matchId)
+            ]);
+
+            if (teamABlocked.has(newSlotId) || teamBBlocked.has(newSlotId)) {
+                throw new functions.https.HttpsError('failed-precondition',
+                    'This slot is blocked by another match for one of the teams');
+            }
+
+            // WRITE PHASE
+            const now = new Date();
+            const previousSlotId = matchData.slotId;
+            const previousWeekId = matchData.weekId;
+
+            // 1. Update the match in-place
+            transaction.update(matchRef, {
+                slotId: newSlotId,
+                weekId: newWeekId,
+                scheduledDate: newScheduledDate,
+                blockedSlot: newSlotId,
+                rescheduledAt: now,
+                rescheduledBy: userId,
+                previousSlotId
+            });
+
+            // 2. Update parent proposal if exists
+            if (proposalDoc && proposalDoc.exists) {
+                transaction.update(proposalRef, {
+                    confirmedSlotId: newSlotId,
+                    updatedAt: now
+                });
+            }
+
+            // 3. Event log
+            const eventId = generateEventId(matchData.teamAName, 'match_rescheduled');
+            transaction.set(db.collection('eventLog').doc(eventId), {
+                eventId,
+                teamId: matchData.teamAId,
+                teamName: matchData.teamAName,
+                type: 'MATCH_RESCHEDULED',
+                category: 'SCHEDULING',
+                timestamp: now,
+                userId,
+                details: {
+                    matchId,
+                    proposalId: matchData.proposalId || null,
+                    teamAId: matchData.teamAId,
+                    teamAName: matchData.teamAName,
+                    teamBId: matchData.teamBId,
+                    teamBName: matchData.teamBName,
+                    previousSlotId,
+                    newSlotId,
+                    previousWeekId,
+                    newWeekId
+                }
+            });
+
+            txResult = { previousSlotId, previousWeekId, matchData };
+        });
+
+        // Post-transaction: Discord notifications (best-effort)
+        try {
+            const matchData = txResult.matchData;
+            const now = new Date();
+
+            // Fetch bot registrations + team docs for delivery info
+            const [teamABotReg, teamBBotReg, teamADoc, teamBDoc, userDoc] = await Promise.all([
+                db.collection('botRegistrations').doc(matchData.teamAId).get(),
+                db.collection('botRegistrations').doc(matchData.teamBId).get(),
+                db.collection('teams').doc(matchData.teamAId).get(),
+                db.collection('teams').doc(matchData.teamBId).get(),
+                db.collection('users').doc(userId).get()
+            ]);
+
+            const teamABot = teamABotReg.exists ? teamABotReg.data() : null;
+            const teamBBot = teamBBotReg.exists ? teamBBotReg.data() : null;
+            const teamA = teamADoc.exists ? teamADoc.data() : null;
+            const teamB = teamBDoc.exists ? teamBDoc.data() : null;
+            const userData = userDoc.exists ? userDoc.data() : null;
+
+            const teamALogoUrl = teamA?.activeLogo?.urls?.small || null;
+            const teamBLogoUrl = teamB?.activeLogo?.urls?.small || null;
+
+            const baseNotif = {
+                type: 'match_rescheduled',
+                status: 'pending',
+                scheduledMatchId: matchId,
+                previousSlotId: txResult.previousSlotId,
+                newSlotId,
+                weekId: newWeekId,
+                gameType: matchData.gameType || 'official',
+                proposerTeamId: matchData.teamAId,
+                proposerTeamName: matchData.teamAName,
+                proposerTeamTag: matchData.teamATag,
+                opponentTeamId: matchData.teamBId,
+                opponentTeamName: matchData.teamBName,
+                opponentTeamTag: matchData.teamBTag,
+                rescheduledByUserId: userId,
+                rescheduledByDisplayName: userData?.displayName || null,
+                proposerLogoUrl: teamALogoUrl,
+                opponentLogoUrl: teamBLogoUrl,
+                createdAt: now,
+                deliveredAt: null
+            };
+
+            // Notification to team A
+            await db.collection('notifications').doc().set({
+                ...baseNotif,
+                recipientTeamId: matchData.teamAId,
+                recipientTeamName: matchData.teamAName,
+                recipientTeamTag: matchData.teamATag,
+                delivery: {
+                    botRegistered: teamABot?.status === 'active',
+                    guildId: teamABot?.guildId ?? null
+                }
+            });
+
+            // Notification to team B
+            await db.collection('notifications').doc().set({
+                ...baseNotif,
+                recipientTeamId: matchData.teamBId,
+                recipientTeamName: matchData.teamBName,
+                recipientTeamTag: matchData.teamBTag,
+                delivery: {
+                    botRegistered: teamBBot?.status === 'active',
+                    guildId: teamBBot?.guildId ?? null
+                }
+            });
+        } catch (notifError) {
+            console.error('⚠️ Reschedule notification write failed (non-fatal):', notifError);
+        }
+
+        console.log('✅ Match rescheduled:', matchId, txResult.previousSlotId, '→', newSlotId);
+        return { success: true, newSlotId, newScheduledDate };
+
+    } catch (error) {
+        console.error('❌ Error rescheduling match:', error);
+        if (error instanceof functions.https.HttpsError) throw error;
+        throw new functions.https.HttpsError('internal', 'Failed to reschedule match: ' + error.message);
     }
 });

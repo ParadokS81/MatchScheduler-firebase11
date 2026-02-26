@@ -15,6 +15,7 @@ const MatchesPanel = (function() {
     let _selectedGameTypes = {}; // proposalId → 'official' | 'practice' | null
     let _rosterTooltip = null;
     let _rosterTooltipAnchor = null; // DOM element that triggered the tooltip
+    let _rosterTooltipHideTimeout = null;
 
     // ─── Initialization ────────────────────────────────────────────────
 
@@ -460,11 +461,11 @@ const MatchesPanel = (function() {
         const cardClass = type === 'archived' ? 'opacity-50' : '';
 
         return `
-            <div class="proposal-card rounded-lg border border-border bg-card ${cardClass}"
-                 data-proposal-id="${proposal.id}">
+            <div class="proposal-card rounded-lg border border-border bg-card cursor-pointer ${cardClass}"
+                 data-proposal-id="${proposal.id}"
+                 ${type === 'active' ? `data-action="toggle-expand"` : ''}>
                 <!-- Row 1: Logos + Teams + Slot Count + Discord + Expand -->
-                <div class="proposal-card-header flex items-center gap-2 p-2.5 cursor-pointer"
-                     data-action="toggle-expand" data-proposal-id="${proposal.id}">
+                <div class="proposal-card-header flex items-center gap-2 p-2.5">
                     ${proposerLogo ? `<img src="${proposerLogo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
                     <span class="text-sm font-medium truncate min-w-0">${_escapeHtml(proposal.proposerTeamName)} <span class="${proposal.gameType === 'practice' ? 'text-amber-400' : 'text-green-400'} font-semibold">vs</span> ${_escapeHtml(proposal.opponentTeamName)}</span>
                     ${opponentLogo ? `<img src="${opponentLogo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
@@ -707,6 +708,10 @@ const MatchesPanel = (function() {
                     ${gameTypeBadge}
                     <span class="text-xs text-muted-foreground">${dateDisplay} ${dayAbbr} ${timeOnly}${div ? ` (${div})` : ''}</span>
                     ${canCancel ? `
+                        <button class="text-xs text-blue-400/60 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                data-action="reschedule-match" data-match-id="${match.id}">
+                            Edit
+                        </button>
                         <button class="text-xs text-red-400/60 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                                 data-action="cancel-match" data-match-id="${match.id}">
                             Cancel
@@ -844,6 +849,9 @@ const MatchesPanel = (function() {
         const proposalId = target.dataset.proposalId;
         const slotId = target.dataset.slot;
 
+        // Don't collapse card when clicking inside expanded content
+        if (action === 'toggle-expand' && e.target.closest('.proposal-expanded')) return;
+
         switch (action) {
             case 'discord-contact':
                 e.stopPropagation();
@@ -872,6 +880,9 @@ const MatchesPanel = (function() {
                 break;
             case 'cancel-match':
                 await _handleCancelMatch(target.dataset.matchId, target);
+                break;
+            case 'reschedule-match':
+                _handleRescheduleMatch(target.dataset.matchId);
                 break;
             case 'toggle-archived':
                 _archivedExpanded = !_archivedExpanded;
@@ -1119,6 +1130,31 @@ const MatchesPanel = (function() {
     }
 
     /**
+     * Reschedule a scheduled match to a new time
+     */
+    function _handleRescheduleMatch(matchId) {
+        const match = ScheduledMatchService.getMatch(matchId);
+        if (!match) {
+            ToastService.showError('Match not found');
+            return;
+        }
+
+        RescheduleMatchModal.show(match, async (confirmedMatchId, newDateTime) => {
+            try {
+                const result = await ScheduledMatchService.rescheduleMatch(confirmedMatchId, newDateTime);
+                if (result.success) {
+                    ToastService.showSuccess('Match rescheduled.');
+                } else {
+                    ToastService.showError(result.error || 'Failed to reschedule match');
+                }
+            } catch (error) {
+                console.error('Reschedule match failed:', error);
+                ToastService.showError('Network error — please try again');
+            }
+        });
+    }
+
+    /**
      * Load Grid View shortcut — switch to calendar tab with comparison set up
      * Navigates to the proposal's week, selects opponent, sets filters, activates comparison.
      */
@@ -1319,6 +1355,11 @@ const MatchesPanel = (function() {
         const row = e.target.closest('.upcoming-match-row') || e.target.closest('.slot-row');
         if (!row) return;
 
+        if (_rosterTooltipHideTimeout) {
+            clearTimeout(_rosterTooltipHideTimeout);
+            _rosterTooltipHideTimeout = null;
+        }
+
         // Position tooltip at the count badge if present, otherwise at the row
         const slotCount = row.querySelector('.slot-col-count');
         _rosterTooltipAnchor = row;
@@ -1334,10 +1375,17 @@ const MatchesPanel = (function() {
         // Don't hide if pointer moved to a child within the row
         if (e.relatedTarget && _rosterTooltipAnchor.contains(e.relatedTarget)) return;
 
-        _hideRosterTooltip();
+        _rosterTooltipHideTimeout = setTimeout(() => {
+            if (_rosterTooltip) _rosterTooltip.style.display = 'none';
+            _rosterTooltipAnchor = null;
+        }, 150);
     }
 
     function _hideRosterTooltip() {
+        if (_rosterTooltipHideTimeout) {
+            clearTimeout(_rosterTooltipHideTimeout);
+            _rosterTooltipHideTimeout = null;
+        }
         if (_rosterTooltip) _rosterTooltip.style.display = 'none';
         _rosterTooltipAnchor = null;
     }
@@ -1402,6 +1450,12 @@ const MatchesPanel = (function() {
         const isUserTeamA = _userTeamIds.includes(teamAId);
         const isUserTeamB = _userTeamIds.includes(teamBId);
 
+        // Show Find Standin button only on scheduled match rows (not proposal slot rows)
+        // and only when the user is on one of the teams
+        const isScheduledMatchRow = row.classList.contains('upcoming-match-row');
+        const userTeamId = isUserTeamA ? teamAId : (isUserTeamB ? teamBId : null);
+        const showFindStandin = isScheduledMatchRow && userTeamId !== null;
+
         const html = `
             <div class="match-tooltip-grid">
                 <div class="match-column user-team-column">
@@ -1425,15 +1479,42 @@ const MatchesPanel = (function() {
             </div>
             <div class="match-tooltip-footer">
                 <a href="#/teams/${isUserTeamB && !isUserTeamA ? teamBId : teamAId}/h2h/${isUserTeamB && !isUserTeamA ? teamAId : teamBId}" class="match-tooltip-h2h-link">View Head-to-Head</a>
+                ${showFindStandin ? `<button class="match-tooltip-standin-btn" data-team-id="${userTeamId}" data-week-id="${weekId}" data-slot-id="${slotId}">Find standin</button>` : ''}
             </div>
         `;
 
-        // Create or reuse tooltip element (peek-only — no hover interaction needed)
+        // Create or reuse tooltip element
         if (!_rosterTooltip) {
             _rosterTooltip = document.createElement('div');
             _rosterTooltip.className = 'match-tooltip';
-            _rosterTooltip.style.pointerEvents = 'none'; // Pass-through — don't intercept clicks/hovers
             document.body.appendChild(_rosterTooltip);
+
+            // Keep tooltip visible when hovering over it (so button is clickable)
+            _rosterTooltip.addEventListener('mouseenter', () => {
+                if (_rosterTooltipHideTimeout) {
+                    clearTimeout(_rosterTooltipHideTimeout);
+                    _rosterTooltipHideTimeout = null;
+                }
+            });
+            _rosterTooltip.addEventListener('mouseleave', () => {
+                _rosterTooltipHideTimeout = setTimeout(() => {
+                    if (_rosterTooltip) _rosterTooltip.style.display = 'none';
+                    _rosterTooltipAnchor = null;
+                }, 150);
+            });
+            _rosterTooltip.addEventListener('click', (e) => {
+                const btn = e.target.closest('.match-tooltip-standin-btn');
+                if (!btn) return;
+                const btnTeamId = btn.dataset.teamId;
+                const btnWeekId = btn.dataset.weekId;
+                const btnSlotId = btn.dataset.slotId;
+                const team = TeamService.getTeamFromCache(btnTeamId);
+                const divisions = team?.divisions || [];
+                const defaultDiv = divisions[0] || 'D1';
+                StandinFinderService.activate(btnWeekId, [btnSlotId], defaultDiv);
+                BottomPanelController.switchTab('players', { force: true });
+                _hideRosterTooltip();
+            });
         }
 
         _rosterTooltip.innerHTML = html;
@@ -1487,6 +1568,10 @@ const MatchesPanel = (function() {
         document.removeEventListener('click', _hideRosterTooltip, true);
 
         // Remove roster tooltip
+        if (_rosterTooltipHideTimeout) {
+            clearTimeout(_rosterTooltipHideTimeout);
+            _rosterTooltipHideTimeout = null;
+        }
         _rosterTooltipAnchor = null;
         if (_rosterTooltip) {
             _rosterTooltip.remove();
