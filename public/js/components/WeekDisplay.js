@@ -329,6 +329,9 @@ const WeekDisplay = (function() {
                 }
             } catch (error) {
                 console.error('Failed to save timezone preference:', error);
+                if (typeof ToastService !== 'undefined') {
+                    ToastService.showError('Timezone changed for this session but failed to save. It may revert on reload.');
+                }
             }
         }
 

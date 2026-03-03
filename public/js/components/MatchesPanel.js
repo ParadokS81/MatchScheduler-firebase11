@@ -911,7 +911,7 @@ const MatchesPanel = (function() {
         if (!userId) return;
         const schedulerTeamIds = _userTeamIds.filter(tid => TeamService.isScheduler(tid, userId));
         if (schedulerTeamIds.length === 0) return;
-        QuickAddMatchModal.show(schedulerTeamIds);
+        QuickAddMatchModal.show(schedulerTeamIds, _userTeamIds);
     }
 
     /**
@@ -1450,11 +1450,9 @@ const MatchesPanel = (function() {
         const isUserTeamA = _userTeamIds.includes(teamAId);
         const isUserTeamB = _userTeamIds.includes(teamBId);
 
-        // Show Find Standin button only on scheduled match rows (not proposal slot rows)
-        // and only when the user is on one of the teams
+        // Show Find Standin button on all scheduled match rows (not proposal slot rows)
         const isScheduledMatchRow = row.classList.contains('upcoming-match-row');
-        const userTeamId = isUserTeamA ? teamAId : (isUserTeamB ? teamBId : null);
-        const showFindStandin = isScheduledMatchRow && userTeamId !== null;
+        const userTeamId = isUserTeamA ? teamAId : teamBId;
 
         const html = `
             <div class="match-tooltip-grid">
@@ -1479,7 +1477,7 @@ const MatchesPanel = (function() {
             </div>
             <div class="match-tooltip-footer">
                 <a href="#/teams/${isUserTeamB && !isUserTeamA ? teamBId : teamAId}/h2h/${isUserTeamB && !isUserTeamA ? teamAId : teamBId}" class="match-tooltip-h2h-link">View Head-to-Head</a>
-                ${showFindStandin ? `<button class="match-tooltip-standin-btn" data-team-id="${userTeamId}" data-week-id="${weekId}" data-slot-id="${slotId}">Find standin</button>` : ''}
+                ${isScheduledMatchRow ? `<button class="match-tooltip-standin-btn" data-team-id="${userTeamId}" data-week-id="${weekId}" data-slot-id="${slotId}">Find standin</button>` : ''}
             </div>
         `;
 
@@ -1621,9 +1619,16 @@ const MatchesPanel = (function() {
         });
     }
 
+    function refresh() {
+        if (_container && _initialized) {
+            _renderAll();
+        }
+    }
+
     return {
         init,
         cleanup,
-        expandProposal
+        expandProposal,
+        refresh
     };
 })();

@@ -6,6 +6,7 @@ const QuickAddMatchModal = (function() {
     'use strict';
 
     let _schedulerTeamIds = [];
+    let _allUserTeamIds = [];
     let _selectedGameType = 'official';
     let _selectedOpponentId = '';
     let _keydownHandler = null;
@@ -14,14 +15,16 @@ const QuickAddMatchModal = (function() {
     /**
      * Show the quick-add match modal.
      * @param {string[]} schedulerTeamIds - Team IDs where user is leader/scheduler
+     * @param {string[]} allUserTeamIds - All team IDs user is a member of
      */
-    function show(schedulerTeamIds) {
+    function show(schedulerTeamIds, allUserTeamIds) {
         if (!schedulerTeamIds || schedulerTeamIds.length === 0) {
             ToastService.showError('No teams with scheduler permissions');
             return;
         }
 
         _schedulerTeamIds = schedulerTeamIds;
+        _allUserTeamIds = allUserTeamIds || schedulerTeamIds;
         _selectedGameType = 'official';
         _renderModal();
     }
@@ -40,7 +43,10 @@ const QuickAddMatchModal = (function() {
             `<option value="${t}"${t === '21:00' ? ' selected' : ''}>${t}</option>`
         ).join('');
 
-        // Build team selector (only if user is scheduler on 2 teams)
+        // Build team selector
+        // - 1 team total: hidden input (no ambiguity)
+        // - Multiple teams, 1 scheduler: show as static label so user sees which team
+        // - Multiple teams, 2+ schedulers: show as dropdown
         let teamSelectorHtml;
         if (_schedulerTeamIds.length > 1) {
             const opts = _schedulerTeamIds.map(tid => {
@@ -53,6 +59,20 @@ const QuickAddMatchModal = (function() {
                     <select id="qa-team" class="w-full bg-input border border-border rounded px-2 py-1.5 text-sm text-foreground">
                         ${opts}
                     </select>
+                </div>
+            `;
+        } else if (_allUserTeamIds.length > 1) {
+            // User is on multiple teams but scheduler on only 1 — show which team (read-only)
+            const t = TeamService.getTeamFromCache(autoTeamId);
+            const logo = t?.activeLogo?.urls?.small;
+            teamSelectorHtml = `
+                <input type="hidden" id="qa-team" value="${autoTeamId}">
+                <div>
+                    <label class="block text-xs text-muted-foreground mb-1">Your team</label>
+                    <div class="w-full bg-input border border-border rounded px-2 py-1.5 text-sm text-foreground flex items-center gap-2 opacity-80">
+                        ${logo ? `<img src="${logo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
+                        <span>${_escapeHtml(t?.teamName || autoTeamId)}</span>
+                    </div>
                 </div>
             `;
         } else {
@@ -390,6 +410,7 @@ const QuickAddMatchModal = (function() {
         modalContainer.innerHTML = '';
         modalContainer.classList.add('hidden');
         _schedulerTeamIds = [];
+        _allUserTeamIds = [];
         _selectedGameType = 'official';
         _selectedOpponentId = '';
         _dropdownOpen = false;

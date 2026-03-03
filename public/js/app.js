@@ -229,16 +229,28 @@ const MatchSchedulerApp = (function() {
 
         // Listen for timezone changes (Slice 7.0c) - rebuild grids with new UTC mappings
         window.addEventListener('timezone-changed', () => {
-            _weekDisplay1.rebuildGrid();
-            _weekDisplay2.rebuildGrid();
+            try {
+                if (_weekDisplay1) _weekDisplay1.rebuildGrid();
+                if (_weekDisplay2) _weekDisplay2.rebuildGrid();
 
-            // Re-setup availability listeners so grid re-renders with team data
-            if (_selectedTeam) {
-                _setupAvailabilityListeners(_selectedTeam.id);
+                // Re-setup availability listeners so grid re-renders with team data
+                if (_selectedTeam) {
+                    _setupAvailabilityListeners(_selectedTeam.id);
+                }
+
+                // Refresh scheduled match highlights after grid rebuild
+                _updateScheduledMatchHighlights();
+
+                // Re-render match times in panels that display formatted times
+                if (typeof MatchesPanel !== 'undefined' && MatchesPanel.refresh) {
+                    MatchesPanel.refresh();
+                }
+                if (typeof UpcomingMatchesPanel !== 'undefined' && UpcomingMatchesPanel.refresh) {
+                    UpcomingMatchesPanel.refresh();
+                }
+            } catch (err) {
+                console.error('timezone-changed handler error:', err);
             }
-
-            // Refresh scheduled match highlights after grid rebuild
-            _updateScheduledMatchHighlights();
         });
 
         // Listen for timeslot filter changes (Slice 12.0a) - rebuild grids with fewer/more rows

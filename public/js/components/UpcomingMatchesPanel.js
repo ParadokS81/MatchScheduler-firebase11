@@ -413,7 +413,7 @@ const UpcomingMatchesPanel = (function() {
         const isUserTeamA = _userTeamIds.includes(teamAId);
         const isUserTeamB = _userTeamIds.includes(teamBId);
 
-        const userTeamId = isUserTeamA ? teamAId : (isUserTeamB ? teamBId : null);
+        const userTeamId = isUserTeamA ? teamAId : teamBId;
 
         const html = `
             <div class="match-tooltip-grid">
@@ -438,7 +438,7 @@ const UpcomingMatchesPanel = (function() {
             </div>
             <div class="match-tooltip-footer">
                 <a href="#/teams/${isUserTeamB && !isUserTeamA ? teamBId : teamAId}/h2h/${isUserTeamB && !isUserTeamA ? teamAId : teamBId}" class="match-tooltip-h2h-link">View Head-to-Head</a>
-                ${userTeamId ? `<button class="match-tooltip-standin-btn" data-team-id="${userTeamId}" data-week-id="${weekId}" data-slot-id="${slotId}">Find standin</button>` : ''}
+                <button class="match-tooltip-standin-btn" data-team-id="${userTeamId}" data-week-id="${weekId}" data-slot-id="${slotId}">Find standin</button>
             </div>
         `;
 
@@ -530,8 +530,15 @@ const UpcomingMatchesPanel = (function() {
 
     // ─── Public API ─────────────────────────────────────────────────────
 
+    function refresh() {
+        if (_yourMatchesContainer || _upcomingContainer) {
+            _render();
+        }
+    }
+
     return {
         init,
-        cleanup
+        cleanup,
+        refresh
     };
 })();
