@@ -413,32 +413,13 @@ const MatchesPanel = (function() {
         // Don't show Discord button if user is on both sides (would message themselves)
         const showDiscord = canAct && !(isProposerSide && isOpponentSide) && type === 'active';
 
-        // Team logos from cache
+        // Team logos + tags from cache
         const proposerTeam = TeamService.getTeamFromCache(proposal.proposerTeamId);
         const opponentTeam = TeamService.getTeamFromCache(proposal.opponentTeamId);
         const proposerLogo = proposerTeam?.activeLogo?.urls?.small || '';
         const opponentLogo = opponentTeam?.activeLogo?.urls?.small || '';
-
-        // Compute viable slot count for badge (with standin math for practice)
-        let slotCount = 0;
-        if (type === 'active') {
-            const standinSettings = proposal.gameType === 'practice'
-                ? { proposerStandin: !!proposal.proposerStandin, opponentStandin: !!proposal.opponentStandin }
-                : undefined;
-            const slots = ProposalService.computeViableSlots(
-                proposal.proposerTeamId,
-                proposal.opponentTeamId,
-                proposal.weekId,
-                proposal.minFilter,
-                standinSettings
-            );
-            const now = new Date();
-            slotCount = slots.filter(s => !_isSlotPast(proposal.weekId, s.slotId, now)).length;
-        }
-
-        // Status line for row 2
-        const status = type === 'active' ? _getProposalStatus(proposal, isProposerSide) : { text: '', cls: '' };
-        const weekNum = proposal.weekId?.split('-')[1] || '?';
+        const proposerTag = proposal.proposerTeamTag || proposerTeam?.teamTag || '?';
+        const opponentTag = proposal.opponentTeamTag || opponentTeam?.teamTag || '?';
 
         // Card-level game type toggle state — pre-populate from proposal doc if not set locally
         if (!_selectedGameTypes[proposal.id] && proposal.gameType) {
@@ -460,18 +441,57 @@ const MatchesPanel = (function() {
 
         const cardClass = type === 'archived' ? 'opacity-50' : '';
 
+        // Game type buttons HTML (shared between canAct and non-canAct)
+        const gameTypeBtnsHtml = canAct && type === 'active' ? (() => {
+            const myStandin = isProposerSide ? proposal.proposerStandin : proposal.opponentStandin;
+            const theirStandin = isProposerSide ? proposal.opponentStandin : proposal.proposerStandin;
+            const gameTypeIsSet = selectedType || proposal.gameType;
+            const isPrac = gameTypeIsSet === 'practice';
+            return `
+                <button class="game-type-btn px-1.5 py-0.5 rounded border transition-colors text-xs
+                        ${selectedType === 'official' ? 'border-green-500 text-green-400 bg-green-500/10' : hintType === 'official' ? 'border-green-500/50 text-green-400/60' : 'border-border text-muted-foreground'}
+                        hover:text-green-400 hover:border-green-500/50"
+                        data-action="card-game-type" data-proposal-id="${proposal.id}" data-type="official">
+                    Official
+                </button>
+                <button class="game-type-btn px-1.5 py-0.5 rounded border transition-colors text-xs
+                        ${selectedType === 'practice' ? 'border-amber-500 text-amber-400 bg-amber-500/10' : hintType === 'practice' ? 'border-amber-500/50 text-amber-400/60' : 'border-border text-muted-foreground'}
+                        hover:text-amber-400 hover:border-amber-500/50"
+                        data-action="card-game-type" data-proposal-id="${proposal.id}" data-type="practice">
+                    Practice
+                </button>
+                ${isPrac ? `
+                    <button class="px-1.5 py-0.5 rounded border text-xs transition-colors
+                            ${myStandin ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10' : 'border-border text-muted-foreground hover:text-cyan-400 hover:border-cyan-500/50'}"
+                            data-action="toggle-standin" data-proposal-id="${proposal.id}"
+                            title="Toggle standin (+1) for your team">
+                        SI${myStandin ? ' ✓' : ''}
+                    </button>
+                    ${theirStandin ? '<span class="text-cyan-400/60 text-xs" title="Opponent has standin enabled">+SI</span>' : ''}
+                ` : ''}`;
+        })() : (() => {
+            // Non-participant: show read-only badges
+            const gt = proposal.gameType;
+            if (!gt) return '';
+            return gt === 'official'
+                ? `<span class="px-1.5 py-0.5 rounded border border-green-500 text-green-400 bg-green-500/10 text-xs">Official</span>`
+                : `<span class="px-1.5 py-0.5 rounded border border-amber-500 text-amber-400 bg-amber-500/10 text-xs">Practice</span>`;
+        })();
+
         return `
             <div class="proposal-card rounded-lg border border-border bg-card cursor-pointer ${cardClass}"
                  data-proposal-id="${proposal.id}"
                  ${type === 'active' ? `data-action="toggle-expand"` : ''}>
-                <!-- Row 1: Logos + Teams + Slot Count + Discord + Expand -->
-                <div class="proposal-card-header flex items-center gap-2 p-2.5">
-                    ${proposerLogo ? `<img src="${proposerLogo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
-                    <span class="text-sm font-medium truncate min-w-0">${_escapeHtml(proposal.proposerTeamName)} <span class="${proposal.gameType === 'practice' ? 'text-amber-400' : 'text-green-400'} font-semibold">vs</span> ${_escapeHtml(proposal.opponentTeamName)}</span>
-                    ${opponentLogo ? `<img src="${opponentLogo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
-                    <div class="flex items-center gap-1.5 shrink-0 ml-auto">
-                        ${type === 'active' ? `<span class="text-xs bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">${slotCount}</span>` : ''}
-                        ${showDiscord ? `
+                <!-- Single header row: [badges] ... [teams + logos] [discord] [arrow] -->
+                <div class="proposal-card-header slot-grid-row p-2.5">
+                    <div class="flex items-center gap-1.5" style="grid-column: 1 / 3;">
+                        ${gameTypeBtnsHtml}
+                    </div>
+                    <div class="flex items-center gap-1.5" style="grid-column: 4 / 7;">
+                        ${proposerLogo ? `<img src="${proposerLogo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
+                        <span class="text-sm font-medium whitespace-nowrap">${_escapeHtml(proposal.proposerTeamName)} <span class="${proposal.gameType === 'practice' ? 'text-amber-400' : 'text-green-400'} font-semibold">vs</span> ${_escapeHtml(proposal.opponentTeamName)}</span>
+                        ${opponentLogo ? `<img src="${opponentLogo}" class="w-5 h-5 rounded-sm object-cover shrink-0" alt="">` : ''}
+                        ${showDiscord && !isExpanded ? `
                             <button class="p-1 rounded hover:bg-[#5865F2]/20 text-muted-foreground hover:text-[#5865F2] transition-colors"
                                     data-action="discord-contact" data-proposal-id="${proposal.id}"
                                     title="Contact opponent on Discord">
@@ -481,52 +501,13 @@ const MatchesPanel = (function() {
                         ${type === 'active' ? `<span class="text-muted-foreground text-xs">${isExpanded ? '▲' : '▼'}</span>` : ''}
                     </div>
                 </div>
-                <!-- Row 2: Min filter + Week + Game Type + Status -->
-                <div class="flex items-center gap-1.5 px-2.5 pb-2 text-xs">
-                    <span class="text-muted-foreground">Min ${proposal.minFilter?.yourTeam || 1}v${proposal.minFilter?.opponent || 1}</span>
-                    <span class="text-muted-foreground/50">·</span>
-                    <span class="text-muted-foreground">W${weekNum}</span>
-                    ${canAct && type === 'active' ? (() => {
-                        const myStandin = isProposerSide ? proposal.proposerStandin : proposal.opponentStandin;
-                        const theirStandin = isProposerSide ? proposal.opponentStandin : proposal.proposerStandin;
-                        const gameTypeIsSet = selectedType || proposal.gameType;
-                        const isPrac = gameTypeIsSet === 'practice';
-                        return `
-                        <span class="text-muted-foreground/50">·</span>
-                        <button class="game-type-btn px-1.5 py-0.5 rounded border transition-colors
-                                ${selectedType === 'official' ? 'border-green-500 text-green-400 bg-green-500/10' : hintType === 'official' ? 'border-green-500/50 text-green-400/60' : 'border-border text-muted-foreground'}
-                                hover:text-green-400 hover:border-green-500/50"
-                                data-action="card-game-type" data-proposal-id="${proposal.id}" data-type="official">
-                            Official
-                        </button>
-                        <button class="game-type-btn px-1.5 py-0.5 rounded border transition-colors
-                                ${selectedType === 'practice' ? 'border-amber-500 text-amber-400 bg-amber-500/10' : hintType === 'practice' ? 'border-amber-500/50 text-amber-400/60' : 'border-border text-muted-foreground'}
-                                hover:text-amber-400 hover:border-amber-500/50"
-                                data-action="card-game-type" data-proposal-id="${proposal.id}" data-type="practice">
-                            Practice
-                        </button>
-                        ${isPrac ? `
-                            <button class="px-1.5 py-0.5 rounded border text-xs transition-colors
-                                    ${myStandin ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10' : 'border-border text-muted-foreground hover:text-cyan-400 hover:border-cyan-500/50'}"
-                                    data-action="toggle-standin" data-proposal-id="${proposal.id}"
-                                    title="Toggle standin (+1) for your team">
-                                SI${myStandin ? ' ✓' : ''}
-                            </button>
-                            ${theirStandin ? '<span class="text-cyan-400/60 text-xs" title="Opponent has standin enabled">+SI</span>' : ''}
-                        ` : ''}`;
-                    })() : ''}
-                    ${status.text ? `
-                        <span class="text-muted-foreground/50">·</span>
-                        <span class="${status.cls}">${status.text}</span>
-                    ` : ''}
-                </div>
                 ${expandedContent}
             </div>
         `;
     }
 
     /**
-     * Render expanded proposal with live slots
+     * Render expanded proposal with live slots — toggle layout
      */
     function _renderExpandedProposal(proposal) {
         const standinSettings = proposal.gameType === 'practice'
@@ -547,110 +528,124 @@ const MatchesPanel = (function() {
         const isOpponentSide = _isUserOnSide(proposal, 'opponent');
         const canAct = isProposerSide || isOpponentSide;
 
-        const myConfirmedSlots = isProposerSide
-            ? (proposal.proposerConfirmedSlots || {})
-            : (proposal.opponentConfirmedSlots || {});
-        const theirConfirmedSlots = isProposerSide
-            ? (proposal.opponentConfirmedSlots || {})
-            : (proposal.proposerConfirmedSlots || {});
-
         // Filter out past slots from display
         const visibleSlots = viableSlots.filter(slot => !_isSlotPast(proposal.weekId, slot.slotId, now));
 
-        // Card-level game type selection for Confirm buttons
+        // Card-level game type for Confirm buttons
         const cardGameType = _selectedGameTypes[proposal.id] || null;
         const hasGameType = !!cardGameType;
         const gameTypeLabel = cardGameType === 'practice' ? 'Practice' : 'Official';
 
-        const slotsHtml = visibleSlots.map(slot => {
-            const myConfirm = myConfirmedSlots[slot.slotId];
-            const theirConfirm = theirConfirmedSlots[slot.slotId];
-            const iConfirmed = !!myConfirm;
-            const theyConfirmed = !!theirConfirm;
-            const bothConfirmed = iConfirmed && theyConfirmed;
+        // Team logos for slot toggle rows
+        const proposerTeam = TeamService.getTeamFromCache(proposal.proposerTeamId);
+        const opponentTeam = TeamService.getTeamFromCache(proposal.opponentTeamId);
+        const proposerLogo = proposerTeam?.activeLogo?.urls?.small || '';
+        const opponentLogo = opponentTeam?.activeLogo?.urls?.small || '';
+        const proposerTag = proposal.proposerTeamTag || proposerTeam?.teamTag || '?';
+        const opponentTag = proposal.opponentTeamTag || opponentTeam?.teamTag || '?';
 
-            // Warning: availability dropped below countAtConfirm
-            const myCount = isProposerSide ? slot.proposerCount : slot.opponentCount;
-            const droppedWarning = iConfirmed && myConfirm.countAtConfirm && myCount < myConfirm.countAtConfirm;
+        const slotsHtml = visibleSlots.map(slot => {
+            // Confirmation state: left = proposer, right = opponent (always)
+            const leftConfirm = proposal.proposerConfirmedSlots?.[slot.slotId];
+            const rightConfirm = proposal.opponentConfirmedSlots?.[slot.slotId];
+            const leftConfirmed = !!leftConfirm;
+            const rightConfirmed = !!rightConfirm;
+            const bothConfirmed = leftConfirmed && rightConfirmed;
+
+            // Drop warnings: count dropped below what was confirmed
+            const leftDropped = !!leftConfirm && leftConfirm.countAtConfirm && slot.proposerCount < leftConfirm.countAtConfirm;
+            const rightDropped = !!rightConfirm && rightConfirm.countAtConfirm && slot.opponentCount < rightConfirm.countAtConfirm;
 
             const display = TimezoneService.formatSlotForDisplay(slot.slotId);
 
-            // Build status text with game type labels
-            const myTypeLabel = iConfirmed && myConfirm.gameType
-                ? (myConfirm.gameType === 'practice' ? 'PRAC' : 'OFFI') : '';
-            const theirTypeLabel = theyConfirmed && theirConfirm.gameType
-                ? (theirConfirm.gameType === 'practice' ? 'PRAC' : 'OFFI') : '';
+            // Count display with standin markers
+            const pCount = slot.proposerStandin ? `${slot.proposerCount}<span class="text-cyan-400">+1</span>` : slot.proposerCount;
+            const oCount = slot.opponentStandin ? `${slot.opponentCount}<span class="text-cyan-400">+1</span>` : slot.opponentCount;
 
-            let statusIcon = '';
-            if (bothConfirmed) {
-                statusIcon = `✓✓ ${myTypeLabel}`;
-            } else if (theyConfirmed) {
-                statusIcon = `✓ them${theirTypeLabel ? ` (${theirTypeLabel})` : ''}`;
-            } else if (iConfirmed) {
-                statusIcon = '✓ you';
-            }
+            // Row background
+            let rowBg = '';
+            if (bothConfirmed) rowBg = ' bg-green-500/10 border border-green-500/30';
 
-            let rowClasses = 'slot-row py-1.5 px-2 rounded text-sm';
-            if (bothConfirmed) rowClasses += ' bg-green-500/10 border border-green-500/30';
-            else if (droppedWarning) rowClasses += ' bg-amber-500/10 border border-amber-500/30';
+            // Left toggle (proposer side) — pill style
+            const leftInteractive = isProposerSide;
+            const leftAction = leftConfirmed ? 'withdraw' : 'confirm';
+            const leftDisabled = !leftInteractive || (!leftConfirmed && !hasGameType);
+            const leftState = leftConfirmed ? (leftDropped ? 'warn' : 'on') : 'off';
+            const leftTitle = !leftInteractive
+                ? (leftConfirmed ? proposerTag + ' confirmed' : 'Waiting for ' + proposerTag)
+                : (leftConfirmed
+                    ? (leftDropped ? 'Count dropped since confirmed — click to withdraw' : 'Click to withdraw your confirmation')
+                    : (hasGameType ? `Confirm as ${gameTypeLabel}` : 'Select Official or Practice first'));
+            const leftToggleHtml = leftInteractive
+                ? `<button class="slot-toggle-pill" data-state="${leftState}"
+                        data-action="${leftAction}" data-proposal-id="${proposal.id}" data-slot="${slot.slotId}"
+                        ${leftDisabled ? 'disabled' : ''}
+                        title="${leftTitle}"><span class="slot-toggle-thumb"></span></button>`
+                : `<div class="slot-toggle-pill readonly" data-state="${leftState}"
+                       title="${leftTitle}"><span class="slot-toggle-thumb"></span></div>`;
+
+            // Right toggle/indicator (opponent side) — pill style
+            const rightInteractive = isOpponentSide;
+            const rightAction = rightConfirmed ? 'withdraw' : 'confirm';
+            const rightDisabled = !rightInteractive || (!rightConfirmed && !hasGameType);
+            const rightState = rightConfirmed ? (rightDropped ? 'warn' : 'on') : 'off';
+            const rightTitle = !rightInteractive
+                ? (rightConfirmed ? opponentTag + ' confirmed' : 'Waiting for ' + opponentTag)
+                : (rightConfirmed
+                    ? (rightDropped ? 'Count dropped since confirmed — click to withdraw' : 'Click to withdraw your confirmation')
+                    : (hasGameType ? `Confirm as ${gameTypeLabel}` : 'Select Official or Practice first'));
+            const rightToggleHtml = rightInteractive
+                ? `<button class="slot-toggle-pill" data-state="${rightState}"
+                        data-action="${rightAction}" data-proposal-id="${proposal.id}" data-slot="${slot.slotId}"
+                        ${rightDisabled ? 'disabled' : ''}
+                        title="${rightTitle}"><span class="slot-toggle-thumb"></span></button>`
+                : `<div class="slot-toggle-pill readonly" data-state="${rightState}"
+                       title="${rightTitle}"><span class="slot-toggle-thumb"></span></div>`;
 
             return `
-                <div class="${rowClasses}"
-                     data-slot-id="${slot.slotId}"
+                <div class="slot-row slot-grid-row py-1.5 px-2 rounded text-sm${rowBg}"
                      data-team-a="${proposal.proposerTeamId}" data-team-b="${proposal.opponentTeamId}"
-                     data-week-id="${proposal.weekId}">
-                    <span class="slot-col-day font-medium">${display.dayLabel}</span>
-                    <span class="slot-col-time font-medium">${display.timeLabel}</span>
-                    <span class="slot-col-count text-xs text-muted-foreground cursor-help">${slot.proposerStandin ? slot.proposerCount + '<span class="text-cyan-400">+1</span>' : slot.proposerCount}v${slot.opponentStandin ? slot.opponentCount + '<span class="text-cyan-400">+1</span>' : slot.opponentCount}</span>
-                    <span class="slot-col-status text-xs">
-                        ${droppedWarning ? '<span class="text-amber-400" title="Player count dropped since confirmed">⚠</span>' : ''}
-                        ${statusIcon ? `<span class="${bothConfirmed ? 'text-green-400' : 'text-muted-foreground'}">${statusIcon}</span>` : ''}
-                    </span>
-                    <div class="slot-col-actions flex items-center gap-1 justify-end">
-                        ${canAct ? `
-                            ${iConfirmed ? `
-                                ${myTypeLabel ? `<span class="text-xs text-muted-foreground">${myTypeLabel}</span>` : ''}
-                                <button class="proposal-withdraw-btn text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground"
-                                        data-action="withdraw" data-proposal-id="${_expandedProposalId}" data-slot="${slot.slotId}">
-                                    Withdraw
-                                </button>
-                            ` : `
-                                <button class="proposal-confirm-btn text-xs px-2 py-0.5 rounded border transition-colors
-                                        ${hasGameType
-                                            ? 'bg-primary text-primary-foreground hover:bg-primary/80 border-primary'
-                                            : 'border-border text-muted-foreground/40 cursor-not-allowed'}"
-                                        data-action="confirm" data-proposal-id="${_expandedProposalId}" data-slot="${slot.slotId}"
-                                        ${hasGameType ? '' : 'disabled'}
-                                        title="${hasGameType ? `Confirm as ${gameTypeLabel}` : 'Select OFF or PRAC above'}">
-                                    Confirm
-                                </button>
-                            `}
-                        ` : ''}
-                    </div>
+                     data-week-id="${proposal.weekId}" data-slot-id="${slot.slotId}">
+                    <span class="font-medium">${display.dayLabel}</span>
+                    <span class="font-medium">${display.timeLabel}</span>
+                    <span></span>
+                    ${leftToggleHtml}
+                    <span class="text-xs text-muted-foreground slot-col-count">${pCount}v${oCount}</span>
+                    ${rightToggleHtml}
                 </div>
             `;
         }).join('');
 
-        // "Load Grid View" and "Cancel" buttons
-        const opponentTeamId = isProposerSide ? proposal.opponentTeamId : proposal.proposerTeamId;
+        // Bottom row: Contact (collapsed Discord) + Withdraw Proposal
+        const showContact = canAct && !(isProposerSide && isOpponentSide);
+        const contactLogo = isProposerSide ? opponentLogo : proposerLogo;
+        const contactTag = isProposerSide ? opponentTag : proposerTag;
 
         return `
             <div class="proposal-expanded border-t border-border p-2.5">
-                <div class="space-y-1">
-                    ${slotsHtml || '<p class="text-xs text-muted-foreground italic">No viable slots this week</p>'}
+                <!-- Team tags header aligned to grid columns -->
+                <div class="slot-grid-row px-2 pb-1">
+                    <span></span><span></span><span></span>
+                    <span class="text-[0.65rem] text-muted-foreground/70 font-medium text-center">${_escapeHtml(proposerTag)}</span>
+                    <span></span>
+                    <span class="text-[0.65rem] text-muted-foreground/70 font-medium text-center">${_escapeHtml(opponentTag)}</span>
                 </div>
-                <div class="flex gap-2 mt-3">
-                    <button class="text-xs px-2 py-1 rounded bg-muted hover:bg-muted/80 text-muted-foreground"
-                            data-action="load-grid" data-team="${opponentTeamId}"
-                            data-week="${proposal.weekId}"
-                            data-min-your="${proposal.minFilter?.yourTeam || 1}"
-                            data-min-opp="${proposal.minFilter?.opponent || 1}">
-                        Load Grid View
-                    </button>
+                <div class="space-y-1">
+                    ${slotsHtml || '<p class="text-xs text-muted-foreground italic px-2">No viable slots this week</p>'}
+                </div>
+                <div class="flex items-center justify-between mt-3">
+                    ${showContact ? `
+                        <button class="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-[#5865F2]/20 text-muted-foreground hover:text-[#5865F2] transition-colors"
+                                data-action="discord-contact" data-proposal-id="${proposal.id}">
+                            Contact
+                            ${contactLogo ? `<img src="${contactLogo}" class="w-4 h-4 rounded-sm object-cover" alt="${_escapeHtml(contactTag)}">` : ''}
+                            ${DISCORD_ICON_SVG}
+                        </button>
+                    ` : '<div></div>'}
                     ${canAct ? `
                         <button class="text-xs px-2 py-1 rounded text-red-400 hover:text-red-300 hover:bg-red-500/10"
                                 data-action="cancel-proposal" data-proposal-id="${proposal.id}">
-                            Cancel
+                            Withdraw Proposal
                         </button>
                     ` : ''}
                 </div>
@@ -875,9 +870,6 @@ const MatchesPanel = (function() {
             case 'cancel-proposal':
                 await _handleCancelProposal(proposalId, target);
                 break;
-            case 'load-grid':
-                _handleLoadGridView(target.dataset.team, target.dataset.week, target.dataset.minYour, target.dataset.minOpp);
-                break;
             case 'cancel-match':
                 await _handleCancelMatch(target.dataset.matchId, target);
                 break;
@@ -998,7 +990,6 @@ const MatchesPanel = (function() {
         }
 
         btn.disabled = true;
-        btn.textContent = '...';
 
         try {
             const result = await ProposalService.confirmSlot(proposalId, slotId, gameType);
@@ -1016,13 +1007,11 @@ const MatchesPanel = (function() {
             } else {
                 ToastService.showError(result.error || 'Failed to confirm');
                 btn.disabled = false;
-                btn.textContent = 'Confirm';
             }
         } catch (error) {
             console.error('Confirm slot error:', error);
             ToastService.showError('Network error — please try again');
             btn.disabled = false;
-            btn.textContent = 'Confirm';
         }
     }
 
@@ -1053,51 +1042,107 @@ const MatchesPanel = (function() {
      */
     async function _handleWithdrawSlot(proposalId, slotId, btn) {
         btn.disabled = true;
-        btn.textContent = '...';
 
         try {
             const result = await ProposalService.withdrawConfirmation(proposalId, slotId);
 
             if (result.success) {
                 ToastService.showSuccess('Confirmation withdrawn');
+                // UI updates via listener automatically
             } else {
                 ToastService.showError(result.error || 'Failed to withdraw');
                 btn.disabled = false;
-                btn.textContent = 'Withdraw';
             }
         } catch (error) {
             console.error('Withdraw error:', error);
             ToastService.showError('Network error — please try again');
             btn.disabled = false;
-            btn.textContent = 'Withdraw';
         }
     }
 
     /**
-     * Cancel a proposal
+     * Withdraw a proposal (with confirmation modal)
      */
     async function _handleCancelProposal(proposalId, btn) {
+        const proposal = ProposalService.getProposal(proposalId);
+        const proposerName = proposal?.proposerTeamName || '';
+        const opponentName = proposal?.opponentTeamName || '';
+
+        // Show themed confirmation modal
+        const modalHTML = `
+            <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+                 id="withdraw-proposal-backdrop">
+                <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm overflow-hidden">
+                    <div class="flex items-center justify-between p-4 border-b border-border">
+                        <h2 class="text-sm font-semibold text-foreground">Withdraw Proposal</h2>
+                        <button id="withdraw-proposal-close" class="text-muted-foreground hover:text-foreground transition-colors p-1">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="p-4">
+                        <p class="text-sm text-foreground mb-1">Withdraw proposal for <strong>${_escapeHtml(proposerName)} vs ${_escapeHtml(opponentName)}</strong>?</p>
+                        <p class="text-xs text-muted-foreground">Both teams will lose their confirmed slots.</p>
+                    </div>
+                    <div class="flex gap-3 justify-end p-4 border-t border-border">
+                        <button id="withdraw-proposal-dismiss"
+                            class="px-4 py-2 rounded-lg border border-border hover:bg-muted transition-colors text-foreground text-sm">
+                            Keep Proposal
+                        </button>
+                        <button id="withdraw-proposal-confirm"
+                            class="px-4 py-2 rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors text-sm">
+                            Withdraw Proposal
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const modalContainer = document.getElementById('modal-container');
+        modalContainer.innerHTML = modalHTML;
+        modalContainer.classList.remove('hidden');
+
+        const confirmed = await new Promise((resolve) => {
+            const closeModal = (result) => {
+                modalContainer.innerHTML = '';
+                modalContainer.classList.add('hidden');
+                document.removeEventListener('keydown', keydownHandler);
+                resolve(result);
+            };
+            const keydownHandler = (e) => { if (e.key === 'Escape') closeModal(false); };
+            document.getElementById('withdraw-proposal-backdrop')?.addEventListener('click', (e) => {
+                if (e.target.id === 'withdraw-proposal-backdrop') closeModal(false);
+            });
+            document.getElementById('withdraw-proposal-close')?.addEventListener('click', () => closeModal(false));
+            document.getElementById('withdraw-proposal-dismiss')?.addEventListener('click', () => closeModal(false));
+            document.getElementById('withdraw-proposal-confirm')?.addEventListener('click', () => closeModal(true));
+            document.addEventListener('keydown', keydownHandler);
+        });
+
+        if (!confirmed) return;
+
         btn.disabled = true;
-        btn.textContent = 'Cancelling...';
+        btn.textContent = 'Withdrawing...';
 
         try {
             const result = await ProposalService.cancelProposal(proposalId);
 
             if (result.success) {
-                ToastService.showSuccess('Proposal cancelled');
+                ToastService.showSuccess('Proposal withdrawn');
                 if (_expandedProposalId === proposalId) {
                     _collapseCard();
                 }
             } else {
-                ToastService.showError(result.error || 'Failed to cancel');
+                ToastService.showError(result.error || 'Failed to withdraw');
                 btn.disabled = false;
-                btn.textContent = 'Cancel';
+                btn.textContent = 'Withdraw Proposal';
             }
         } catch (error) {
-            console.error('Cancel proposal error:', error);
+            console.error('Withdraw proposal error:', error);
             ToastService.showError('Network error — please try again');
             btn.disabled = false;
-            btn.textContent = 'Cancel';
+            btn.textContent = 'Withdraw Proposal';
         }
     }
 
@@ -1152,41 +1197,6 @@ const MatchesPanel = (function() {
                 ToastService.showError('Network error — please try again');
             }
         });
-    }
-
-    /**
-     * Load Grid View shortcut — switch to calendar tab with comparison set up
-     * Navigates to the proposal's week, selects opponent, sets filters, activates comparison.
-     */
-    function _handleLoadGridView(opponentTeamId, weekId, minYour, minOpp) {
-        if (!opponentTeamId || !weekId) {
-            console.error('Load Grid View: missing opponentTeamId or weekId');
-            return;
-        }
-
-        console.log('📅 Load Grid View:', { opponentTeamId, weekId, minYour, minOpp });
-
-        try {
-            // 1. Navigate to the proposal's week (must happen before comparison calculates)
-            const weekNumber = parseInt(weekId.split('-')[1]);
-            WeekNavigation.setWeekNumber(weekNumber);
-
-            // 2. Select the opponent team in the browser
-            if (typeof TeamBrowserState !== 'undefined') {
-                TeamBrowserState.clearSelection();
-                TeamBrowserState.selectTeam(opponentTeamId);
-            }
-
-            // 4. Set min-vs-min filters
-            // Comparison activates implicitly from team selection in step 3 (Slice 17.0)
-            const filters = {
-                yourTeam: parseInt(minYour) || 1,
-                opponent: parseInt(minOpp) || 1
-            };
-            window.dispatchEvent(new CustomEvent('filter-changed', { detail: filters }));
-        } catch (error) {
-            console.error('❌ Load Grid View failed:', error);
-        }
     }
 
     // ─── Discord Contact ─────────────────────────────────────────────
@@ -1369,11 +1379,15 @@ const MatchesPanel = (function() {
     function _handleMatchRowLeave(e) {
         if (!_rosterTooltipAnchor) return;
 
-        const row = e.target.closest('.upcoming-match-row') || e.target.closest('.slot-row');
-        if (!row || row !== _rosterTooltipAnchor) return;
-
-        // Don't hide if pointer moved to a child within the row
+        // Don't hide if pointer moved to a child within the current anchor row
         if (e.relatedTarget && _rosterTooltipAnchor.contains(e.relatedTarget)) return;
+
+        // Don't hide if pointer moved to the tooltip itself
+        if (e.relatedTarget && _rosterTooltip && _rosterTooltip.contains(e.relatedTarget)) return;
+
+        // Check if this leave event involves the current anchor row
+        const leavingAnchor = e.target === _rosterTooltipAnchor || _rosterTooltipAnchor.contains(e.target);
+        if (!leavingAnchor) return;
 
         _rosterTooltipHideTimeout = setTimeout(() => {
             if (_rosterTooltip) _rosterTooltip.style.display = 'none';
