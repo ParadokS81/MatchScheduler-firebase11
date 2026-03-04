@@ -1370,10 +1370,8 @@ const MatchesPanel = (function() {
             _rosterTooltipHideTimeout = null;
         }
 
-        // Position tooltip at the count badge if present, otherwise at the row
-        const slotCount = row.querySelector('.slot-col-count');
         _rosterTooltipAnchor = row;
-        _showRosterTooltip(row, slotCount || row);
+        _showRosterTooltip(row, row);
     }
 
     function _handleMatchRowLeave(e) {
