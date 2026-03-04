@@ -160,9 +160,22 @@ const ProposalService = (function() {
             ...Object.keys(opponentSlots)
         ]);
 
+        // Pre-compute the Monday of this week for past-slot filtering
+        const weekMonday = DateUtils.getMondayOfWeek(weekId);
+        const DAY_OFFSET = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
+        const now = Date.now();
+
         let blockedCount = 0;
         let belowFilterCount = 0;
         for (const slotId of allSlotIds) {
+            // Skip past slots
+            const [slotDay, slotTime] = slotId.split('_');
+            const dayOff = DAY_OFFSET[slotDay] ?? 0;
+            const hours = parseInt(slotTime.slice(0, 2), 10);
+            const mins = parseInt(slotTime.slice(2, 4), 10);
+            const slotMs = weekMonday.getTime() + (dayOff * 86400 + hours * 3600 + mins * 60) * 1000;
+            if (slotMs <= now) continue;
+
             // Skip blocked slots
             if (proposerBlocked.has(slotId) || opponentBlocked.has(slotId)) {
                 blockedCount++;
