@@ -1365,32 +1365,41 @@ const MatchesPanel = (function() {
         const row = e.target.closest('.upcoming-match-row') || e.target.closest('.slot-row');
         if (!row) return;
 
+        // For grid rows, ignore hover in empty space past the right toggle
+        if (row.classList.contains('slot-grid-row')) {
+            const lastChild = row.lastElementChild;
+            if (lastChild) {
+                const lastRect = lastChild.getBoundingClientRect();
+                if (e.clientX > lastRect.right) {
+                    _hideRosterTooltip();
+                    return;
+                }
+            }
+        }
+
         if (_rosterTooltipHideTimeout) {
             clearTimeout(_rosterTooltipHideTimeout);
             _rosterTooltipHideTimeout = null;
         }
 
         _rosterTooltipAnchor = row;
-        _showRosterTooltip(row, row);
+        // Position tooltip to the right of the last child (right toggle column)
+        _showRosterTooltip(row, row.lastElementChild || row);
     }
 
     function _handleMatchRowLeave(e) {
         if (!_rosterTooltipAnchor) return;
 
-        // Don't hide if pointer moved to a child within the current anchor row
-        if (e.relatedTarget && _rosterTooltipAnchor.contains(e.relatedTarget)) return;
-
-        // Don't hide if pointer moved to the tooltip itself
+        // Don't hide if pointer moved into the tooltip itself
         if (e.relatedTarget && _rosterTooltip && _rosterTooltip.contains(e.relatedTarget)) return;
 
-        // Check if this leave event involves the current anchor row
-        const leavingAnchor = e.target === _rosterTooltipAnchor || _rosterTooltipAnchor.contains(e.target);
-        if (!leavingAnchor) return;
-
-        _rosterTooltipHideTimeout = setTimeout(() => {
-            if (_rosterTooltip) _rosterTooltip.style.display = 'none';
-            _rosterTooltipAnchor = null;
-        }, 150);
+        // Start hide timer — the enter handler will cancel it if mouse enters another row
+        if (!_rosterTooltipHideTimeout) {
+            _rosterTooltipHideTimeout = setTimeout(() => {
+                if (_rosterTooltip) _rosterTooltip.style.display = 'none';
+                _rosterTooltipAnchor = null;
+            }, 150);
+        }
     }
 
     function _hideRosterTooltip() {
