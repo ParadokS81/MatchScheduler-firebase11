@@ -462,7 +462,7 @@ const ComparisonModal = (function() {
 
     /**
      * Compute viable slots for the proposal picker using the 4v3 gate.
-     * Auto-selects all 4v4 slots. Updates _viableSlots and _selectedSlots.
+     * No auto-selection — user explicitly picks slots. Updates _viableSlots and clears _selectedSlots.
      */
     function _computeViableForProposal() {
         if (!_currentData || !_selectedGameType) return;
@@ -482,28 +482,19 @@ const ComparisonModal = (function() {
             standinSettings
         );
 
-        // Auto-select all 4v4 slots
+        // Start with empty selection — user picks explicitly
         _selectedSlots = new Set();
-        for (const slot of _viableSlots) {
-            const effectiveProposer = slot.proposerCount + (slot.proposerStandin ? 1 : 0);
-            const effectiveOpponent = slot.opponentCount + (slot.opponentStandin ? 1 : 0);
-            if (effectiveProposer >= 4 && effectiveOpponent >= 4) {
-                _selectedSlots.add(slot.slotId);
-            }
-        }
     }
 
     /**
-     * Render the 3-step horizontal stepper for the proposal flow.
-     * Step 1: Match Type (OFF/PRAC + standin)
-     * Step 2: Propose Match
-     * Step 3: Contact Opponent (Discord)
+     * Render the compact single-line stepper bar above the VS layout.
+     * Step 1: Game type buttons inline
+     * Step 2: "Select" label (slots are in center column)
+     * Step 3: Discord action buttons
      */
-    function _renderStepper() {
+    function _renderCompactStepper() {
         const step1Done = !!_selectedGameType;
         const step2Done = _proposalStep >= 3;
-        const step1Active = _proposalStep === 1 || (!step1Done && _proposalStep < 2);
-        const step2Active = _proposalStep === 2 || (step1Done && !step2Done);
         const step3Active = _proposalStep === 3;
 
         const checkSvg = `<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
@@ -511,161 +502,141 @@ const ComparisonModal = (function() {
 
         // Step circle helper
         const circle = (num, done, active) => {
-            if (done) return `<div class="w-5 h-5 rounded-full bg-green-500/20 border border-green-500 flex items-center justify-center text-green-400">${checkSvg}</div>`;
-            if (active) return `<div class="w-5 h-5 rounded-full bg-primary/20 border border-primary flex items-center justify-center text-primary text-xs font-bold">${num}</div>`;
-            return `<div class="w-5 h-5 rounded-full bg-muted/30 border border-border flex items-center justify-center text-muted-foreground/40 text-xs">${num}</div>`;
+            if (done) return `<div class="w-5 h-5 rounded-full bg-green-500/20 border border-green-500 flex items-center justify-center text-green-400 flex-shrink-0">${checkSvg}</div>`;
+            if (active) return `<div class="w-5 h-5 rounded-full bg-primary/20 border border-primary flex items-center justify-center text-primary text-xs font-bold flex-shrink-0">${num}</div>`;
+            return `<div class="w-5 h-5 rounded-full bg-muted/30 border border-border flex items-center justify-center text-muted-foreground/40 text-xs flex-shrink-0">${num}</div>`;
         };
 
         // Connector line
-        const line = (done) => `<div class="flex-1 h-px ${done ? 'bg-green-500/50' : 'bg-border'} mx-1"></div>`;
+        const line = (done) => `<div class="flex-1 h-px ${done ? 'bg-green-500/50' : 'bg-border'} mx-1 flex-shrink-0" style="min-width:1rem"></div>`;
 
-        // Step 1 content: Official/Practice + standin
-        const step1Content = `
-            <div class="flex items-center gap-1.5 mt-1.5">
-                <button id="game-type-off" class="px-2.5 py-0.5 rounded border text-xs font-medium transition-colors
-                        ${_selectedGameType === 'official' ? 'border-green-500 text-green-400 bg-green-500/10' : 'border-border text-muted-foreground hover:text-green-400 hover:border-green-500/50'}">
-                    Official
-                </button>
-                <button id="game-type-prac" class="px-2.5 py-0.5 rounded border text-xs font-medium transition-colors
-                        ${_selectedGameType === 'practice' ? 'border-amber-500 text-amber-400 bg-amber-500/10' : 'border-border text-muted-foreground hover:text-amber-400 hover:border-amber-500/50'}">
-                    Practice
-                </button>
-                ${_selectedGameType === 'practice' ? `
-                    <button id="standin-toggle" class="px-2 py-0.5 rounded border text-xs transition-colors
-                            ${_withStandin ? 'border-cyan-500 text-cyan-400 bg-cyan-500/10' : 'border-border text-muted-foreground hover:text-cyan-400 hover:border-cyan-500/50'}"
-                            title="+1 standin for your team">
-                        ${_withStandin ? 'Standin ✓' : 'Add Standin'}
-                    </button>
-                ` : ''}
-            </div>
-        `;
+        // Step 1: game type buttons — always visible until step 3 (so standin can be toggled)
+        const step1Html = step2Done
+            ? `<span class="text-xs ${_selectedGameType === 'official' ? 'text-green-400' : 'text-amber-400'} flex items-center gap-1">
+                 ${checkSvg} ${_selectedGameType === 'official' ? 'Official' : 'Practice'}
+               </span>`
+            : `<div class="flex items-center gap-1.5">
+                 <button id="game-type-off" class="cm-type-btn official ${_selectedGameType === 'official' ? 'active' : ''}">Official</button>
+                 <button id="game-type-prac" class="cm-type-btn practice ${_selectedGameType === 'practice' ? 'active' : ''}">Practice</button>
+                 ${_selectedGameType === 'practice' ? `
+                     <button id="standin-toggle" class="cm-type-btn standin ${_withStandin ? 'active' : ''}" title="+1 standin for your team">
+                         ${_withStandin ? 'Add Standin ✓' : 'Add Standin'}
+                     </button>` : ''}
+               </div>`;
 
-        // Step 2 content: Timeslot picker + Propose button
-        let step2Content;
-        if (step2Done) {
-            step2Content = `<div class="mt-1.5 text-xs text-green-400">Created!</div>`;
-        } else if (!step1Done) {
-            step2Content = `<div class="mt-1.5 text-xs text-muted-foreground/40">Select match type first</div>`;
-        } else {
-            // Show timeslot picker
-            const refDate = _getRefDate(_currentData?.weekId);
-            if (_viableSlots.length === 0) {
-                // Compute best slot counts for informative message
-                const bestInfo = (() => {
-                    if (!_currentData) return '';
-                    const selectedMatch = _currentData.matches[_selectedOpponentIndex] || _currentData.matches[0];
-                    const all = ProposalService.computeViableSlots(
-                        _currentData.userTeamInfo.teamId,
-                        selectedMatch.teamId,
-                        _currentData.weekId,
-                        { yourTeam: 1, opponent: 1 }
-                    );
-                    if (!all.length) return '';
-                    const best = all.reduce((a, b) =>
-                        (a.proposerCount + a.opponentCount) >= (b.proposerCount + b.opponentCount) ? a : b
-                    );
-                    return ` (best: ${best.proposerCount}v${best.opponentCount})`;
-                })();
-                step2Content = `
-                    <div class="mt-1.5 text-xs text-muted-foreground/60">Need 4v3+ overlap to propose${bestInfo}</div>
-                    <button class="mt-1.5 px-3 py-1 rounded text-xs font-medium bg-muted/30 text-muted-foreground/40 cursor-not-allowed" disabled>
-                        Propose
-                    </button>`;
-            } else {
-                // Group slots by day for visual separation
-                const dayColors = {
-                    Monday: 'text-blue-400', Tuesday: 'text-teal-400', Wednesday: 'text-violet-400',
-                    Thursday: 'text-amber-400', Friday: 'text-rose-400', Saturday: 'text-emerald-400', Sunday: 'text-orange-400'
-                };
-                let lastDay = '';
-                const slotItems = _viableSlots.map(slot => {
-                    const checked = _selectedSlots.has(slot.slotId);
-                    const display = TimezoneService.formatSlotForDisplay(slot.slotId, refDate);
-                    const dayName = display.dayLabel || '';
-                    const dayColor = dayColors[dayName] || 'text-muted-foreground';
+        // Step 2: just a label
+        const step2Html = step2Done
+            ? `<span class="text-green-400 text-xs flex items-center gap-1">${checkSvg} Created</span>`
+            : `<span class="text-xs ${step1Done ? 'text-foreground' : 'text-muted-foreground/40'}">Select</span>`;
 
-                    // Insert day header when day changes
-                    let dayHeader = '';
-                    if (dayName !== lastDay) {
-                        const mt = lastDay ? 'mt-2' : '';
-                        dayHeader = `<div class="cm-slot-day-header ${mt} ${dayColor}">${dayName}</div>`;
-                        lastDay = dayName;
-                    }
-
-                    return `${dayHeader}<label class="cm-slot-item" data-slot-id="${slot.slotId}">
-                        <span class="cm-slot-check">${checked ? '☑' : '☐'}</span>
-                        <span class="cm-slot-time">${display.timeLabel}</span>
-                        <span class="cm-slot-count">${slot.proposerCount}v${slot.opponentCount}</span>
-                    </label>`;
-                }).join('');
-                const selCount = _selectedSlots.size;
-                step2Content = `
-                    <div class="mt-1.5 cm-slot-list" id="cm-slot-list">${slotItems}</div>
-                    <button id="propose-match-btn" class="mt-1.5 px-3 py-1 rounded text-xs font-medium transition-colors
-                            ${selCount > 0
-                                ? 'bg-primary text-primary-foreground hover:bg-primary/80'
-                                : 'bg-muted/30 text-muted-foreground/40 cursor-not-allowed'}"
-                            ${selCount > 0 ? '' : 'disabled'}>
-                        ${selCount > 0 ? `Propose (${selCount}) →` : 'Select times first'}
-                    </button>`;
-            }
-        }
-
-        // Step 3 content: Notification sent + optional Discord contact
+        // Step 3: Discord actions or inactive icon
         const escapedMsg = _discordMessage ? _escapeHtml(_discordMessage).replace(/\n/g, '&#10;') : '';
-        const proposedCount = _confirmedSlotsCount;
-        const step3Content = step3Active
-            ? `<div class="mt-1.5 text-xs text-green-400">
-                ✓ Proposal created with ${proposedCount} timeslot${proposedCount !== 1 ? 's' : ''}
-               </div>
-               <div class="mt-1 text-xs text-muted-foreground">Opponent will be notified.</div>
-               ${_discordMessage ? `<div class="flex items-center gap-1.5 mt-1.5">
-                <button id="post-proposal-discord" class="px-2.5 py-1 rounded text-xs font-medium bg-[#5865F2] hover:bg-[#4752C4] text-white flex items-center gap-1"
+        const step3Html = step3Active && _discordMessage
+            ? `<div class="flex items-center gap-1.5">
+                <button id="post-proposal-discord" class="cm-type-btn flex items-center gap-1 bg-[#5865F2] hover:bg-[#4752C4] text-white border-[#5865F2]"
                         data-message="${escapedMsg}">
-                    DM Leader ${discordIcon}
+                    DM ${discordIcon}
                 </button>
-                <button id="post-proposal-copy" class="px-2.5 py-1 rounded text-xs border border-border text-muted-foreground hover:text-foreground"
+                <button id="post-proposal-copy" class="cm-type-btn"
                         data-message="${escapedMsg}">
-                    Copy msg
+                    Copy
                 </button>
-            </div>` : ''}`
-            : `<div class="mt-1.5 text-xs text-muted-foreground/30">${discordIcon}</div>`;
+               </div>`
+            : step3Active
+            ? `<span class="text-xs text-green-400 flex items-center gap-1">${checkSvg} Sent</span>`
+            : `<span class="text-muted-foreground/30">${discordIcon}</span>`;
 
         return `
-            <div class="flex items-start mb-2">
-                <!-- Step 1 -->
-                <div class="flex flex-col items-center flex-1 min-w-0">
-                    <div class="flex items-center w-full">
-                        <div class="flex-1"></div>
-                        ${circle(1, step1Done, step1Active)}
-                        ${line(step1Done)}
-                    </div>
-                    <div class="text-xs mt-1 ${step1Active ? 'text-foreground' : 'text-muted-foreground'} font-medium">Match Type</div>
-                    ${step1Content}
-                </div>
-                <!-- Step 2 -->
-                <div class="flex flex-col items-center flex-1 min-w-0">
-                    <div class="flex items-center w-full">
-                        ${line(step1Done)}
-                        ${circle(2, step2Done, step2Active && step1Done)}
-                        ${line(step2Done)}
-                    </div>
-                    <div class="text-xs mt-1 ${step2Active && step1Done ? 'text-foreground' : 'text-muted-foreground'} font-medium">Select & Propose</div>
-                    ${step2Content}
-                </div>
-                <!-- Step 3 -->
-                <div class="flex flex-col items-center flex-1 min-w-0">
-                    <div class="flex items-center w-full">
-                        ${line(step2Done)}
-                        ${circle(3, false, step3Active)}
-                        <div class="flex-1"></div>
-                    </div>
-                    <div class="text-xs mt-1 ${step3Active ? 'text-foreground' : 'text-muted-foreground'} font-medium">Sent</div>
-                    ${step3Content}
-                </div>
-            </div>
-            <button id="comparison-modal-done" class="btn btn-secondary w-full text-sm">${step3Active ? 'Done' : 'Close'}</button>
-        `;
+            <div class="flex items-center gap-2">
+                ${circle(1, step2Done, !step2Done)}
+                ${step1Html}
+                ${line(step1Done)}
+                ${circle(2, step2Done, step1Done && !step2Done)}
+                ${step2Html}
+                ${line(step2Done)}
+                ${circle(3, false, step3Active)}
+                ${step3Html}
+            </div>`;
+    }
+
+    /**
+     * Render the slot picker for the center column (replaces "VS" text when game type selected).
+     * Shows day-grouped pill toggles + Propose button at bottom.
+     */
+    function _renderSlotPicker() {
+        const refDate = _getRefDate(_currentData?.weekId);
+
+        if (_viableSlots.length === 0) {
+            // Compute best slot counts for informative message
+            const bestInfo = (() => {
+                if (!_currentData) return '';
+                const selectedMatch = _currentData.matches[_selectedOpponentIndex] || _currentData.matches[0];
+                const all = ProposalService.computeViableSlots(
+                    _currentData.userTeamInfo.teamId,
+                    selectedMatch.teamId,
+                    _currentData.weekId,
+                    { yourTeam: 1, opponent: 1 }
+                );
+                if (!all.length) return '';
+                const best = all.reduce((a, b) =>
+                    (a.proposerCount + a.opponentCount) >= (b.proposerCount + b.opponentCount) ? a : b
+                );
+                return `${best.proposerCount}v${best.opponentCount}`;
+            })();
+            return `<div class="text-center">
+                <span class="vs-text">VS</span>
+                <div class="text-xs text-muted-foreground/60 mt-2">No 4v3+ slots${bestInfo ? ` (best: ${bestInfo})` : ''}</div>
+            </div>`;
+        }
+
+        const dayColors = {
+            Monday: 'text-blue-400', Tuesday: 'text-teal-400', Wednesday: 'text-violet-400',
+            Thursday: 'text-amber-400', Friday: 'text-rose-400', Saturday: 'text-emerald-400', Sunday: 'text-orange-400'
+        };
+        // Group slots by day first
+        const byDay = [];
+        let currentGroup = null;
+        for (const slot of _viableSlots) {
+            const display = TimezoneService.formatSlotForDisplay(slot.slotId, refDate);
+            const dayName = display.dayLabel || '';
+            if (dayName !== currentGroup?.day) {
+                currentGroup = { day: dayName, slots: [] };
+                byDay.push(currentGroup);
+            }
+            currentGroup.slots.push({ slot, display });
+        }
+
+        const rows = byDay.map(({ day, slots }, gi) => {
+            const dayColor = dayColors[day] || 'text-muted-foreground';
+            const mt = gi > 0 ? 'mt-2' : '';
+
+            const slotRows = slots.map(({ slot, display }, si) => {
+                const selected = _selectedSlots.has(slot.slotId);
+                const groupMt = si === 0 ? mt : '';
+                // Row 1: day name (left, only on first slot) + xvx count (right)
+                // Row 2: time (left) + pill toggle (right)
+                return `<div class="cm-slot-group ${groupMt}" data-slot-id="${slot.slotId}">
+                    <span class="cm-slot-day ${si === 0 ? dayColor : 'invisible'}">${day}</span>
+                    <span class="cm-slot-count">${slot.proposerCount}v${slot.opponentCount}</span>
+                    <span class="cm-slot-time">${display.timeLabel}</span>
+                    <button class="cm-pill-toggle ${selected ? 'active' : ''}"
+                            data-slot-id="${slot.slotId}"
+                            aria-pressed="${selected}">
+                        <span class="cm-pill-dot"></span>
+                    </button>
+                </div>`;
+            }).join('');
+
+            return slotRows;
+        }).join('');
+
+        const selCount = _selectedSlots.size;
+        return `
+            <div class="cm-slot-picker" id="cm-slot-list">${rows}</div>
+            <button id="propose-match-btn" class="cm-propose-btn mt-2 ${selCount > 0 ? 'active' : ''}"
+                    ${selCount > 0 ? '' : 'disabled'}>
+                ${selCount > 0 ? `Propose (${selCount}) →` : 'Select times'}
+            </button>`;
     }
 
     /**
@@ -737,9 +708,11 @@ const ComparisonModal = (function() {
                         </div>
                     </div>
 
-                    <!-- Body - VS Layout -->
+                    <!-- Body - Stepper bar + VS Layout -->
                     <div class="p-4 overflow-y-auto flex-1">
-                        <!-- VS Container -->
+                        ${canSchedule ? `<div class="cm-stepper-bar">${_renderCompactStepper()}</div>` : ''}
+
+                        <!-- VS Container with center slot column -->
                         <div class="vs-container">
                             <!-- User Team (Left) -->
                             ${_renderTeamCard(
@@ -754,9 +727,11 @@ const ComparisonModal = (function() {
                                 null, null, null, null
                             )}
 
-                            <!-- VS Divider -->
-                            <div class="vs-divider">
-                                <span class="vs-text">VS</span>
+                            <!-- Center: Slot picker (replaces VS divider) -->
+                            <div class="vs-divider-slots" id="cm-slot-column">
+                                ${canSchedule && _selectedGameType
+                                    ? _renderSlotPicker()
+                                    : '<span class="vs-text">VS</span>'}
                             </div>
 
                             <!-- Opponent Team Card -->
@@ -777,11 +752,9 @@ const ComparisonModal = (function() {
                         </div>
                     </div>
 
-                    <!-- Footer: Stepper or Close -->
+                    <!-- Footer: Close/Done -->
                     <div class="p-4 border-t border-border shrink-0">
-                        ${canSchedule ? _renderStepper() : `
-                            <button id="comparison-modal-done" class="btn btn-primary w-full">Close</button>
-                        `}
+                        <button id="comparison-modal-done" class="btn btn-secondary w-full text-sm">${_proposalStep === 3 ? 'Done' : 'Close'}</button>
                     </div>
                 </div>
             </div>
@@ -818,13 +791,14 @@ const ComparisonModal = (function() {
                 const index = parseInt(tab.dataset.opponentIndex, 10);
                 if (index !== _selectedOpponentIndex && _currentData) {
                     _selectedOpponentIndex = index;
-                    // Reset proposal state for new opponent
-                    _selectedGameType = null;
-                    _withStandin = false;
+                    // Keep game type + standin — just reset slot selection for new opponent
                     _proposalStep = 1;
                     _viableSlots = [];
                     _selectedSlots = new Set();
                     _confirmedSlotsCount = 0;
+                    _discordMessage = null;
+                    // Re-compute viable slots for new opponent if game type already selected
+                    if (_selectedGameType) _computeViableForProposal();
                     // Re-render with new selection
                     _renderModal(
                         _currentData.weekId,
@@ -865,17 +839,32 @@ const ComparisonModal = (function() {
             _reRenderModal();
         });
 
-        // Slot checkbox toggles in the timeslot picker
-        document.getElementById('cm-slot-list')?.addEventListener('click', (e) => {
-            const label = e.target.closest('[data-slot-id]');
-            if (!label) return;
-            const slotId = label.dataset.slotId;
-            if (_selectedSlots.has(slotId)) {
-                _selectedSlots.delete(slotId);
-            } else {
+        // Pill toggle clicks in center column — in-place DOM update, no re-render
+        document.getElementById('cm-slot-column')?.addEventListener('click', (e) => {
+            const pill = e.target.closest('.cm-pill-toggle');
+            if (!pill) return;
+
+            const slotId = pill.dataset.slotId;
+            const nowSelected = !_selectedSlots.has(slotId);
+
+            if (nowSelected) {
                 _selectedSlots.add(slotId);
+            } else {
+                _selectedSlots.delete(slotId);
             }
-            _reRenderModal();
+
+            // Toggle just this pill's visual state
+            pill.classList.toggle('active', nowSelected);
+            pill.setAttribute('aria-pressed', String(nowSelected));
+
+            // Update just the Propose button text/state
+            const proposeBtn = document.getElementById('propose-match-btn');
+            if (proposeBtn) {
+                const count = _selectedSlots.size;
+                proposeBtn.disabled = count === 0;
+                proposeBtn.classList.toggle('active', count > 0);
+                proposeBtn.textContent = count > 0 ? `Propose (${count}) →` : 'Select times';
+            }
         });
 
         // Propose Match button

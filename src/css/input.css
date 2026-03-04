@@ -2191,7 +2191,19 @@ body {
   margin-bottom: 1.5rem;
 }
 
-/* VS Divider in the middle */
+/* VS Divider — slot column in center (replaces plain VS text) */
+.vs-divider-slots {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 9rem;
+  padding: 0.5rem 0;
+  align-self: stretch;
+}
+
+/* Legacy VS divider (kept for non-scheduler views) */
 .vs-divider {
   display: flex;
   align-items: center;
@@ -2213,6 +2225,7 @@ body {
 .vs-team-card {
   flex: 1;
   min-width: 0;
+  max-width: calc(50% - 5.5rem);
   background-color: oklch(from var(--muted) l c h / 0.2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -2335,12 +2348,18 @@ body {
     padding: 0.5rem 0;
   }
 
+  .vs-divider-slots {
+    width: 100%;
+    order: 3;
+  }
+
   .vs-text {
     font-size: 1.25rem;
   }
 
   .vs-team-card {
     width: 100%;
+    max-width: 100%;
   }
 }
 
@@ -6627,6 +6646,182 @@ body {
     letter-spacing: 0.05em;
     padding: 0 0.375rem;
     opacity: 0.8;
+}
+
+/* Compact stepper bar above VS layout */
+.cm-stepper-bar {
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+
+/* Slot picker container in center column */
+.cm-slot-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    width: 100%;
+}
+
+/* Slot row: time + pill + count */
+.cm-slot-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.2rem 0;
+    cursor: pointer;
+}
+
+.cm-slot-row .cm-slot-time {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--foreground);
+    flex: 1;
+}
+
+.cm-slot-row .cm-slot-count {
+    font-size: 0.65rem;
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+}
+
+/* Slot group: 2-col grid — row1: day name + xvx count, row2: time + pill toggle */
+.cm-slot-group {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    cursor: pointer;
+    padding: 0.1rem 0;
+}
+
+.cm-slot-group .cm-slot-day {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.8;
+    line-height: 1.2;
+}
+
+.cm-slot-group .cm-slot-count {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 0.65rem;
+    color: var(--muted-foreground);
+    text-align: right;
+    line-height: 1.2;
+}
+
+.cm-slot-group .cm-slot-time {
+    grid-column: 1;
+    grid-row: 2;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--foreground);
+    line-height: 1.4;
+}
+
+.cm-slot-group .cm-pill-toggle {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+}
+
+/* Pill toggle switch */
+.cm-pill-toggle {
+    position: relative;
+    width: 1.5rem;
+    height: 0.875rem;
+    border-radius: 9999px;
+    background: var(--muted);
+    border: none;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+    flex-shrink: 0;
+}
+
+.cm-pill-toggle.active {
+    background: oklch(0.6 0.18 145);
+}
+
+.cm-pill-toggle:hover {
+    filter: brightness(1.15);
+}
+
+.cm-pill-dot {
+    position: absolute;
+    top: 50%;
+    left: 2px;
+    transform: translateY(-50%);
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 9999px;
+    background: white;
+    transition: left 150ms ease;
+    pointer-events: none;
+}
+
+.cm-pill-toggle.active .cm-pill-dot {
+    left: calc(100% - 0.625rem - 2px);
+}
+
+/* Propose button in center column */
+.cm-propose-btn {
+    width: 100%;
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-align: center;
+    background: color-mix(in srgb, var(--muted) 30%, transparent);
+    color: color-mix(in srgb, var(--muted-foreground) 40%, transparent);
+    border: none;
+    cursor: not-allowed;
+    transition: all 150ms ease;
+}
+
+.cm-propose-btn.active {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    cursor: pointer;
+}
+
+.cm-propose-btn.active:hover {
+    opacity: 0.85;
+}
+
+/* Game type buttons in compact stepper */
+.cm-type-btn {
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    background: transparent;
+    cursor: pointer;
+    transition: all 150ms ease;
+}
+
+.cm-type-btn.official.active {
+    border-color: oklch(0.6 0.18 145);
+    color: oklch(0.65 0.18 145);
+    background: color-mix(in srgb, oklch(0.6 0.18 145) 10%, transparent);
+}
+
+.cm-type-btn.practice.active {
+    border-color: oklch(0.75 0.18 80);
+    color: oklch(0.78 0.18 80);
+    background: color-mix(in srgb, oklch(0.75 0.18 80) 10%, transparent);
+}
+
+.cm-type-btn.standin.active {
+    border-color: oklch(0.7 0.15 220);
+    color: oklch(0.73 0.15 220);
+    background: color-mix(in srgb, oklch(0.7 0.15 220) 10%, transparent);
 }
 
 
