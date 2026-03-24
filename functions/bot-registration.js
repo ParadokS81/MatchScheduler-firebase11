@@ -178,17 +178,28 @@ async function _handleUpdateSettings(data, teamId) {
         if (typeof autoRecord.enabled !== 'boolean') {
             throw new functions.https.HttpsError('invalid-argument', 'autoRecord.enabled must be a boolean');
         }
-        if (![3, 4].includes(autoRecord.minPlayers)) {
-            throw new functions.https.HttpsError('invalid-argument', 'autoRecord.minPlayers must be 3 or 4');
+        if (autoRecord.minPlayers !== undefined) {
+            const mp = Number(autoRecord.minPlayers);
+            if (!Number.isInteger(mp) || mp < 2 || mp > 6) {
+                throw new functions.https.HttpsError('invalid-argument', 'minPlayers must be 2-6');
+            }
         }
-        if (!['all', 'official', 'practice'].includes(autoRecord.mode)) {
+        if (autoRecord.mode !== undefined && !['all', 'official', 'practice'].includes(autoRecord.mode)) {
             throw new functions.https.HttpsError('invalid-argument', 'autoRecord.mode must be "all", "official", or "practice"');
+        }
+        if (autoRecord.platform !== undefined) {
+            if (!['both', 'discord', 'mumble'].includes(autoRecord.platform)) {
+                throw new functions.https.HttpsError('invalid-argument', 'platform must be both, discord, or mumble');
+            }
         }
         updateData.autoRecord = {
             enabled: autoRecord.enabled,
-            minPlayers: autoRecord.minPlayers,
-            mode: autoRecord.mode,
+            minPlayers: autoRecord.minPlayers ?? reg.autoRecord?.minPlayers ?? 3,
+            mode: autoRecord.mode ?? reg.autoRecord?.mode ?? 'all',
         };
+        if (autoRecord.platform !== undefined) {
+            updateData.autoRecord.platform = autoRecord.platform;
+        }
     }
 
     if (scheduleChannel !== undefined) {

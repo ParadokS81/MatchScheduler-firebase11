@@ -17,6 +17,9 @@ const TeamManagementModal = (function() {
     let _voiceBotInitialized = false;
     let _recordingsInitialized = false;
     let _recordings = [];
+    let _mumbleUnsubscribe = null;
+    let _mumbleConfig = undefined; // undefined = not loaded, null = no doc
+    let _mumbleInitialized = false;
 
     /**
      * Escape HTML to prevent XSS
@@ -56,6 +59,8 @@ const TeamManagementModal = (function() {
         _botRegistration = undefined; // Reset for fresh load
         _voiceBotInitialized = false;
         _recordingsInitialized = false;
+        _mumbleConfig = undefined;
+        _mumbleInitialized = false;
         _renderModal();
         _attachListeners();
 
@@ -83,6 +88,7 @@ const TeamManagementModal = (function() {
                             <button class="tab-btn active" data-tab="settings">Settings</button>
                             ${(_isLeader || _isScheduler) ? `<button class="tab-btn" data-tab="discord">Discord</button>` : ''}
                             <button class="tab-btn" data-tab="recordings">Recordings</button>
+                            <button class="tab-btn" data-tab="mumble">Mumble</button>
                         </div>
                         <button id="team-management-close"
                                 class="text-muted-foreground hover:text-foreground transition-colors p-3 ml-auto"
@@ -113,6 +119,10 @@ const TeamManagementModal = (function() {
 
                         <div id="tab-content-recordings" class="hidden">
                             <p class="text-sm text-muted-foreground">Loading recordings...</p>
+                        </div>
+
+                        <div id="tab-content-mumble" class="hidden">
+                            <p class="text-sm text-muted-foreground">Loading...</p>
                         </div>
                     </div>
                 </div>
@@ -266,7 +276,7 @@ const TeamManagementModal = (function() {
                 <button type="button" class="tag-star-btn ${starClass}" data-tag-index="${i}" title="${starTitle}">
                     <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
                 </button>
-                ${_escapeHtml(entry.tag)}
+                <span class="tag-text-btn cursor-pointer hover:text-primary" data-tag-index="${i}" title="Click to edit">${_escapeHtml(entry.tag)}</span>
                 ${canRemove ? `<button type="button" class="tag-remove-btn text-muted-foreground/50 hover:text-destructive ml-0.5" data-tag-index="${i}" title="Remove">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>` : ''}
@@ -629,6 +639,7 @@ const TeamManagementModal = (function() {
     function _handleTagChipClick(e) {
         const starBtn = e.target.closest('.tag-star-btn');
         const removeBtn = e.target.closest('.tag-remove-btn');
+        const textBtn = e.target.closest('.tag-text-btn');
 
         if (starBtn) {
             const index = parseInt(starBtn.dataset.tagIndex);
@@ -636,7 +647,77 @@ const TeamManagementModal = (function() {
         } else if (removeBtn) {
             const index = parseInt(removeBtn.dataset.tagIndex);
             _handleRemoveTag(index);
+        } else if (textBtn) {
+            const index = parseInt(textBtn.dataset.tagIndex);
+            _startEditTag(textBtn, index);
         }
+    }
+
+    function _startEditTag(textSpan, index) {
+        if (_tagsLoading) return;
+        const currentTags = _getTeamTags();
+        const oldTag = currentTags[index].tag;
+
+        // Replace text span with inline input
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.maxLength = 4;
+        input.value = oldTag;
+        input.className = 'w-14 px-0.5 py-0 bg-background border border-primary rounded text-sm font-mono text-foreground text-center';
+        input.style.outline = 'none';
+        textSpan.replaceWith(input);
+        input.focus();
+        input.select();
+
+        let committed = false;
+        const commit = async () => {
+            if (committed) return;
+            committed = true;
+            const newTag = input.value.trim();
+
+            // If empty or unchanged, revert
+            if (!newTag || newTag === oldTag) {
+                _rerenderTagChips();
+                return;
+            }
+
+            const error = TeamService.validateTeamTag(newTag);
+            if (error) {
+                _showTagFeedback(error, true);
+                _rerenderTagChips();
+                return;
+            }
+
+            // Duplicate check within team (exclude self)
+            if (currentTags.some((t, i) => i !== index && t.tag.toLowerCase() === newTag.toLowerCase())) {
+                _showTagFeedback('Tag already exists on this team', true);
+                _rerenderTagChips();
+                return;
+            }
+
+            // Cross-team uniqueness check
+            const allTeams = TeamService.getAllTeams();
+            for (const other of allTeams) {
+                if (other.id === _teamId) continue;
+                const otherTags = (other.teamTags && Array.isArray(other.teamTags) && other.teamTags.length > 0)
+                    ? other.teamTags.map(t => t.tag.toLowerCase())
+                    : (other.teamTag ? [other.teamTag.toLowerCase()] : []);
+                if (otherTags.includes(newTag.toLowerCase())) {
+                    _showTagFeedback(`Tag "${newTag}" is already used by ${other.teamName}`, true);
+                    _rerenderTagChips();
+                    return;
+                }
+            }
+
+            const updatedTags = currentTags.map((t, i) => i === index ? { tag: newTag, isPrimary: t.isPrimary } : t);
+            await _saveTeamTags(updatedTags);
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') { e.preventDefault(); _rerenderTagChips(); }
+        });
+        input.addEventListener('blur', () => commit());
     }
 
     async function _handleAddTag() {
@@ -950,6 +1031,7 @@ const TeamManagementModal = (function() {
         const isEnabled = autoRecord?.enabled || false;
         const minPlayers = autoRecord?.minPlayers || 3;
         const mode = autoRecord?.mode || 'all';
+        const platform = autoRecord?.platform || 'both';
 
         const modeOptions = [
             { value: 'all', label: 'All sessions' },
@@ -957,6 +1039,22 @@ const TeamManagementModal = (function() {
             { value: 'practice', label: 'Practice only' },
         ].map(opt =>
             `<option value="${opt.value}" ${opt.value === mode ? 'selected' : ''}>${opt.label}</option>`
+        ).join('');
+
+        const minPlayersOptions = [2, 3, 4, 5, 6].map(n =>
+            `<option value="${n}" ${n === minPlayers ? 'selected' : ''}>${n}+ players</option>`
+        ).join('');
+
+        const hasMumble = _mumbleConfig && _mumbleConfig.status === 'active';
+        const hasDiscord = _botRegistration && _botRegistration.status === 'active';
+        const showPlatform = hasMumble && hasDiscord;
+
+        const platformOptions = [
+            { value: 'both', label: 'Both platforms' },
+            { value: 'discord', label: 'Discord only' },
+            { value: 'mumble', label: 'Mumble only' },
+        ].map(opt =>
+            `<option value="${opt.value}" ${opt.value === platform ? 'selected' : ''}>${opt.label}</option>`
         ).join('');
 
         return `
@@ -972,24 +1070,18 @@ const TeamManagementModal = (function() {
                 </div>
                 <div class="mt-2 ${!isEnabled ? 'opacity-50 pointer-events-none' : ''}">
                     <p class="text-xs text-muted-foreground mb-1.5">Start when</p>
-                    <div class="flex gap-3">
-                        <label class="flex items-center gap-1.5 cursor-pointer">
-                            <input type="radio" name="auto-record-min-players" value="3"
-                                   class="auto-record-min-players-radio"
-                                   ${minPlayers === 3 ? 'checked' : ''}>
-                            <span class="text-sm text-foreground">3+ members</span>
-                        </label>
-                        <label class="flex items-center gap-1.5 cursor-pointer">
-                            <input type="radio" name="auto-record-min-players" value="4"
-                                   class="auto-record-min-players-radio"
-                                   ${minPlayers === 4 ? 'checked' : ''}>
-                            <span class="text-sm text-foreground">4+ members</span>
-                        </label>
-                    </div>
-                    <div class="mt-2">
-                        <select id="auto-record-mode-select"
+                    <select id="auto-record-min-players-select"
+                            class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground mb-2">
+                        ${minPlayersOptions}
+                    </select>
+                    <select id="auto-record-mode-select"
+                            class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground">
+                        ${modeOptions}
+                    </select>
+                    <div class="auto-record-platform-row mt-2" style="${showPlatform ? '' : 'display: none;'}">
+                        <select id="auto-record-platform-select"
                                 class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground">
-                            ${modeOptions}
+                            ${platformOptions}
                         </select>
                     </div>
                 </div>
@@ -1078,12 +1170,14 @@ const TeamManagementModal = (function() {
         const autoRecordToggle = document.querySelector('#tab-content-recordings .auto-record-enabled-toggle');
         autoRecordToggle?.addEventListener('click', _handleAutoRecordToggle);
 
-        document.querySelectorAll('#tab-content-recordings .auto-record-min-players-radio').forEach(radio => {
-            radio.addEventListener('change', _handleAutoRecordMinPlayersChange);
-        });
+        const minPlayersSelect = document.querySelector('#tab-content-recordings #auto-record-min-players-select');
+        minPlayersSelect?.addEventListener('change', _handleAutoRecordMinPlayersChange);
 
         const autoRecordModeSelect = document.querySelector('#tab-content-recordings #auto-record-mode-select');
         autoRecordModeSelect?.addEventListener('change', _handleAutoRecordModeChange);
+
+        const autoRecordPlatformSelect = document.querySelector('#tab-content-recordings #auto-record-platform-select');
+        autoRecordPlatformSelect?.addEventListener('change', _handleAutoRecordPlatformChange);
     }
 
     /**
@@ -1230,12 +1324,14 @@ const TeamManagementModal = (function() {
         const currentlyEnabled = btn.dataset.enabled === 'true';
         const newEnabled = !currentlyEnabled;
 
-        const minPlayersRadio = document.querySelector('.auto-record-min-players-radio:checked');
+        const minPlayersSelect = document.getElementById('auto-record-min-players-select');
         const modeSelect = document.getElementById('auto-record-mode-select');
-        const minPlayers = minPlayersRadio ? parseInt(minPlayersRadio.value, 10) : (_botRegistration?.autoRecord?.minPlayers || 3);
+        const platformSelect = document.getElementById('auto-record-platform-select');
+        const minPlayers = minPlayersSelect ? parseInt(minPlayersSelect.value, 10) : (_botRegistration?.autoRecord?.minPlayers || 3);
         const mode = modeSelect?.value || _botRegistration?.autoRecord?.mode || 'all';
+        const platform = platformSelect?.value || _botRegistration?.autoRecord?.platform || 'both';
 
-        const newAutoRecord = { enabled: newEnabled, minPlayers, mode };
+        const newAutoRecord = { enabled: newEnabled, minPlayers, mode, platform };
 
         // Optimistic update
         btn.dataset.enabled = String(newEnabled);
@@ -1275,17 +1371,20 @@ const TeamManagementModal = (function() {
     }
 
     /**
-     * Handle auto-record min-players radio change
+     * Handle auto-record min-players dropdown change
      */
-    async function _handleAutoRecordMinPlayersChange(e) {
-        const minPlayers = parseInt(e.target.value, 10);
-        if (![3, 4].includes(minPlayers)) return;
+    async function _handleAutoRecordMinPlayersChange() {
+        const minPlayersSelect = document.getElementById('auto-record-min-players-select');
+        const minPlayers = parseInt(minPlayersSelect?.value, 10);
+        if (!minPlayers || minPlayers < 2 || minPlayers > 6) return;
 
         const modeSelect = document.getElementById('auto-record-mode-select');
+        const platformSelect = document.getElementById('auto-record-platform-select');
         const isEnabled = _botRegistration?.autoRecord?.enabled || false;
         const mode = modeSelect?.value || _botRegistration?.autoRecord?.mode || 'all';
+        const platform = platformSelect?.value || _botRegistration?.autoRecord?.platform || 'both';
 
-        const newAutoRecord = { enabled: isEnabled, minPlayers, mode };
+        const newAutoRecord = { enabled: isEnabled, minPlayers, mode, platform };
         const prevAutoRecord = _botRegistration?.autoRecord;
         if (_botRegistration) _botRegistration.autoRecord = newAutoRecord;
 
@@ -1316,11 +1415,13 @@ const TeamManagementModal = (function() {
         const mode = modeSelect.value;
         if (!['all', 'official', 'practice'].includes(mode)) return;
 
-        const minPlayersRadio = document.querySelector('.auto-record-min-players-radio:checked');
+        const minPlayersSelect = document.getElementById('auto-record-min-players-select');
+        const platformSelect = document.getElementById('auto-record-platform-select');
         const isEnabled = _botRegistration?.autoRecord?.enabled || false;
-        const minPlayers = minPlayersRadio ? parseInt(minPlayersRadio.value, 10) : (_botRegistration?.autoRecord?.minPlayers || 3);
+        const minPlayers = minPlayersSelect ? parseInt(minPlayersSelect.value, 10) : (_botRegistration?.autoRecord?.minPlayers || 3);
+        const platform = platformSelect?.value || _botRegistration?.autoRecord?.platform || 'both';
 
-        const newAutoRecord = { enabled: isEnabled, minPlayers, mode };
+        const newAutoRecord = { enabled: isEnabled, minPlayers, mode, platform };
         const prevAutoRecord = _botRegistration?.autoRecord;
         if (_botRegistration) _botRegistration.autoRecord = newAutoRecord;
 
@@ -1335,6 +1436,43 @@ const TeamManagementModal = (function() {
             }
         } catch (error) {
             console.error('❌ Error updating auto-record mode:', error);
+            if (_botRegistration) _botRegistration.autoRecord = prevAutoRecord;
+            _rerenderVoiceBotSection();
+            ToastService.showError('Network error - please try again');
+        }
+    }
+
+    /**
+     * Handle auto-record platform dropdown change
+     */
+    async function _handleAutoRecordPlatformChange() {
+        const platformSelect = document.getElementById('auto-record-platform-select');
+        if (!platformSelect) return;
+
+        const platform = platformSelect.value;
+        if (!['both', 'discord', 'mumble'].includes(platform)) return;
+
+        const minPlayersSelect = document.getElementById('auto-record-min-players-select');
+        const modeSelect = document.getElementById('auto-record-mode-select');
+        const isEnabled = _botRegistration?.autoRecord?.enabled || false;
+        const minPlayers = minPlayersSelect ? parseInt(minPlayersSelect.value, 10) : (_botRegistration?.autoRecord?.minPlayers || 3);
+        const mode = modeSelect?.value || _botRegistration?.autoRecord?.mode || 'all';
+
+        const newAutoRecord = { enabled: isEnabled, minPlayers, mode, platform };
+        const prevAutoRecord = _botRegistration?.autoRecord;
+        if (_botRegistration) _botRegistration.autoRecord = newAutoRecord;
+
+        try {
+            const result = await BotRegistrationService.updateSettings(_teamId, { autoRecord: newAutoRecord });
+            if (!result.success) {
+                if (_botRegistration) _botRegistration.autoRecord = prevAutoRecord;
+                _rerenderVoiceBotSection();
+                ToastService.showError(result.error || 'Failed to update setting');
+            } else {
+                ToastService.showSuccess('Recording platform updated');
+            }
+        } catch (error) {
+            console.error('❌ Error updating auto-record platform:', error);
             if (_botRegistration) _botRegistration.autoRecord = prevAutoRecord;
             _rerenderVoiceBotSection();
             ToastService.showError('Network error - please try again');
@@ -1417,6 +1555,11 @@ const TeamManagementModal = (function() {
         if (tabName === 'recordings' && !_recordingsInitialized) {
             _recordingsInitialized = true;
             _initRecordingsTab();
+        }
+        // Lazy init: Mumble on first switch
+        if (tabName === 'mumble' && !_mumbleInitialized) {
+            _mumbleInitialized = true;
+            _initMumbleTab();
         }
     }
 
@@ -2172,6 +2315,7 @@ const TeamManagementModal = (function() {
         const arEnabled = autoRecord?.enabled || false;
         const minPlayers = autoRecord?.minPlayers || 3;
         const mode = autoRecord?.mode || 'all';
+        const platform = autoRecord?.platform || 'both';
 
         const modeOptions = [
             { value: 'all', label: 'All sessions' },
@@ -2179,6 +2323,22 @@ const TeamManagementModal = (function() {
             { value: 'practice', label: 'Practice only' },
         ].map(opt =>
             `<option value="${opt.value}" ${opt.value === mode ? 'selected' : ''}>${opt.label}</option>`
+        ).join('');
+
+        const minPlayersOptions = [2, 3, 4, 5, 6].map(n =>
+            `<option value="${n}" ${n === minPlayers ? 'selected' : ''}>${n}+ players</option>`
+        ).join('');
+
+        const hasMumble = _mumbleConfig && _mumbleConfig.status === 'active';
+        const hasDiscord = _botRegistration && _botRegistration.status === 'active';
+        const showPlatform = hasMumble && hasDiscord;
+
+        const platformOptions = [
+            { value: 'both', label: 'Both platforms' },
+            { value: 'discord', label: 'Discord only' },
+            { value: 'mumble', label: 'Mumble only' },
+        ].map(opt =>
+            `<option value="${opt.value}" ${opt.value === platform ? 'selected' : ''}>${opt.label}</option>`
         ).join('');
 
         return `
@@ -2208,24 +2368,20 @@ const TeamManagementModal = (function() {
                 </div>
                 <div class="${!arEnabled ? 'opacity-50 pointer-events-none' : ''}">
                     <p class="text-xs text-muted-foreground mb-1.5">Start when</p>
-                    <div class="flex gap-3 mb-2">
-                        <label class="flex items-center gap-1.5 cursor-pointer">
-                            <input type="radio" name="auto-record-min-players" value="3"
-                                   class="auto-record-min-players-radio"
-                                   ${minPlayers === 3 ? 'checked' : ''}>
-                            <span class="text-sm text-foreground">3+ members</span>
-                        </label>
-                        <label class="flex items-center gap-1.5 cursor-pointer">
-                            <input type="radio" name="auto-record-min-players" value="4"
-                                   class="auto-record-min-players-radio"
-                                   ${minPlayers === 4 ? 'checked' : ''}>
-                            <span class="text-sm text-foreground">4+ members</span>
-                        </label>
-                    </div>
+                    <select id="auto-record-min-players-select"
+                            class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground mb-2">
+                        ${minPlayersOptions}
+                    </select>
                     <select id="auto-record-mode-select"
                             class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground">
                         ${modeOptions}
                     </select>
+                    <div class="auto-record-platform-row mt-2" style="${showPlatform ? '' : 'display: none;'}">
+                        <select id="auto-record-platform-select"
+                                class="w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-sm text-foreground">
+                            ${platformOptions}
+                        </select>
+                    </div>
                 </div>
             </div>
         `;
@@ -2777,6 +2933,361 @@ const TeamManagementModal = (function() {
     /**
      * Close the modal
      */
+    // ─── Mumble Tab (Phase M3) ────────────────────────────────────────────
+
+    /**
+     * Load mumble config and set up real-time listener
+     */
+    async function _initMumbleTab() {
+        if (!_teamId || typeof MumbleConfigService === 'undefined') return;
+
+        // Load initial state
+        const config = await MumbleConfigService.getConfig(_teamId);
+        _mumbleConfig = config; // null if no doc
+
+        _rerenderMumbleTab();
+
+        // Real-time listener for status changes (pending → active)
+        _mumbleUnsubscribe = MumbleConfigService.onConfigChange(_teamId, (data) => {
+            _mumbleConfig = data;
+            _rerenderMumbleTab();
+        });
+    }
+
+    /**
+     * Re-render only the mumble tab content in place
+     */
+    function _rerenderMumbleTab() {
+        const container = document.getElementById('tab-content-mumble');
+        if (!container) return;
+        container.innerHTML = _renderMumbleTab();
+        _attachMumbleListeners();
+    }
+
+    /**
+     * Render the Mumble tab content based on current config state
+     */
+    function _renderMumbleTab() {
+        // State 0: Service not available
+        if (typeof MumbleConfigService === 'undefined') {
+            return `<p class="text-sm text-muted-foreground">Mumble service not available.</p>`;
+        }
+
+        // State 1: Not enabled
+        if (!_mumbleConfig) {
+            if (_isLeader) {
+                return `
+                    <div class="space-y-3">
+                        <div>
+                            <h3 class="text-sm font-semibold text-foreground">Mumble Voice Server</h3>
+                            <p class="text-xs text-muted-foreground mt-1">Give your team a private Mumble channel with automatic voice recording.</p>
+                        </div>
+                        <button id="mumble-enable-btn"
+                                class="px-3 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium rounded-lg transition-colors">
+                            Enable Mumble
+                        </button>
+                    </div>
+                `;
+            } else {
+                return `
+                    <p class="text-sm text-muted-foreground">Mumble is not enabled for this team. Ask your team leader to enable it.</p>
+                `;
+            }
+        }
+
+        const status = _mumbleConfig.status;
+
+        // State 2: Pending
+        if (status === 'pending') {
+            return `
+                <div class="space-y-3">
+                    <div class="flex items-center gap-2">
+                        <span class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary flex-shrink-0"></span>
+                        <span class="text-sm font-medium text-foreground">Setting up Mumble channel...</span>
+                    </div>
+                    <p class="text-xs text-muted-foreground">This may take a few seconds. The page will update automatically.</p>
+                </div>
+            `;
+        }
+
+        // State 4: Error
+        if (status === 'error') {
+            return `
+                <div class="space-y-3">
+                    <p class="text-sm font-medium text-destructive">Failed to set up Mumble channel</p>
+                    ${_mumbleConfig.errorMessage ? `<p class="text-xs text-muted-foreground">${_escapeHtml(_mumbleConfig.errorMessage)}</p>` : ''}
+                    ${_isLeader ? `
+                        <button id="mumble-retry-btn"
+                                class="px-3 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium rounded-lg transition-colors">
+                            Retry
+                        </button>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        // State 3: Disabling
+        if (status === 'disabling') {
+            return `
+                <div class="space-y-3">
+                    <div class="flex items-center gap-2">
+                        <span class="animate-spin rounded-full h-4 w-4 border-b-2 border-muted-foreground flex-shrink-0"></span>
+                        <span class="text-sm text-muted-foreground">Disabling Mumble...</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // State 3: Active
+        if (status === 'active') {
+            const userEntry = _mumbleConfig.mumbleUsers?.[_currentUserId];
+            const joinUrl = MumbleConfigService.getJoinUrl(_teamId, _currentUserId);
+            const genericUrl = _mumbleConfig.serverAddress
+                ? `mumble://${_mumbleConfig.serverAddress}:${_mumbleConfig.serverPort}/${_mumbleConfig.channelPath}`
+                : null;
+
+            // User join section
+            let userSection = '';
+            if (!userEntry) {
+                userSection = `
+                    <p class="text-xs text-muted-foreground">You're not registered for Mumble yet. Wait for setup to complete or contact your team leader.</p>
+                `;
+            } else if (!userEntry.certificatePinned) {
+                userSection = `
+                    <div class="space-y-2">
+                        <p class="text-xs font-medium text-foreground">Connect your Mumble client:</p>
+                        <ol class="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                            <li>Install Mumble if needed: <a href="https://www.mumble.info/downloads/" target="_blank" rel="noopener"
+                                class="text-primary hover:underline">Download Mumble</a></li>
+                            <li>Click to connect (first time only):</li>
+                        </ol>
+                        ${joinUrl ? `
+                            <a href="${joinUrl}"
+                               class="inline-block px-3 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium rounded-lg transition-colors">
+                                Connect to Mumble
+                            </a>
+                        ` : ''}
+                        <p class="text-xs text-muted-foreground">After first connect, your client remembers you automatically.</p>
+                    </div>
+                `;
+            } else {
+                userSection = `
+                    <div class="space-y-2">
+                        <p class="text-xs font-medium text-foreground">Connected as: <span class="text-primary">${_escapeHtml(userEntry.mumbleUsername)}</span> ✓</p>
+                        ${genericUrl ? `
+                            <a href="${genericUrl}"
+                               class="inline-block px-3 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium rounded-lg transition-colors">
+                                Join Channel
+                            </a>
+                            <div class="mt-2">
+                                <p class="text-xs text-muted-foreground mb-1">Or copy URL:</p>
+                                <div class="flex items-center gap-2">
+                                    <code class="text-xs bg-muted px-2 py-1 rounded font-mono break-all">${_escapeHtml(genericUrl)}</code>
+                                    <button class="mumble-copy-url text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                                            data-url="${_escapeHtml(genericUrl)}" title="Copy URL">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            // Squad members status
+            const mumbleUsers = _mumbleConfig.mumbleUsers || {};
+            const userEntries = Object.values(mumbleUsers);
+            const linkedCount = userEntries.filter(u => u.certificatePinned).length;
+            const totalCount = userEntries.length;
+
+            const membersList = userEntries.length > 0 ? `
+                <div class="space-y-2">
+                    <p class="text-xs font-medium text-foreground">Squad members (${linkedCount}/${totalCount} linked):</p>
+                    <ul class="space-y-1">
+                        ${userEntries.map(u => `
+                            <li class="text-xs flex items-center gap-1">
+                                ${u.certificatePinned
+                                    ? `<span class="text-green-500">✓</span>`
+                                    : `<span class="text-muted-foreground">○</span>`}
+                                <span class="${u.certificatePinned ? 'text-foreground' : 'text-muted-foreground'}">${_escapeHtml(u.mumbleUsername)}</span>
+                                ${!u.certificatePinned ? `<span class="text-xs text-muted-foreground">(not yet connected)</span>` : ''}
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            ` : '';
+
+            // Leader-only settings
+            const autoRecordEnabled = _botRegistration?.autoRecord?.enabled || false;
+            const leaderSettings = _isLeader ? `
+                <hr class="border-border">
+                <div class="space-y-2">
+                    <p class="text-xs font-medium text-foreground">Settings</p>
+                    <div class="mumble-auto-record-redirect">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-muted-foreground">Auto-recording</span>
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium
+                                         ${autoRecordEnabled ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'}">
+                                ${autoRecordEnabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                        </div>
+                        <p class="text-xs text-muted-foreground mt-1">Managed in Recording settings</p>
+                    </div>
+                    <button id="mumble-disable-btn"
+                            class="px-3 py-2 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-medium rounded-lg transition-colors">
+                        Disable Mumble
+                    </button>
+                </div>
+            ` : '';
+
+            return `
+                <div class="space-y-4">
+                    <!-- Connection info -->
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-sm font-semibold text-foreground">Mumble Voice Server</h3>
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10 text-green-500 text-xs rounded-full font-medium">
+                                <span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
+                                Active
+                            </span>
+                        </div>
+                        ${_mumbleConfig.channelPath ? `<p class="text-xs text-muted-foreground">Channel: ${_escapeHtml(_mumbleConfig.channelPath)}</p>` : ''}
+                    </div>
+
+                    <!-- User join section -->
+                    ${userSection}
+
+                    <!-- Member status -->
+                    ${membersList}
+
+                    <!-- Leader settings -->
+                    ${leaderSettings}
+                </div>
+            `;
+        }
+
+        // Fallback: unknown status
+        return `<p class="text-sm text-muted-foreground">Mumble status: ${_escapeHtml(status || 'unknown')}</p>`;
+    }
+
+    /**
+     * Attach event listeners for the mumble tab
+     */
+    function _attachMumbleListeners() {
+        // Enable button
+        const enableBtn = document.getElementById('mumble-enable-btn');
+        enableBtn?.addEventListener('click', _handleMumbleEnable);
+
+        // Disable button
+        const disableBtn = document.getElementById('mumble-disable-btn');
+        disableBtn?.addEventListener('click', _handleMumbleDisable);
+
+        // Retry button
+        const retryBtn = document.getElementById('mumble-retry-btn');
+        retryBtn?.addEventListener('click', _handleMumbleRetry);
+
+        // Copy URL buttons
+        document.querySelectorAll('.mumble-copy-url').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const url = btn.dataset.url;
+                if (url) navigator.clipboard.writeText(url).then(() => {
+                    ToastService.showSuccess('Mumble URL copied!');
+                }).catch(() => {});
+            });
+        });
+    }
+
+    async function _handleMumbleEnable() {
+        const btn = document.getElementById('mumble-enable-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Enabling...';
+        }
+
+        try {
+            const result = await MumbleConfigService.enableMumble(_teamId);
+            if (!result.success) {
+                ToastService.showError(result.error || 'Failed to enable Mumble');
+                if (btn) { btn.disabled = false; btn.textContent = 'Enable Mumble'; }
+            }
+            // Listener will update UI when status changes
+        } catch (error) {
+            console.error('Enable Mumble error:', error);
+            const msg = error?.message?.includes('already-exists')
+                ? 'Mumble is already enabled for this team'
+                : 'Failed to enable Mumble. Please try again.';
+            ToastService.showError(msg);
+            if (btn) { btn.disabled = false; btn.textContent = 'Enable Mumble'; }
+        }
+    }
+
+    async function _handleMumbleDisable() {
+        if (!confirm('Are you sure you want to disable Mumble? This will remove the team channel and all user registrations.')) {
+            return;
+        }
+
+        const btn = document.getElementById('mumble-disable-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Disabling...';
+        }
+
+        try {
+            const result = await MumbleConfigService.disableMumble(_teamId);
+            if (!result.success) {
+                ToastService.showError(result.error || 'Failed to disable Mumble');
+                if (btn) { btn.disabled = false; btn.textContent = 'Disable Mumble'; }
+            }
+            // Listener will update UI
+        } catch (error) {
+            console.error('Disable Mumble error:', error);
+            ToastService.showError('Failed to disable Mumble. Please try again.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Disable Mumble'; }
+        }
+    }
+
+    async function _handleMumbleRetry() {
+        const btn = document.getElementById('mumble-retry-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Retrying...'; }
+
+        try {
+            // Disable first, then re-enable
+            await MumbleConfigService.disableMumble(_teamId);
+            // Small delay to let quad process the disabling
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await MumbleConfigService.enableMumble(_teamId);
+            // Listener will update UI
+        } catch (error) {
+            console.error('Mumble retry error:', error);
+            ToastService.showError('Retry failed. Please try again.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+        }
+    }
+
+    async function _handleMumbleAutoRecordToggle(e) {
+        const autoRecord = e.target.checked;
+
+        // Optimistic UI: toggle track color
+        const track = e.target.closest('label').querySelector('.mumble-toggle-track');
+        const thumb = e.target.closest('label').querySelector('.mumble-toggle-thumb');
+        if (track) track.classList.toggle('bg-primary', autoRecord);
+        if (thumb) thumb.classList.toggle('translate-x-4', autoRecord);
+
+        try {
+            await MumbleConfigService.updateMumbleSettings(_teamId, { autoRecord });
+        } catch (error) {
+            console.error('Update Mumble settings error:', error);
+            ToastService.showError('Failed to update setting');
+            // Revert
+            e.target.checked = !autoRecord;
+            if (track) track.classList.toggle('bg-primary', !autoRecord);
+            if (thumb) thumb.classList.toggle('translate-x-4', !autoRecord);
+        }
+    }
+
     function close() {
         // Restore URL back to team view (if we were on a settings route)
         if (typeof Router !== 'undefined' && _teamId && location.hash.startsWith('#/settings')) {
@@ -2799,6 +3310,8 @@ const TeamManagementModal = (function() {
         _recordings = [];
         _expandedSeries = new Set();
         _opponentLogoCache = {};
+        _mumbleConfig = undefined;
+        _mumbleInitialized = false;
 
         // Remove download progress listener
         window.removeEventListener('download-progress', _handleDownloadProgress);
@@ -2806,6 +3319,11 @@ const TeamManagementModal = (function() {
         if (_botRegUnsubscribe) {
             _botRegUnsubscribe();
             _botRegUnsubscribe = null;
+        }
+
+        if (_mumbleUnsubscribe) {
+            _mumbleUnsubscribe();
+            _mumbleUnsubscribe = null;
         }
 
         if (_keydownHandler) {
